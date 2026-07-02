@@ -1,0 +1,782 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<title>InstaReply — Guia de Instalação</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #0F0A1A;
+    --card: #1A1025;
+    --code-bg: #120B1F;
+    --border: #2A1F3D;
+    --border-hot: #4C3575;
+    --violet: #8B5CF6;
+    --violet-soft: #A78BFA;
+    --violet-pale: #C4B5FD;
+    --fuchsia: #D946EF;
+    --text: #F2EFF9;
+    --muted: #9D93B8;
+    --green: #34D399;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  @page { size: A4; margin: 0; }
+
+  body { font-family: "Figtree", sans-serif; color: var(--text); background: var(--bg); }
+
+  .page {
+    width: 210mm; height: 296mm;
+    position: relative; overflow: hidden;
+    background:
+      radial-gradient(ellipse 70% 35% at 12% -8%, rgba(139, 92, 246, 0.13), transparent 60%),
+      radial-gradient(ellipse 55% 30% at 95% 2%, rgba(217, 70, 239, 0.07), transparent 55%),
+      var(--bg);
+    page-break-after: always;
+    padding: 15mm 16mm 20mm;
+  }
+  .page:last-child { page-break-after: auto; }
+
+  .display { font-family: "Sora", sans-serif; }
+  .mono { font-family: "JetBrains Mono", monospace; }
+
+  h2 { font-family: "Sora", sans-serif; font-size: 21px; font-weight: 700; letter-spacing: -0.02em; }
+  p  { font-size: 11px; line-height: 1.6; color: var(--muted); }
+  strong { color: var(--text); font-weight: 600; }
+  a { color: var(--violet-soft); text-decoration: none; }
+
+  .eyebrow {
+    font-family: "Sora", sans-serif; font-size: 9px; font-weight: 700;
+    letter-spacing: 0.22em; text-transform: uppercase; color: var(--violet-soft);
+    display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+  }
+  .eyebrow::before { content: ""; width: 22px; height: 2px;
+    background: linear-gradient(90deg, var(--violet), var(--fuchsia)); border-radius: 2px; }
+
+  .grad-text {
+    background: linear-gradient(120deg, #A78BFA 0%, #8B5CF6 45%, #D946EF 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+
+  .page-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 9mm; }
+  .brand { display: flex; align-items: center; gap: 7px; }
+  .brand .bolt {
+    width: 20px; height: 20px; border-radius: 6px;
+    background: linear-gradient(135deg, #8B5CF6, #7C3AED);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 14px rgba(139, 92, 246, 0.55);
+    color: #fff; font-size: 11px;
+  }
+  .brand .name { font-family: "Sora", sans-serif; font-size: 12px; font-weight: 700; }
+  .page-head .crumb { font-family: "JetBrains Mono", monospace; font-size: 8px; color: var(--muted); letter-spacing: 0.08em; }
+
+  .page-foot {
+    position: absolute; bottom: 10mm; left: 16mm; right: 16mm;
+    display: flex; justify-content: space-between; align-items: center;
+    border-top: 1px solid var(--border); padding-top: 8px;
+  }
+  .page-foot span { font-family: "JetBrains Mono", monospace; font-size: 7.5px; color: var(--muted); letter-spacing: 0.1em; }
+  .page-foot .num { color: var(--violet-soft); font-weight: 600; }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+
+  .substep { display: flex; gap: 11px; margin-bottom: 13px; }
+  .substep .dot {
+    flex-shrink: 0; width: 23px; height: 23px; border-radius: 50%;
+    background: linear-gradient(135deg, #8B5CF6, #7C3AED);
+    box-shadow: 0 0 12px rgba(139, 92, 246, 0.45);
+    display: flex; align-items: center; justify-content: center;
+    font-family: "Sora", sans-serif; font-size: 10px; font-weight: 700; color: #fff;
+    margin-top: 1px;
+  }
+  .substep h4 { font-family: "Sora", sans-serif; font-size: 12px; font-weight: 600; margin-bottom: 3px; }
+  .substep p { font-size: 10.5px; }
+
+  .code {
+    background: var(--code-bg); border: 1px solid var(--border);
+    border-left: 2px solid var(--violet);
+    border-radius: 8px; padding: 9px 12px; margin: 7px 0;
+    font-family: "JetBrains Mono", monospace; font-size: 9px; line-height: 1.7;
+    color: var(--violet-pale); white-space: pre; overflow: hidden;
+  }
+  .code .c { color: #6B6285; }
+  .code .k { color: var(--fuchsia); }
+  .code .g { color: var(--green); }
+
+  .chip {
+    display: inline-block; font-family: "JetBrains Mono", monospace;
+    font-size: 8.5px; color: var(--violet-pale);
+    background: rgba(139, 92, 246, 0.12); border: 1px solid rgba(139, 92, 246, 0.35);
+    border-radius: 5px; padding: 1.5px 7px;
+  }
+
+  .callout {
+    display: flex; gap: 9px; border-radius: 8px; padding: 10px 12px; margin-top: 9px;
+    font-size: 10px; line-height: 1.55;
+  }
+  .callout .ico { font-size: 13px; margin-top: 1px; }
+  .callout.tip   { background: rgba(139, 92, 246, 0.10); border: 1px solid rgba(139, 92, 246, 0.30); color: var(--violet-pale); }
+  .callout.warn  { background: rgba(251, 191, 36, 0.07); border: 1px solid rgba(251, 191, 36, 0.28); color: #FDE68A; }
+  .callout.story { background: rgba(217, 70, 239, 0.07); border: 1px solid rgba(217, 70, 239, 0.28); color: #F0D4FA; }
+  .callout.done  { background: rgba(52, 211, 153, 0.08); border: 1px solid rgba(52, 211, 153, 0.28); color: #A7F3D4; }
+
+  .linkline { font-size: 10px; margin: 4px 0; color: var(--muted); }
+  .linkline .mono { font-size: 8.5px; color: var(--violet-soft); }
+
+  .flow { display: flex; align-items: stretch; gap: 0; margin: 10px 0 4px; }
+  .flow .node {
+    flex: 1; background: var(--card); border: 1px solid var(--border);
+    border-radius: 9px; padding: 10px 8px; text-align: center;
+  }
+  .flow .node .t { font-family: "Sora", sans-serif; font-size: 9.5px; font-weight: 600; color: var(--text); }
+  .flow .node .d { font-size: 8px; color: var(--muted); margin-top: 2px; line-height: 1.35; }
+  .flow .node.hot { border-color: var(--border-hot); background: linear-gradient(180deg, rgba(139,92,246,0.14), var(--card)); }
+  .flow .arrow { align-self: center; padding: 0 6px; color: var(--violet); font-size: 13px; font-weight: 700; }
+
+  .check { display: flex; gap: 9px; align-items: flex-start; margin-bottom: 9px; }
+  .check .box {
+    flex-shrink: 0; width: 12px; height: 12px; border-radius: 4px; margin-top: 2px;
+    border: 1.5px solid var(--violet); background: rgba(139, 92, 246, 0.12);
+  }
+  .check p { font-size: 10.5px; color: var(--text); }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .kv { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+        padding: 6px 0; border-bottom: 1px dashed var(--border); font-size: 10px; }
+  .kv:last-child { border-bottom: none; }
+  .kv .k2 { color: var(--muted); }
+
+  .ref { display: flex; align-items: center; gap: 6px; font-size: 9px; color: var(--violet-soft);
+         font-family: "JetBrains Mono", monospace; margin-top: 6px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 9.5px; }
+  th { font-family: "Sora", sans-serif; font-size: 8px; font-weight: 700; text-transform: uppercase;
+       letter-spacing: 0.1em; color: var(--muted); text-align: left;
+       padding: 7px 10px; border-bottom: 1px solid var(--border-hot); }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: top; line-height: 1.45; }
+  tr:last-child td { border-bottom: none; }
+  td .mono { font-size: 8px; color: var(--violet-pale); }
+  td.dim { color: var(--muted); }
+
+  .section-title { margin-bottom: 8mm; }
+  .section-title p { margin-top: 5px; max-width: 152mm; }
+
+  /* ── Capa ───────────────────────────────────────── */
+  .cover { display: flex; flex-direction: column; justify-content: space-between; padding: 22mm 20mm; }
+  .cover-glow {
+    position: absolute; inset: 0; pointer-events: none;
+    background:
+      radial-gradient(ellipse 60% 30% at 50% 108%, rgba(139, 92, 246, 0.22), transparent 65%),
+      radial-gradient(ellipse 45% 22% at 85% 90%, rgba(217, 70, 239, 0.10), transparent 60%);
+  }
+  .cover-top { display: flex; justify-content: space-between; align-items: center; }
+  .cover-badge {
+    font-family: "JetBrains Mono", monospace; font-size: 8.5px; letter-spacing: 0.16em;
+    color: var(--violet-pale); border: 1px solid var(--border-hot);
+    border-radius: 999px; padding: 5px 14px; background: rgba(139, 92, 246, 0.08);
+  }
+  .cover-mid { position: relative; }
+  .cover-logo {
+    width: 58px; height: 58px; border-radius: 17px;
+    background: linear-gradient(135deg, #8B5CF6, #7C3AED);
+    box-shadow: 0 0 45px rgba(139, 92, 246, 0.65);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 30px; color: #fff; margin-bottom: 22px;
+  }
+  .cover h1 { font-family: "Sora", sans-serif; font-size: 47px; font-weight: 800; letter-spacing: -0.03em; line-height: 1.06; }
+  .cover .sub {
+    font-family: "Sora", sans-serif; font-size: 14.5px; font-weight: 400;
+    color: var(--muted); margin-top: 14px; max-width: 128mm; line-height: 1.55;
+  }
+  .cover-nongrok {
+    display: inline-flex; align-items: center; gap: 7px; margin-top: 16px;
+    font-family: "JetBrains Mono", monospace; font-size: 9px; color: #A7F3D4;
+    background: rgba(52, 211, 153, 0.09); border: 1px solid rgba(52, 211, 153, 0.3);
+    border-radius: 999px; padding: 6px 14px;
+  }
+  .cover-steps { display: flex; gap: 7px; margin-top: 18px; flex-wrap: wrap; max-width: 135mm; }
+  .cover-steps .s {
+    font-family: "Sora", sans-serif; font-size: 8.5px; font-weight: 600;
+    color: var(--violet-pale); background: var(--card); border: 1px solid var(--border);
+    border-radius: 999px; padding: 6px 12px;
+  }
+  .cover-bottom { position: relative; display: flex; justify-content: space-between; align-items: flex-end; }
+  .cover-meta { font-family: "JetBrains Mono", monospace; font-size: 8px; color: var(--muted); line-height: 2; letter-spacing: 0.08em; }
+  .palette { display: flex; gap: 6px; }
+  .palette i { width: 26px; height: 26px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.12); }
+</style>
+</head>
+<body>
+
+<!-- ═══════════ PÁGINA 1 · CAPA ═══════════ -->
+<section class="page cover">
+  <div class="cover-glow"></div>
+  <div class="cover-top">
+    <div class="brand"><div class="bolt">⚡</div><span class="name">InstaReply</span></div>
+    <span class="cover-badge">GUIA DE INSTALAÇÃO</span>
+  </div>
+
+  <div class="cover-mid">
+    <div class="cover-logo">⚡</div>
+    <h1>Seu Instagram<br />respondendo<br /><span class="grad-text">sozinho.</span></h1>
+    <p class="sub">Um passo a passo direto, em português simples, pra você instalar o
+    InstaReply na sua própria conta — sem termos técnicos difíceis e sem enrolação.</p>
+    <div class="cover-nongrok">✓ SEM TÚNEIS, SEM NGROK — SÓ PUBLICAR UMA VEZ E PRONTO</div>
+    <div class="cover-steps">
+      <span class="s">1 · Banco de dados</span>
+      <span class="s">2 · App do Instagram</span>
+      <span class="s">3 · Colocar no ar</span>
+      <span class="s">4 · Ligar tudo</span>
+      <span class="s">5 · Sua conta</span>
+      <span class="s">6 · Testar</span>
+    </div>
+  </div>
+
+  <div class="cover-bottom">
+    <div class="cover-meta">VERSÃO 2.1 · JULHO 2026<br />GITHUB · SUPABASE · VERCEL</div>
+    <div class="palette">
+      <i style="background:#0F0A1A"></i>
+      <i style="background:#1A1025"></i>
+      <i style="background:#8B5CF6"></i>
+      <i style="background:#D946EF"></i>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════ PÁGINA 2 · COMO FUNCIONA ═══════════ -->
+<section class="page">
+  <div class="page-head">
+    <div class="brand"><div class="bolt">⚡</div><span class="name">InstaReply</span></div>
+    <span class="crumb">VISÃO GERAL</span>
+  </div>
+
+  <div class="section-title">
+    <div class="eyebrow">Antes de começar</div>
+    <h2>Como o InstaReply funciona</h2>
+    <p>Você conecta sua conta do Instagram, cria regras do tipo <strong>“se alguém mandar
+    essa palavra, responda com esse texto”</strong> — e o sistema responde sozinho, na hora,
+    direto na DM da pessoa.</p>
+  </div>
+
+  <div class="flow">
+    <div class="node"><div class="t">💬 Alguém manda DM</div><div class="d">“qual o preço?”</div></div>
+    <div class="arrow">→</div>
+    <div class="node"><div class="t">📡 Instagram avisa</div><div class="d">em tempo real</div></div>
+    <div class="arrow">→</div>
+    <div class="node hot"><div class="t">⚡ InstaReply decide</div><div class="d">a palavra bate com alguma regra sua?</div></div>
+    <div class="arrow">→</div>
+    <div class="node"><div class="t">✅ Resposta enviada</div><div class="d">poucos segundos depois</div></div>
+  </div>
+
+  <div class="callout story" style="margin-top:12px;">
+    <span class="ico">📬</span>
+    <span><strong>Pense no Instagram como um carteiro.</strong> Toda vez que alguém manda uma
+    DM, ele precisa saber pra qual endereço entregar esse aviso — e esse endereço tem que ser
+    <strong>público</strong>, visível pela internet. O problema é que o seu computador não tem
+    esse tipo de endereço, ele fica “escondido” na sua rede de casa. Por isso, neste guia, a
+    gente <strong>publica o sistema primeiro</strong> (de graça, na Vercel) e só depois volta
+    no Instagram pra avisar esse endereço. Simples assim — sem precisar de nenhum programa
+    extra no seu computador.</span>
+  </div>
+
+  <div class="two-col" style="margin-top:12px;">
+    <div class="card">
+      <div class="eyebrow" style="margin-bottom:10px;">O que você vai precisar</div>
+      <div class="check"><div class="box"></div><p><strong>Conta no GitHub</strong> — guarda sua cópia do projeto <em>(grátis)</em></p></div>
+      <div class="check"><div class="box"></div><p><strong>Conta no Supabase</strong> — banco de dados e login <em>(grátis)</em></p></div>
+      <div class="check"><div class="box"></div><p><strong>Conta de desenvolvedor Meta</strong> — pra criar o app do Instagram <em>(grátis)</em></p></div>
+      <div class="check"><div class="box"></div><p><strong>Conta na Vercel</strong> — hospeda seu sistema <em>(grátis)</em></p></div>
+      <div class="check"><div class="box"></div><p><strong>Node.js</strong> instalado no computador — só pra gerar 1 código <em>(nodejs.org)</em></p></div>
+      <div class="check"><div class="box"></div><p><strong>Instagram Profissional</strong> vinculado a uma <strong>Página do Facebook</strong></p></div>
+    </div>
+    <div class="card">
+      <div class="eyebrow" style="margin-bottom:10px;">Links que você vai usar</div>
+      <p class="linkline">🐙 GitHub<br /><a class="mono" href="https://github.com">github.com</a></p>
+      <p class="linkline">🗄️ Supabase<br /><a class="mono" href="https://supabase.com/dashboard">supabase.com/dashboard</a></p>
+      <p class="linkline">🔧 Painel de apps da Meta<br /><a class="mono" href="https://developers.facebook.com/apps">developers.facebook.com/apps</a></p>
+      <p class="linkline">▲ Vercel (hospedagem gratuita)<br /><a class="mono" href="https://vercel.com/new">vercel.com/new</a></p>
+      <p class="linkline">🤖 n8n (automações — opcional)<br /><a class="mono" href="https://n8n.io">n8n.io</a></p>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    <span class="ico">⚠️</span>
+    <span><strong>Importante:</strong> seu Instagram precisa ser do tipo <strong>Profissional</strong>
+    (Comercial ou Criador de Conteúdo) e estar <strong>vinculado a uma Página do Facebook</strong>.
+    Faça isso no app do Instagram em: Configurações → Tipo de conta → Mudar para conta profissional.</span>
+  </div>
+
+  <div class="page-foot"><span>INSTAREPLY · GUIA DE INSTALAÇÃO</span><span class="num">02 / 09</span></div>
+</section>
+
+<!-- ═══════════ PÁGINA 3 · PASSO 1 SUPABASE ═══════════ -->
+<section class="page">
+  <div class="page-head">
+    <div class="brand"><div class="bolt">⚡</div><span class="name">InstaReply</span></div>
+    <span class="crumb">PASSO 1 DE 6</span>
+  </div>
+
+  <div class="section-title">
+    <div class="eyebrow">Passo 1</div>
+    <h2>Banco de dados (Supabase)</h2>
+    <p>O Supabase é onde ficam guardados seus usuários, contas conectadas, regras e logs.
+    Grátis, e leva cinco minutos.</p>
+  </div>
+
+  <div class="substep">
+    <div class="dot">1</div>
+    <div>
+      <h4>Crie um projeto</h4>
+      <p>Acesse <a class="mono" href="https://supabase.com/dashboard">supabase.com/dashboard</a>,
+      faça login e clique em <strong>New Project</strong>. Dê um nome (ex.: <span class="chip">instareply</span>),
+      crie uma senha forte para o banco e escolha a região <strong>South America (São Paulo)</strong>.</p>
+    </div>
+  </div>
+
+  <div class="substep">
+    <div class="dot">2</div>
+    <div>
+      <h4>Crie as tabelas do sistema</h4>
+      <p>No menu lateral, abra o <strong>SQL Editor</strong>. No projeto InstaReply, abra o
+      arquivo <span class="chip">supabase/migrations/0001_init.sql</span>, copie
+      <strong>todo o conteúdo</strong>, cole no editor e clique em <strong>Run</strong>. Isso
+      cria as tabelas que faltam, já com a segurança configurada.</p>
+    </div>
+  </div>
+
+  <div class="substep">
+    <div class="dot">3</div>
+    <div>
+      <h4>Ajuste o login por e-mail</h4>
+      <p>Em <strong>Authentication → Sign In / Providers → Email</strong>, confirme que está
+      <strong>habilitado</strong>. Se quiser entrar no painel logo após criar sua conta, sem
+      esperar e-mail de confirmação, desative a opção <strong>“Confirm email”</strong>.</p>
+    </div>
+  </div>
+
+  <div class="substep">
+    <div class="dot">4</div>
+    <div>
+      <h4>Copie as 3 chaves do projeto</h4>
+      <p>Em <strong>Settings → API</strong>, copie os três valores abaixo. Guarde-os — você vai
+      usar no Passo 3.</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-left:34px;">
+    <table>
+      <tr><th>No painel Supabase</th><th>Vira esta variável</th></tr>
+      <tr><td class="dim">Project URL</td><td><span class="mono">NEXT_PUBLIC_SUPABASE_URL</span></td></tr>
+      <tr><td class="dim">anon / public key</td><td><span class="mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</span></td></tr>
+      <tr><td class="dim">service_role key</td><td><span class="mono">SUPABASE_SERVICE_ROLE_KEY</span></td></tr>
+    </table>
+  </div>
+
+  <div class="callout warn" style="margin-left:34px;">
+    <span class="ico">🔒</span>
+    <span>A <strong>service_role key</strong> dá acesso total ao seu banco. Nunca compartilhe
+    esse valor nem publique em repositórios abertos.</span>
+  </div>
+
+  <div class="page-foot"><span>INSTAREPLY · GUIA DE INSTALAÇÃO</span><span class="num">03 / 09</span></div>
+</section>
+
+<!-- ═══════════ PÁGINA 4 · PASSO 2 CRIAR APP META ═══════════ -->
+<section class="page">
+  <div class="page-head">
+    <div class="brand"><div class="bolt">⚡</div><span class="name">InstaReply</span></div>
+    <span class="crumb">PASSO 2 DE 6</span>
+  </div>
+
+  <div class="section-title">
+    <div class="eyebrow">Passo 2</div>
+    <h2>Criar o app na Meta</h2>
+    <p>Esse app é o que permite ao InstaReply falar com o Instagram em seu nome. Neste passo
+    você só precisa pegar duas credenciais — vamos terminar a configuração dele mais adiante.</p>
+  </div>
+
+  <div class="substep">
+    <div class="dot">1</div>
+    <div>
+      <h4>Crie o app</h4>
+      <p>Acesse <a class="mono" href="https://developers.facebook.com/apps">developers.facebook.com/apps</a>,
+      entre com sua conta do Facebook e clique em <strong>Create App</strong>. Escolha o tipo
+      <strong>Business</strong> e dê um nome, por exemplo <span class="chip">InstaReply</span>.</p>
+    </div>
+  </div>
+
+  <div class="substep">
+    <div class="dot">2</div>
+    <div>
+      <h4>Adicione dois “produtos”</h4>
+      <p>Dentro do app, clique em <strong>Add Product</strong> e adicione:
+      <strong>Facebook Login for Business</strong> (autoriza a conexão da sua conta) e
+      <strong>Messenger</strong> (onde ficam as configurações de mensagens do Instagram).
+      Não precisa configurar nada dentro deles agora — só adicionar.</p>
+    </div>
+  </div>
+
+  <div class="substep">
+    <div class="dot">3</div>
+    <div>
+      <h4>Copie as duas credenciais</h4>
+      <p>Vá em <strong>App settings → Basic</strong>. Copie o <strong>App ID</strong> e o
+      <strong>App Secret</strong> — você vai colar essas duas informações já no próximo passo.</p>
+    </div>
+  </div>
+
+  <div class="callout tip">
+    <span class="ico">💡</span>
+    <span><strong>Por que não configuramos o resto agora?</strong> Porque as duas partes que
+    faltam — o endereço de retorno do login e o webhook de mensagens — pedem um endereço
+    público (uma URL) na internet. A gente ainda não tem um. Resolvemos isso já no Passo 3, e
+    depois voltamos aqui pra terminar, no Passo 4.</span>
+  </div>
+
+  <div class="callout warn">
+    <span class="ico">⚠️</span>
+    <span><strong>Modo desenvolvimento:</strong> enquanto o app não for publicado pela Meta, só
+    contas cadastradas como testadoras (em <strong>App roles → Roles</strong>) conseguem
+    conectar e receber respostas. Isso é o suficiente para usar o InstaReply na sua própria
+    conta — publicar o app só é necessário se for oferecer o sistema para clientes de terceiros.</span>
+  </div>
+
+  <div class="page-foot"><span>INSTAREPLY · GUIA DE INSTALAÇÃO</span><span class="num">04 / 09</span></div>
+</section>
+
+<!-- ═══════════ PÁGINA 5 · PASSO 3 VERCEL ═══════════ -->
+<section class="page">
+  <div class="page-head">
+    <div class="brand"><div class="bolt">⚡</div><span class="name">InstaReply</span></div>
+    <span class="crumb">PASSO 3 DE 6</span>
+  </div>
+
+  <div class="section-title">
+    <div class="eyebrow">Passo 3</div>
+    <h2>Coloque o sistema no ar</h2>
+    <p>A Vercel é um serviço gratuito que publica o InstaReply com um endereço público de
+    verdade. Todo esse passo é feito <strong>pelo site</strong>, sem digitar comando nenhum
+    (só a chave de criptografia, no fim).</p>
+  </div>
+
+  <div class="substep">
+    <div class="dot">1</div>
+    <div>
+      <h4>Copie o repositório para a sua conta do GitHub</h4>
+      <p>Na página do InstaReply no GitHub, clique em <strong>Use this template → Create a
+      new repository</strong>, escolha um nome (ex.: <span class="chip">meu-instareply</span>)
+      e confirme. Isso cria uma cópia inteira do projeto, só sua, na sua própria conta.</p>
+    </div>
+  </div>
+
+  <div class="substep">
+    <div class="dot">2</div>
+    <div>
+      <h4>Importe o projeto na Vercel</h4>
+      <p>Acesse <a class="mono" href="https://vercel.com/new">vercel.com/new</a>, entre com
+      sua conta (dá pra usar o mesmo login do GitHub) e clique em <strong>Import</strong> ao
+      lado do repositório que você acabou de criar.</p>
+    </div>
+  </div>
+
+  <div class="substep">
+    <div class="dot">3</div>
+    <div>
+      <h4>Preencha as variáveis de ambiente</h4>
+      <p>Antes de publicar, a Vercel mostra um formulário de variáveis. Preencha cada uma
+      (ainda na tela de importação, ou depois em <strong>Settings → Environment
+      Variables</strong>):</p>
+      <div class="code">NEXT_PUBLIC_SUPABASE_URL=...       <span class="c"># Passo 1</span>
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...  <span class="c"># Passo 1</span>
+SUPABASE_SERVICE_ROLE_KEY=...      <span class="c"># Passo 1</span>
+META_APP_ID=...                    <span class="c"># Passo 2</span>
+META_APP_SECRET=...                <span class="c"># Passo 2</span>
+META_VERIFY_TOKEN=<span class="g">instareply2026</span>     <span class="c"># invente uma senha</span>
+META_GRAPH_VERSION=<span class="g">v21.0</span>
+NEXT_PUBLIC_APP_URL=<span class="g">(deixe em branco por enquanto)</span>
+TOKEN_ENCRYPTION_KEY=...           <span class="c"># veja o comando abaixo</span>
+SIGNUP_ENABLED=<span class="g">true</span></div>
+      <p>A única linha que precisa de terminal é essa: abra um terminal, rode o comando
+      abaixo e cole o resultado em <span class="chip">TOKEN_ENCRYPTION_KEY</span>.</p>
+      <div class="code"><span class="k">node</span> -e <span class="g">"console.log(require('crypto').randomBytes(32).toString('hex'))"</span></div>
+    </div>
+  </div>
+
+  <div class="substep">
+    <div class="dot">4</div>
+    <div>
+      <h4>Clique em Deploy e guarde o link</h4>
+      <p>A Vercel builda e publica o projeto — leva cerca de um minuto. Ao final, ela mostra
+      o endereço do seu site, parecido com este:</p>
+      <div class="code">https://meu-instareply-<span class="g">xxxx</span>.vercel.app</div>
+      <p><strong>Guarde esse link</strong> — é o endereço público do seu sistema.</p>
+    </div>
+  </div>
+
+  <div class="substep">
+    <div class="dot">5</div>
+    <div>
+      <h4>Complete a última variável</h4>
+      <p>Volte em <strong>Settings → Environment Variables</strong>, preencha
+      <span class="chip">NEXT_PUBLIC_APP_URL</span> com o link que você acabou de guardar, e
+      vá na aba <strong>Deployments → ⋯ → Redeploy</strong> pra publicar de novo com o link
+      certo.</p>
+    </div>
+  </div>
+
+  <div class="page-foot"><span>INSTAREPLY · GUIA DE INSTALAÇÃO</span><span class="num">05 / 09</span></div>
+</section>
+
+<!-- ═══════════ PÁGINA 6 · PASSO 4 LIGAR TUDO ═══════════ -->
+<section class="page">
+  <div class="page-head">
+    <div class="brand"><div class="bolt">⚡</div><span class="name">InstaReply</span></div>
+    <span class="crumb">PASSO 4 DE 6</span>
+  </div>
+
+  <div class="section-title">
+    <div class="eyebrow">Passo 4</div>
+    <h2>Volte na Meta e ligue os dois</h2>
+    <p>Agora que o sistema tem um endereço público, é hora de avisar o app que você criou no
+    <strong>Passo 2</strong>.</p>
+  </div>
+
+  <div class="substep">
+    <div class="dot">1</div>
+    <div>
+      <h4>Endereço de retorno do login</h4>
+      <p>No app da Meta, vá em <strong>Facebook Login → Settings → Valid OAuth Redirect
+      URIs</strong> e cole (trocando pelo seu link da Vercel):</p>
+      <div class="code">https://SEU-ENDERECO.vercel.app/api/auth/meta/callback</div>
+      <p>É pra onde o Facebook te devolve depois que você autoriza a conexão da sua conta.</p>
+    </div>
+  </div>
+
+  <div class="substep">
+    <div class="dot">2</div>
+    <div>
+      <h4>Configure o webhook</h4>
+      <p>Vá em <strong>Webhooks → Instagram</strong> e clique em <strong>Subscribe to this
+      object</strong>. Preencha:</p>
+      <div class="code">Callback URL:   https://SEU-ENDERECO.vercel.app/api/webhooks/meta
+Verify token:   <span class="g">o mesmo valor que você colocou em META_VERIFY_TOKEN</span></div>
+    </div>
+  </div>
+
+  <div class="substep">
+    <div class="dot">3</div>
+    <div>
+      <h4>Confirme e assine as mensagens</h4>
+      <p>Clique em <strong>Verify and Save</strong>. Como seu sistema já está publicado, a
+      verificação passa na hora — aparece um sinal verde de <strong>Verified</strong>. Depois,
+      marque o campo <span class="chip">messages</span> para começar a receber avisos de DMs.</p>
+    </div>
+  </div>
+
+  <div class="callout done">
+    <span class="ico">✅</span>
+    <span><strong>O que aconteceu nos bastidores:</strong> a Meta mandou uma pergunta secreta
+    pro endereço que você cadastrou, e o InstaReply respondeu certinho — foi assim que os dois
+    se reconheceram. É exatamente esse handshake que o ngrok existia pra viabilizar em
+    desenvolvimento; publicando primeiro, ele deixa de ser necessário.</span>
+  </div>
+
+  <div class="page-foot"><span>INSTAREPLY · GUIA DE INSTALAÇÃO</span><span class="num">06 / 09</span></div>
+</section>
+
+<!-- ═══════════ PÁGINA 7 · PASSO 5 CONTA + CONECTAR ═══════════ -->
+<section class="page">
+  <div class="page-head">
+    <div class="brand"><div class="bolt">⚡</div><span class="name">InstaReply</span></div>
+    <span class="crumb">PASSO 5 DE 6</span>
+  </div>
+
+  <div class="section-title">
+    <div class="eyebrow">Passo 5</div>
+    <h2>Crie sua conta e conecte o Instagram</h2>
+  </div>
+
+  <div class="substep">
+    <div class="dot">1</div>
+    <div>
+      <h4>Acesse seu painel</h4>
+      <p>Abra o endereço da Vercel no navegador (o mesmo <span class="chip">https://...vercel.app</span>).
+      Clique em <strong>Criar conta</strong> e cadastre seu e-mail e senha. Você cai direto no
+      Dashboard.</p>
+    </div>
+  </div>
+
+  <div class="substep">
+    <div class="dot">2</div>
+    <div>
+      <h4>Tranque a porta atrás de você</h4>
+      <p>Essa instalação é <strong>sua</strong> — ninguém mais deveria conseguir criar conta
+      nela. Volte nas variáveis de ambiente da Vercel e mude:</p>
+      <div class="code">SIGNUP_ENABLED=<span class="k">false</span></div>
+      <p>Vá em <strong>Deployments → ⋯ → Redeploy</strong> pra publicar de novo. A partir daí,
+      a aba “Criar conta” some da tela de login — só quem já tem conta entra.</p>
+    </div>
+  </div>
+
+  <div class="substep">
+    <div class="dot">3</div>
+    <div>
+      <h4>Conecte o Instagram</h4>
+      <p>No menu <strong>Contas</strong>, clique em <strong>Conectar Instagram</strong>. O
+      Facebook vai pedir autorização — aceite tudo e escolha a Página vinculada ao seu
+      Instagram. Ao voltar, sua conta aparece com o selo
+      <span class="chip" style="color:#6EE7B7;border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.1);">Conectada</span>.</p>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    <span class="ico">⚠️</span>
+    <span>Se aparecer o erro <span class="chip">no_ig_account</span>, é porque o Instagram não
+    é Profissional ou não está vinculado a uma Página do Facebook. Resolva isso no app do
+    Instagram e tente conectar de novo.</span>
+  </div>
+
+  <div class="page-foot"><span>INSTAREPLY · GUIA DE INSTALAÇÃO</span><span class="num">07 / 09</span></div>
+</section>
+
+<!-- ═══════════ PÁGINA 8 · PASSO 6 REGRA + TESTE ═══════════ -->
+<section class="page">
+  <div class="page-head">
+    <div class="brand"><div class="bolt">⚡</div><span class="name">InstaReply</span></div>
+    <span class="crumb">PASSO 6 DE 6</span>
+  </div>
+
+  <div class="section-title">
+    <div class="eyebrow">Passo 6</div>
+    <h2>Crie a primeira regra e teste</h2>
+  </div>
+
+  <div class="substep">
+    <div class="dot">1</div>
+    <div>
+      <h4>Crie uma regra de exemplo</h4>
+      <p>Em <strong>Automação → Nova regra</strong>, preencha:</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-left:34px; margin-bottom:11px;">
+    <div class="kv"><span class="k2">Se receber</span><span class="chip">preço</span></div>
+    <div class="kv"><span class="k2">Tipo de match</span><span>Contém a palavra</span></div>
+    <div class="kv"><span class="k2">Responder com</span><span>“Olá! 💜 Nossa tabela de preços está em nossolink.com/precos”</span></div>
+    <div class="kv"><span class="k2">Delay</span><span>3 segundos</span></div>
+  </div>
+
+  <div class="substep">
+    <div class="dot">2</div>
+    <div>
+      <h4>Peça uma DM de teste</h4>
+      <p>De <strong>outra conta</strong> do Instagram (de um amigo, ou uma conta extra sua
+      cadastrada como testadora no Passo 2), mande a palavra <span class="chip">preço</span>
+      para a conta que você conectou. Em poucos segundos, a resposta chega sozinha. 🎉</p>
+    </div>
+  </div>
+
+  <div class="substep">
+    <div class="dot">3</div>
+    <div>
+      <h4>Acompanhe o resultado</h4>
+      <p><strong>Logs</strong> mostra cada mensagem processada, com status e palavra-chave.
+      <strong>Dashboard</strong> reúne as métricas e o gráfico de atividade. Se quiser ligar
+      com o <strong>n8n</strong>, isso fica em <strong>Configurações</strong> — cole a URL do
+      seu workflow, ative o switch e use “Enviar teste”.</p>
+    </div>
+  </div>
+
+  <div class="callout tip">
+    <span class="ico">🧠</span>
+    <span><strong>Três regras de negócio que já vêm prontas:</strong> a mesma palavra-chave
+    nunca é respondida duas vezes para a mesma pessoa; mensagens fora da janela de 24h do
+    Instagram não são respondidas; e mensagens sem regra correspondente são apenas registradas
+    nos Logs — o sistema não inventa resposta.</span>
+  </div>
+
+  <div class="page-foot"><span>INSTAREPLY · GUIA DE INSTALAÇÃO</span><span class="num">08 / 09</span></div>
+</section>
+
+<!-- ═══════════ PÁGINA 9 · PROBLEMAS + LINKS ═══════════ -->
+<section class="page">
+  <div class="page-head">
+    <div class="brand"><div class="bolt">⚡</div><span class="name">InstaReply</span></div>
+    <span class="crumb">APOIO</span>
+  </div>
+
+  <div class="section-title">
+    <div class="eyebrow">Deu algo errado?</div>
+    <h2>Solução de problemas</h2>
+  </div>
+
+  <div class="card" style="padding:4px 2px; margin-bottom:9mm;">
+    <table>
+      <tr><th style="width:36%;">Sintoma</th><th>O que verificar</th></tr>
+      <tr>
+        <td>Não sei qual é minha URL da Vercel</td>
+        <td class="dim">Abra <span class="mono">vercel.com</span>, entre no projeto — a URL aparece em destaque no topo da página, e também em <strong>Deployments</strong>.</td>
+      </tr>
+      <tr>
+        <td>Não achei “Use this template” no GitHub</td>
+        <td class="dim">O botão fica no topo da página do repositório, ao lado de “Code”. Se não aparecer, use <strong>Fork</strong> — funciona do mesmo jeito para este guia.</td>
+      </tr>
+      <tr>
+        <td>Webhook não verifica no painel Meta</td>
+        <td class="dim">Confira se a URL está <strong>idêntica</strong> (sem barra sobrando no final) e se o <span class="mono">META_VERIFY_TOKEN</span> é igual dos dois lados. Publique de novo se acabou de mudar alguma variável.</td>
+      </tr>
+      <tr>
+        <td>Conectei, mas nada aparece em “Contas”</td>
+        <td class="dim">Erro <span class="mono">no_ig_account</span>: o Instagram não está vinculado a uma Página do Facebook ou não é conta Profissional.</td>
+      </tr>
+      <tr>
+        <td>DM enviada e nenhum log aparece</td>
+        <td class="dim">Campo <span class="mono">messages</span> não assinado no webhook, ou o remetente não é testador do app (modo desenvolvimento — veja o Passo 2).</td>
+      </tr>
+      <tr>
+        <td>Log com status “Erro”</td>
+        <td class="dim">Veja o detalhe no próprio log. Erro de token → reconecte a conta em <strong>Contas</strong>. Erro de permissão → confira os produtos do Passo 2.</td>
+      </tr>
+      <tr>
+        <td>Login do painel não funciona</td>
+        <td class="dim">Confira as chaves do Supabase nas variáveis de ambiente e se o provider Email está ativo. Publique de novo após qualquer mudança de variável.</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="two-col">
+    <div class="card">
+      <div class="eyebrow" style="margin-bottom:10px;">Links úteis</div>
+      <p class="linkline">GitHub<br /><a class="mono" href="https://github.com">github.com</a></p>
+      <p class="linkline">Painel Supabase<br /><a class="mono" href="https://supabase.com/dashboard">supabase.com/dashboard</a></p>
+      <p class="linkline">Painel de apps Meta<br /><a class="mono" href="https://developers.facebook.com/apps">developers.facebook.com/apps</a></p>
+      <p class="linkline">Vercel<br /><a class="mono" href="https://vercel.com/new">vercel.com/new</a></p>
+      <p class="linkline">Docs — Instagram Messaging<br /><a class="mono" href="https://developers.facebook.com/docs/messenger-platform/instagram">developers.facebook.com/docs/messenger-platform/instagram</a></p>
+    </div>
+    <div class="card" style="display:flex; flex-direction:column; justify-content:space-between;">
+      <div>
+        <div class="eyebrow" style="margin-bottom:10px;">Checklist final</div>
+        <div class="check"><div class="box"></div><p>Migration rodada no Supabase</p></div>
+        <div class="check"><div class="box"></div><p>App criado na Meta, com ID e Secret copiados</p></div>
+        <div class="check"><div class="box"></div><p>Repositório copiado no GitHub e importado na Vercel</p></div>
+        <div class="check"><div class="box"></div><p>Redirect URI e webhook ligados à URL da Vercel</p></div>
+        <div class="check"><div class="box"></div><p>Cadastro travado (<span class="mono" style="font-size:8px;">SIGNUP_ENABLED=false</span>)</p></div>
+        <div class="check"><div class="box"></div><p>Conta conectada e primeira regra testada</p></div>
+      </div>
+      <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border);">
+        <p style="font-size:9.5px;">Tudo marcado? Seu atendimento agora responde <strong
+        style="color:var(--violet-soft);">sozinho, 24h por dia</strong>. ⚡</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="page-foot"><span>INSTAREPLY · GUIA DE INSTALAÇÃO · V2.1</span><span class="num">09 / 09</span></div>
+</section>
+
+</body>
+</html>
