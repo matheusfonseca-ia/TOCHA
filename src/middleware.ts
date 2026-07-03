@@ -7,7 +7,9 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Rotas de API cuidam da própria autenticação (webhook usa assinatura HMAC).
-  if (pathname.startsWith("/api")) {
+  // /privacidade é pública: o painel da Meta exige uma URL de política de
+  // privacidade acessível sem login.
+  if (pathname.startsWith("/api") || pathname === "/privacidade") {
     return NextResponse.next();
   }
 
