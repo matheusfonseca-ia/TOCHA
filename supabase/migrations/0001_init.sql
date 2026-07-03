@@ -88,14 +88,6 @@ create table public.interactions (
 create index interactions_account_created_idx on public.interactions (account_id, created_at desc);
 create index interactions_status_idx on public.interactions (account_id, status);
 
--- ── Configurações por usuário (integração n8n) ──────────────────────────────
-create table public.user_settings (
-  user_id         uuid primary key references auth.users (id) on delete cascade,
-  n8n_webhook_url text,
-  n8n_enabled     boolean not null default false,
-  updated_at      timestamptz not null default now()
-);
-
 -- ══════════════════════════════════════════════════════════════════════════
 -- RLS — usuários enxergam apenas os próprios dados.
 -- O webhook usa a service role key (bypass de RLS) no servidor.
@@ -107,7 +99,6 @@ alter table public.conversations    enable row level security;
 alter table public.rule_triggers    enable row level security;
 alter table public.processed_events enable row level security;
 alter table public.interactions     enable row level security;
-alter table public.user_settings    enable row level security;
 
 create policy "own accounts" on public.ig_accounts
   for all using (user_id = auth.uid()) with check (user_id = auth.uid());
@@ -133,8 +124,5 @@ create policy "own interactions" on public.interactions
   for select using (
     account_id in (select id from public.ig_accounts where user_id = auth.uid())
   );
-
-create policy "own settings" on public.user_settings
-  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
 
 -- processed_events: apenas service role (nenhuma policy = sem acesso via anon)

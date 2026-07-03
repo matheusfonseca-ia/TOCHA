@@ -238,7 +238,7 @@
   </div>
 
   <div class="cover-bottom">
-    <div class="cover-meta">VERSÃO 2.1 · JULHO 2026<br />GITHUB · SUPABASE · VERCEL</div>
+    <div class="cover-meta">VERSÃO 2.2 · JULHO 2026<br />GITHUB · SUPABASE · VERCEL</div>
     <div class="palette">
       <i style="background:#0F0A1A"></i>
       <i style="background:#1A1025"></i>
@@ -300,7 +300,6 @@
       <p class="linkline">🗄️ Supabase<br /><a class="mono" href="https://supabase.com/dashboard">supabase.com/dashboard</a></p>
       <p class="linkline">🔧 Painel de apps da Meta<br /><a class="mono" href="https://developers.facebook.com/apps">developers.facebook.com/apps</a></p>
       <p class="linkline">▲ Vercel (hospedagem gratuita)<br /><a class="mono" href="https://vercel.com/new">vercel.com/new</a></p>
-      <p class="linkline">🤖 n8n (automações — opcional)<br /><a class="mono" href="https://n8n.io">n8n.io</a></p>
     </div>
   </div>
 
@@ -499,8 +498,7 @@ META_APP_SECRET=...                <span class="c"># Passo 2</span>
 META_VERIFY_TOKEN=<span class="g">instareply2026</span>     <span class="c"># invente uma senha</span>
 META_GRAPH_VERSION=<span class="g">v21.0</span>
 NEXT_PUBLIC_APP_URL=<span class="g">(deixe em branco por enquanto)</span>
-TOKEN_ENCRYPTION_KEY=...           <span class="c"># veja o comando abaixo</span>
-SIGNUP_ENABLED=<span class="g">true</span></div>
+TOKEN_ENCRYPTION_KEY=...           <span class="c"># veja o comando abaixo</span></div>
       <p>A única linha que precisa de terminal é essa: abra um terminal, rode o comando
       abaixo e cole o resultado em <span class="chip">TOKEN_ENCRYPTION_KEY</span>.</p>
       <div class="code"><span class="k">node</span> -e <span class="g">"console.log(require('crypto').randomBytes(32).toString('hex'))"</span></div>
@@ -578,12 +576,22 @@ Verify token:   <span class="g">o mesmo valor que você colocou em META_VERIFY_T
     </div>
   </div>
 
-  <div class="callout done">
-    <span class="ico">✅</span>
-    <span><strong>O que aconteceu nos bastidores:</strong> a Meta mandou uma pergunta secreta
-    pro endereço que você cadastrou, e o InstaReply respondeu certinho — foi assim que os dois
-    se reconheceram. É exatamente esse handshake que o ngrok existia pra viabilizar em
-    desenvolvimento; publicando primeiro, ele deixa de ser necessário.</span>
+  <div class="substep">
+    <div class="dot">4</div>
+    <div>
+      <h4>Adicione as permissões do Instagram</h4>
+      <p>Vá em <strong>App Review → Permissions and Features</strong>, procure por
+      <span class="chip">instagram_basic</span> e <span class="chip">instagram_manage_messages</span>
+      e clique em <strong>Add</strong> em cada uma. Não precisa pedir "Advanced Access" — só
+      adicionar já libera o uso para você e para as contas testadoras (Passo 2).</p>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    <span class="ico">⚠️</span>
+    <span><strong>Pulou esse passo?</strong> Ao clicar em "Conectar Instagram" no painel, o
+    Facebook mostra a tela de erro <span class="chip">Invalid Scopes</span> e cancela a conexão.
+    Se isso acontecer, volte aqui, adicione as duas permissões acima e tente conectar de novo.</span>
   </div>
 
   <div class="page-foot"><span>INSTAREPLY · GUIA DE INSTALAÇÃO</span><span class="num">06 / 09</span></div>
@@ -611,20 +619,15 @@ Verify token:   <span class="g">o mesmo valor que você colocou em META_VERIFY_T
     </div>
   </div>
 
-  <div class="substep">
-    <div class="dot">2</div>
-    <div>
-      <h4>Tranque a porta atrás de você</h4>
-      <p>Essa instalação é <strong>sua</strong> — ninguém mais deveria conseguir criar conta
-      nela. Volte nas variáveis de ambiente da Vercel e mude:</p>
-      <div class="code">SIGNUP_ENABLED=<span class="k">false</span></div>
-      <p>Vá em <strong>Deployments → ⋯ → Redeploy</strong> pra publicar de novo. A partir daí,
-      a aba “Criar conta” some da tela de login — só quem já tem conta entra.</p>
-    </div>
+  <div class="callout done">
+    <span class="ico">🔒</span>
+    <span><strong>A porta se tranca sozinha.</strong> Assim que essa primeira conta é criada, o
+    sistema bloqueia qualquer novo cadastro para sempre — a aba “Criar conta” some da tela de
+    login. Não existe passo manual aqui: nenhuma variável pra mudar, nenhum redeploy.</span>
   </div>
 
   <div class="substep">
-    <div class="dot">3</div>
+    <div class="dot">2</div>
     <div>
       <h4>Conecte o Instagram</h4>
       <p>No menu <strong>Contas</strong>, clique em <strong>Conectar Instagram</strong>. O
@@ -686,9 +689,7 @@ Verify token:   <span class="g">o mesmo valor que você colocou em META_VERIFY_T
     <div>
       <h4>Acompanhe o resultado</h4>
       <p><strong>Logs</strong> mostra cada mensagem processada, com status e palavra-chave.
-      <strong>Dashboard</strong> reúne as métricas e o gráfico de atividade. Se quiser ligar
-      com o <strong>n8n</strong>, isso fica em <strong>Configurações</strong> — cole a URL do
-      seu workflow, ative o switch e use “Enviar teste”.</p>
+      <strong>Dashboard</strong> reúne as métricas e o gráfico de atividade.</p>
     </div>
   </div>
 
@@ -765,7 +766,7 @@ Verify token:   <span class="g">o mesmo valor que você colocou em META_VERIFY_T
         <div class="check"><div class="box"></div><p>App criado na Meta, com ID e Secret copiados</p></div>
         <div class="check"><div class="box"></div><p>Repositório copiado no GitHub e importado na Vercel</p></div>
         <div class="check"><div class="box"></div><p>Redirect URI e webhook ligados à URL da Vercel</p></div>
-        <div class="check"><div class="box"></div><p>Cadastro travado (<span class="mono" style="font-size:8px;">SIGNUP_ENABLED=false</span>)</p></div>
+        <div class="check"><div class="box"></div><p>Sua conta criada (o cadastro trava sozinho)</p></div>
         <div class="check"><div class="box"></div><p>Conta conectada e primeira regra testada</p></div>
       </div>
       <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border);">
@@ -775,7 +776,7 @@ Verify token:   <span class="g">o mesmo valor que você colocou em META_VERIFY_T
     </div>
   </div>
 
-  <div class="page-foot"><span>INSTAREPLY · GUIA DE INSTALAÇÃO · V2.1</span><span class="num">09 / 09</span></div>
+  <div class="page-foot"><span>INSTAREPLY · GUIA DE INSTALAÇÃO · V2.2</span><span class="num">09 / 09</span></div>
 </section>
 
 </body>

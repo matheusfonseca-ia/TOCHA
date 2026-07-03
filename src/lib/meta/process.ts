@@ -1,5 +1,4 @@
 import { decryptToken } from "@/lib/crypto";
-import { fireN8nWebhook } from "@/lib/n8n";
 import { clampDelay, findMatchingRule } from "@/lib/rules/engine";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sleep } from "@/lib/utils";
@@ -42,7 +41,7 @@ export interface MetaWebhookPayload {
  *  5. anti-duplicidade            → mesma regra nunca 2x para o mesmo usuário
  *  6. janela de 24h               → mensagens atrasadas não são respondidas
  *  7. delay 2–5s + envio          → simula digitação humana
- *  8. log + webhook n8n           → toda mensagem processada gera evento
+ *  8. log                        → toda mensagem processada é registrada
  */
 export async function processWebhookPayload(
   payload: MetaWebhookPayload
@@ -116,7 +115,7 @@ async function processMessagingEvent(
     errorDetail = result.errorDetail ?? null;
   }
 
-  // 8a. Log da interação
+  // 8. Log da interação
   await admin.from("interactions").insert({
     account_id: account.id,
     ig_sender_id: senderId,
@@ -128,32 +127,6 @@ async function processMessagingEvent(
     error_detail: errorDetail,
     latency_ms: Date.now() - startedAt,
   });
-
-  // 8b. Webhook n8n do dono da conta
-  const { data: settings } = await admin
-    .from("user_settings")
-    .select("n8n_webhook_url, n8n_enabled")
-    .eq("user_id", account.user_id)
-    .maybeSingle();
-
-  if (settings?.n8n_enabled && settings.n8n_webhook_url) {
-    await fireN8nWebhook(settings.n8n_webhook_url, {
-      event: "message_processed",
-      timestamp: new Date().toISOString(),
-      account: {
-        ig_user_id: account.ig_user_id,
-        ig_username: account.ig_username,
-      },
-      sender_id: senderId,
-      message_text: message.text,
-      result: {
-        status,
-        matched_keyword: rule?.keyword ?? null,
-        rule_id: rule?.id ?? null,
-        reply_type: rule ? rule.reply_type : null,
-      },
-    });
-  }
 }
 
 async function applyRule(

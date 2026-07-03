@@ -7,7 +7,6 @@ import {
   LayoutDashboard,
   LogOut,
   ScrollText,
-  Settings,
   Zap,
 } from "lucide-react";
 
@@ -21,7 +20,6 @@ const NAV_ITEMS = [
   { href: "/rules", label: "Automação", icon: Zap },
   { href: "/accounts", label: "Contas", icon: Instagram },
   { href: "/logs", label: "Logs", icon: ScrollText },
-  { href: "/settings", label: "Configurações", icon: Settings },
 ];
 
 export function Sidebar({ userEmail }: { userEmail: string }) {

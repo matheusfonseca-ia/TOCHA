@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { isSignupEnabled } from "@/lib/config";
+import { isSignupOpen } from "@/lib/config";
 import { createClient } from "@/lib/supabase/server";
 
 const credentialsSchema = z.object({
@@ -36,7 +36,7 @@ export async function signIn(formData: FormData): Promise<AuthResult> {
 }
 
 export async function signUp(formData: FormData): Promise<AuthResult> {
-  if (!isSignupEnabled()) {
+  if (!(await isSignupOpen())) {
     return { error: "O cadastro está desativado nesta instalação." };
   }
 

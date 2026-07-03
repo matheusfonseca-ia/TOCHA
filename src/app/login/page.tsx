@@ -1,10 +1,10 @@
 import { LoginForm } from "@/components/auth/login-form";
-import { isSignupEnabled } from "@/lib/config";
+import { isSignupOpen } from "@/lib/config";
 
-// Lê SIGNUP_ENABLED a cada request — trocar a env + reiniciar já
-// atualiza a tela, sem precisar de rebuild.
+// Verifica a cada request se já existe alguém cadastrado — assim que a
+// primeira conta é criada, a aba de cadastro some para sempre.
 export const dynamic = "force-dynamic";
 
-export default function LoginPage() {
-  return <LoginForm signupEnabled={isSignupEnabled()} />;
+export default async function LoginPage() {
+  return <LoginForm signupEnabled={await isSignupOpen()} />;
 }

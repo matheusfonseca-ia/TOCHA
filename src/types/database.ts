@@ -65,10 +65,3 @@ export interface Interaction {
   latency_ms: number | null;
   created_at: string;
 }
-
-export interface UserSettings {
-  user_id: string;
-  n8n_webhook_url: string | null;
-  n8n_enabled: boolean;
-  updated_at: string;
-}
