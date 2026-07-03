@@ -48,7 +48,7 @@ export function AccountCard({ account, index = 0 }: AccountCardProps) {
 
   return (
     <Card
-      className="card-hover stagger-item"
+      className="stagger-item"
       style={{ "--stagger-index": index } as React.CSSProperties}
     >
       <CardContent className="flex items-center gap-4 p-5">
@@ -57,20 +57,22 @@ export function AccountCard({ account, index = 0 }: AccountCardProps) {
           <img
             src={account.profile_picture_url}
             alt={`@${account.ig_username}`}
-            className="h-12 w-12 rounded-full border-2 border-primary/40 object-cover"
+            className="h-10 w-10 rounded-full border border-border object-cover"
           />
         ) : (
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/15">
-            <Instagram className="h-6 w-6 text-primary" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-full border border-border/70 bg-secondary/40">
+            <Instagram className="h-5 w-5 text-muted-foreground" />
           </div>
         )}
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <p className="truncate font-semibold">@{account.ig_username}</p>
+            <p className="truncate text-sm font-semibold">
+              @{account.ig_username}
+            </p>
             <Badge variant={badge.variant}>{badge.label}</Badge>
           </div>
-          <p className="truncate text-xs text-muted-foreground">
+          <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {account.page_name ? `Página: ${account.page_name} · ` : ""}
             Conectada em{" "}
             {format(new Date(account.connected_at), "dd MMM yyyy", {

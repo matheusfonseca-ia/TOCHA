@@ -12,7 +12,6 @@ import {
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { signOut } from "@/app/login/actions";
 
 const NAV_ITEMS = [
@@ -26,21 +25,19 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r bg-card/60 backdrop-blur-xl">
+    <aside className="fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-border/70 bg-card/40">
       {/* Logo */}
-      <div className="flex h-16 items-center gap-2.5 px-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary glow-primary">
-          <Zap className="h-4 w-4 text-white" fill="currentColor" />
+      <div className="flex h-14 items-center gap-2.5 border-b border-border/70 px-5">
+        <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary">
+          <Zap className="h-3.5 w-3.5 text-white" fill="currentColor" />
         </div>
-        <span className="font-display text-lg font-bold tracking-tight">
-          Insta<span className="text-gradient">Reply</span>
+        <span className="font-display text-[15px] font-semibold tracking-tight">
+          InstaReply
         </span>
       </div>
 
-      <Separator />
-
       {/* Navegação */}
-      <nav className="flex-1 space-y-1 p-3">
+      <nav className="flex-1 space-y-0.5 px-3 py-4">
         {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href);
           return (
@@ -48,16 +45,18 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
               key={href}
               href={href}
               className={cn(
-                "group flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-all",
+                "group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",
                 active
-                  ? "bg-primary/15 text-foreground shadow-[inset_2px_0_0_0_hsl(258_90%_66%)]"
-                  : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                  ? "bg-secondary/70 text-foreground"
+                  : "text-muted-foreground hover:bg-secondary/40 hover:text-foreground"
               )}
             >
               <Icon
                 className={cn(
-                  "h-[18px] w-[18px] transition-colors",
-                  active ? "text-primary" : "group-hover:text-primary/80"
+                  "h-4 w-4 transition-colors",
+                  active
+                    ? "text-primary"
+                    : "text-muted-foreground/70 group-hover:text-muted-foreground"
                 )}
               />
               {label}
@@ -67,28 +66,26 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
       </nav>
 
       {/* Status + usuário */}
-      <div className="space-y-3 p-3">
-        <div className="flex items-center gap-2 rounded-md bg-background/50 px-3 py-2">
-          <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse-dot" />
+      <div className="border-t border-border/70 p-3">
+        <div className="flex items-center gap-2 px-2.5 py-1.5">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse-dot" />
           <span className="text-xs text-muted-foreground">
             Automações ativas
           </span>
         </div>
-        <Separator />
-        <div className="flex items-center justify-between gap-2 px-1">
-          <div className="min-w-0">
-            <p className="truncate text-xs font-medium">{userEmail}</p>
-            <p className="text-[11px] text-muted-foreground">Plano Free</p>
-          </div>
+        <div className="mt-1 flex items-center justify-between gap-2 px-2.5 py-1">
+          <p className="truncate text-[13px] text-muted-foreground" title={userEmail}>
+            {userEmail}
+          </p>
           <form action={signOut}>
             <Button
               variant="ghost"
               size="icon"
               type="submit"
               title="Sair"
-              className="text-muted-foreground hover:text-destructive"
+              className="h-7 w-7 shrink-0 text-muted-foreground/70 hover:text-foreground"
             >
-              <LogOut className="h-4 w-4" />
+              <LogOut className="h-3.5 w-3.5" />
             </Button>
           </form>
         </div>

@@ -3,9 +3,10 @@ import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { ScrollText } from "lucide-react";
 
+import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatusBadge } from "@/components/status-badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -57,7 +58,7 @@ export default async function LogsPage({
         description="Últimas 100 interações processadas pelo webhook."
       />
 
-      <div className="mb-5 flex flex-wrap gap-2">
+      <div className="mb-5 inline-flex flex-wrap items-center gap-0.5 rounded-lg border border-border/70 bg-card p-1">
         {FILTERS.map((f) => {
           const active = statusFilter === f.value;
           return (
@@ -65,10 +66,10 @@ export default async function LogsPage({
               key={f.value}
               href={f.value ? `/logs?status=${f.value}` : "/logs"}
               className={cn(
-                "rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors",
+                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
                 active
-                  ? "border-primary/60 bg-primary/15 text-foreground"
-                  : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                  ? "bg-secondary text-foreground shadow-[0_1px_2px_0_rgb(0_0_0/0.3)]"
+                  : "text-muted-foreground hover:text-foreground"
               )}
             >
               {f.label}
@@ -78,22 +79,11 @@ export default async function LogsPage({
       </div>
 
       {logs.length === 0 ? (
-        <Card className="animate-fade-up">
-          <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15">
-              <ScrollText className="h-7 w-7 text-primary" />
-            </div>
-            <div className="space-y-1">
-              <h2 className="font-display text-lg font-semibold">
-                Nenhum log ainda
-              </h2>
-              <p className="max-w-sm text-sm text-muted-foreground">
-                Quando alguém enviar uma DM para uma conta conectada, cada
-                mensagem processada aparece aqui.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={ScrollText}
+          title="Nenhum log ainda"
+          description="Quando alguém enviar uma DM para uma conta conectada, cada mensagem processada aparece aqui."
+        />
       ) : (
         <Card className="animate-fade-up overflow-hidden">
           <Table>
@@ -136,11 +126,11 @@ export default async function LogsPage({
                   </TableCell>
                   <TableCell>
                     {log.matched_keyword ? (
-                      <span className="font-mono text-xs text-primary">
+                      <code className="rounded border border-border/70 bg-secondary/40 px-1.5 py-0.5 font-mono text-[11px]">
                         {log.matched_keyword}
-                      </span>
+                      </code>
                     ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
+                      <span className="text-xs text-muted-foreground/50">—</span>
                     )}
                   </TableCell>
                   <TableCell>

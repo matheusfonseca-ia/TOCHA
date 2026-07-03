@@ -14,9 +14,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/empty-state";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -216,26 +216,16 @@ export function RulesManager({
       </div>
 
       {rules.length === 0 ? (
-        <Card className="animate-fade-up">
-          <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15">
-              <Zap className="h-7 w-7 text-primary" />
-            </div>
-            <div className="space-y-1">
-              <h2 className="font-display text-lg font-semibold">
-                Nenhuma regra criada
-              </h2>
-              <p className="max-w-sm text-sm text-muted-foreground">
-                Crie sua primeira regra: se alguém enviar uma palavra-chave, o
-                InstaReply responde na hora.
-              </p>
-            </div>
-            <Button onClick={openCreate}>
-              <Plus />
-              Criar primeira regra
-            </Button>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={Zap}
+          title="Nenhuma regra criada"
+          description="Crie sua primeira regra: se alguém enviar uma palavra-chave, o InstaReply responde na hora."
+        >
+          <Button onClick={openCreate}>
+            <Plus />
+            Criar primeira regra
+          </Button>
+        </EmptyState>
       ) : (
         <Card className="animate-fade-up overflow-hidden">
           <Table>
@@ -256,17 +246,17 @@ export function RulesManager({
                   <TableRow key={rule.id}>
                     <TableCell>
                       <div className="space-y-1">
-                        <Badge className="font-mono text-[13px]">
+                        <code className="inline-block rounded-md border border-border/70 bg-secondary/40 px-2 py-0.5 font-mono text-xs">
                           {rule.keyword}
-                        </Badge>
-                        <p className="text-[11px] text-muted-foreground">
+                        </code>
+                        <p className="text-[11px] text-muted-foreground/80">
                           {MATCH_LABELS[rule.match_type]}
                         </p>
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="flex items-start gap-2">
-                        <ReplyIcon className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                        <ReplyIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/60" />
                         <div className="min-w-0">
                           <p className="max-w-[260px] truncate text-sm">
                             {rule.reply_type === "image"
@@ -274,7 +264,7 @@ export function RulesManager({
                               : (rule.reply_text ?? "")}
                           </p>
                           {rule.reply_type === "buttons" && (
-                            <p className="text-[11px] text-muted-foreground">
+                            <p className="text-[11px] text-muted-foreground/80">
                               {(rule.reply_buttons ?? []).length} botão(ões)
                             </p>
                           )}

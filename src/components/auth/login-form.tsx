@@ -35,16 +35,16 @@ export function LoginForm({ signupEnabled }: { signupEnabled: boolean }) {
 
   return (
     <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-8 animate-fade-up">
+      <div className="w-full max-w-sm space-y-8 animate-fade-up">
         <div className="flex flex-col items-center gap-3">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary glow-primary">
-            <Zap className="h-7 w-7 text-white" fill="currentColor" />
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary shadow-[inset_0_1px_0_0_rgb(255_255_255/0.15)]">
+            <Zap className="h-5 w-5 text-white" fill="currentColor" />
           </div>
-          <h1 className="font-display text-3xl font-bold tracking-tight">
-            Insta<span className="text-gradient">Reply</span>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">
+            InstaReply
           </h1>
           <p className="text-center text-sm text-muted-foreground">
-            Auto-resposta inteligente para DMs do Instagram
+            Auto-resposta para DMs do Instagram
           </p>
         </div>
 
@@ -68,7 +68,7 @@ export function LoginForm({ signupEnabled }: { signupEnabled: boolean }) {
                 <TabsContent value="signup" className="mt-4">
                   <CardTitle className="text-base">Crie sua conta</CardTitle>
                   <CardDescription className="mt-1">
-                    Depois de entrar, trave o cadastro com SIGNUP_ENABLED=false.
+                    O cadastro fecha sozinho depois da primeira conta.
                   </CardDescription>
                 </TabsContent>
               </Tabs>

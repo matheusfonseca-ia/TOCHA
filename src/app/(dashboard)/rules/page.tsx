@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { Instagram } from "lucide-react";
 
+import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
 import {
   RulesManager,
   type RuleWithAccount,
 } from "@/components/rules/rules-manager";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function RulesPage() {
@@ -37,25 +37,15 @@ export default async function RulesPage() {
       />
 
       {accounts.length === 0 ? (
-        <Card className="animate-fade-up">
-          <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15">
-              <Instagram className="h-7 w-7 text-primary" />
-            </div>
-            <div className="space-y-1">
-              <h2 className="font-display text-lg font-semibold">
-                Conecte uma conta primeiro
-              </h2>
-              <p className="max-w-sm text-sm text-muted-foreground">
-                As regras de automação precisam de uma conta do Instagram
-                conectada.
-              </p>
-            </div>
-            <Button asChild>
-              <Link href="/accounts">Conectar Instagram</Link>
-            </Button>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={Instagram}
+          title="Conecte uma conta primeiro"
+          description="As regras de automação precisam de uma conta do Instagram conectada."
+        >
+          <Button asChild>
+            <Link href="/accounts">Conectar Instagram</Link>
+          </Button>
+        </EmptyState>
       ) : (
         <RulesManager rules={rules} accounts={accounts} />
       )}

@@ -60,7 +60,7 @@ const config: Config = {
       },
       keyframes: {
         "fade-up": {
-          from: { opacity: "0", transform: "translateY(12px)" },
+          from: { opacity: "0", transform: "translateY(6px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
         "pulse-dot": {
@@ -69,8 +69,8 @@ const config: Config = {
         },
       },
       animation: {
-        "fade-up": "fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both",
-        "pulse-dot": "pulse-dot 2s ease-in-out infinite",
+        "fade-up": "fade-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) both",
+        "pulse-dot": "pulse-dot 2.5s ease-in-out infinite",
       },
     },
   },

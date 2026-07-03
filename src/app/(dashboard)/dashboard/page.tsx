@@ -14,6 +14,7 @@ import {
   type ActivityPoint,
 } from "@/components/dashboard/activity-chart";
 import { MetricCard } from "@/components/dashboard/metric-card";
+import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
@@ -44,25 +45,15 @@ export default async function DashboardPage() {
           title="Dashboard"
           description="Visão geral das suas automações."
         />
-        <Card className="animate-fade-up">
-          <CardContent className="flex flex-col items-center gap-4 py-16 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15">
-              <Instagram className="h-7 w-7 text-primary" />
-            </div>
-            <div className="space-y-1">
-              <h2 className="font-display text-lg font-semibold">
-                Nenhuma conta conectada
-              </h2>
-              <p className="max-w-sm text-sm text-muted-foreground">
-                Conecte uma conta do Instagram para começar a responder DMs
-                automaticamente.
-              </p>
-            </div>
-            <Button asChild>
-              <Link href="/accounts">Conectar Instagram</Link>
-            </Button>
-          </CardContent>
-        </Card>
+        <EmptyState
+          icon={Instagram}
+          title="Nenhuma conta conectada"
+          description="Conecte uma conta do Instagram para começar a responder DMs automaticamente."
+        >
+          <Button asChild>
+            <Link href="/accounts">Conectar Instagram</Link>
+          </Button>
+        </EmptyState>
       </>
     );
   }
@@ -196,7 +187,7 @@ export default async function DashboardPage() {
             <CardTitle>Atividade recente</CardTitle>
             <CardDescription>Últimas interações processadas</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-3">
+          <CardContent className="pb-3">
             {recent.length === 0 && (
               <p className="py-8 text-center text-sm text-muted-foreground">
                 Nenhuma interação ainda. Assim que alguém enviar uma DM, ela
@@ -206,20 +197,20 @@ export default async function DashboardPage() {
             {recent.map((item) => (
               <div
                 key={item.id}
-                className="flex items-center justify-between gap-3 rounded-md bg-background/40 px-3 py-2.5"
+                className="flex items-center justify-between gap-3 border-b border-border/50 py-3 last:border-0"
               >
                 <div className="min-w-0">
                   <p className="truncate text-sm">
                     {item.message_text ?? "(sem texto)"}
                   </p>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="mt-0.5 text-[11px] text-muted-foreground/80">
                     {format(new Date(item.created_at), "dd MMM, HH:mm", {
                       locale: ptBR,
                     })}
                     {item.matched_keyword && (
                       <>
                         {" · "}
-                        <span className="font-mono text-primary">
+                        <span className="font-mono">
                           {item.matched_keyword}
                         </span>
                       </>
