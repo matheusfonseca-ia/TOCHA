@@ -317,11 +317,6 @@ export function ResponderDmBuilder({
             replyText={message}
             links={previewLinks}
           />
-          <div className="mt-3 flex justify-center">
-            <span className="inline-flex items-center rounded-full border border-border/70 bg-secondary/40 px-3 py-1 text-xs font-medium text-muted-foreground">
-              DM
-            </span>
-          </div>
         </div>
       </div>
     </div>
