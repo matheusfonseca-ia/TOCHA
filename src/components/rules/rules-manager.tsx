@@ -6,6 +6,7 @@ import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Image as ImageIcon,
+  MessageCircle,
   MessageSquareText,
   MoreHorizontal,
   MousePointerClick,
@@ -136,7 +137,7 @@ function formFromRule(rule: RuleWithAccount): FormState {
     id: rule.id,
     name: rule.name ?? "",
     account_id: rule.account_id,
-    keyword: rule.keyword,
+    keyword: rule.keyword ?? "",
     match_type: rule.match_type,
     reply_type: rule.reply_type,
     reply_text: rule.reply_text ?? "",
@@ -213,8 +214,8 @@ export function RulesManager({
   }
 
   function handleDelete(rule: RuleWithAccount) {
-    if (!window.confirm(`Excluir a automação "${rule.name || rule.keyword}"?`))
-      return;
+    const label = rule.name || rule.keyword || "esta automação";
+    if (!window.confirm(`Excluir a automação "${label}"?`)) return;
     startTransition(async () => {
       const result = await deleteRule(rule.id);
       if (result.error) toast.error(result.error);
@@ -283,10 +284,16 @@ export function RulesManager({
             <TableBody>
               {filteredRules.map((rule) => {
                 const ReplyIcon = REPLY_ICONS[rule.reply_type];
-                const title = rule.name?.trim() || rule.keyword;
-                const subtitle = rule.name?.trim()
-                  ? `${rule.keyword} · ${MATCH_LABELS[rule.match_type]}`
+                const isComment = rule.trigger_type === "comment";
+                const keywordLabel =
+                  rule.keyword ?? (isComment ? "Qualquer comentário" : "");
+                const title = rule.name?.trim() || keywordLabel || "Sem nome";
+                const matchLabel = rule.comment_any_word
+                  ? "Qualquer comentário"
                   : MATCH_LABELS[rule.match_type];
+                const subtitle = rule.name?.trim()
+                  ? `${keywordLabel} · ${matchLabel}`
+                  : matchLabel;
                 return (
                   <TableRow key={rule.id}>
                     <TableCell>
@@ -295,6 +302,11 @@ export function RulesManager({
                           <Badge variant={rule.is_active ? "success" : "muted"}>
                             {rule.is_active ? "Ativa" : "Pausada"}
                           </Badge>
+                          {isComment ? (
+                            <MessageCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+                          ) : (
+                            <MessageSquareText className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
+                          )}
                           <span className="max-w-[220px] truncate text-sm font-medium">
                             {title}
                           </span>

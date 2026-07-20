@@ -14,6 +14,7 @@ const GRAPH = `https://graph.instagram.com/${VERSION}`;
 const SCOPES = [
   "instagram_business_basic",
   "instagram_business_manage_messages",
+  "instagram_business_manage_comments",
 ].join(",");
 
 export function getRedirectUri(): string {

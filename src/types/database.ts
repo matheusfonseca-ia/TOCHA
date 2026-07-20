@@ -1,6 +1,8 @@
 export type AccountStatus = "active" | "expired" | "disconnected";
 export type MatchType = "exact" | "contains" | "starts_with";
 export type ReplyType = "text" | "image" | "buttons";
+export type TriggerType = "dm" | "comment";
+export type MediaMode = "specific" | "any";
 export type InteractionStatus =
   | "replied"
   | "no_match"
@@ -11,6 +13,15 @@ export type InteractionStatus =
 export interface ReplyButton {
   title: string;
   url: string;
+}
+
+/** Snapshot de uma publicação/Reel escolhido como gatilho (evita nova chamada à Graph API só para exibir a lista). */
+export interface MediaRef {
+  id: string;
+  media_type: string;
+  thumbnail_url: string | null;
+  permalink: string | null;
+  caption: string | null;
 }
 
 export interface IgAccount {
@@ -32,8 +43,19 @@ export interface Rule {
   id: string;
   account_id: string;
   name: string | null;
-  keyword: string;
+  trigger_type: TriggerType;
+  keyword: string | null;
   match_type: MatchType;
+  /** Só relevante para trigger_type "comment". */
+  media_mode: MediaMode | null;
+  media_refs: MediaRef[] | null;
+  comment_any_word: boolean;
+  public_reply_enabled: boolean;
+  public_reply_text: string | null;
+  /** 1ª mensagem do fluxo de comentário (resposta privada + botão postback). */
+  welcome_text: string | null;
+  welcome_button_label: string | null;
+  /** 2ª mensagem: em regras "dm" é a resposta direta; em "comment" é o que chega ao tocar no botão. */
   reply_type: ReplyType;
   reply_text: string | null;
   reply_image_url: string | null;

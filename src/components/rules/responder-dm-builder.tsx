@@ -20,6 +20,12 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import {
+  deriveTitleFromUrl,
+  emptyLink,
+  normalizeUrl,
+  type LinkSlot,
+} from "@/lib/rules/links";
 import { saveRule, type RuleInput } from "@/app/(dashboard)/rules/actions";
 
 const EXAMPLES = ["Preço", "Link", "Comprar"];
@@ -28,31 +34,6 @@ interface AccountOption {
   id: string;
   ig_username: string;
   profile_picture_url: string | null;
-}
-
-interface LinkSlot {
-  title: string;
-  url: string;
-  touched: boolean;
-}
-
-function emptyLink(): LinkSlot {
-  return { title: "", url: "", touched: false };
-}
-
-function deriveTitleFromUrl(rawUrl: string): string {
-  const withScheme = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
-  try {
-    const host = new URL(withScheme).hostname.replace(/^www\./, "");
-    return host.slice(0, 20);
-  } catch {
-    return "";
-  }
-}
-
-function normalizeUrl(rawUrl: string): string {
-  const trimmed = rawUrl.trim();
-  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
 export function ResponderDmBuilder({
