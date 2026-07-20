@@ -4,6 +4,8 @@ import type { MatchType, Rule } from "@/types/database";
  * Motor de matching de palavras-chave.
  * Normalização: minúsculas, sem acentos, espaços colapsados —
  * "Preço", "preco" e "  PREÇO " casam com a keyword "preco".
+ * A keyword aceita múltiplos termos separados por vírgula — basta um
+ * termo casar (OR) para a regra disparar.
  */
 export function normalizeText(text: string): string {
   return text
@@ -20,17 +22,21 @@ export function keywordMatches(
   matchType: MatchType
 ): boolean {
   const msg = normalizeText(message);
-  const kw = normalizeText(keyword);
-  if (!kw) return false;
+  const terms = keyword
+    .split(",")
+    .map((term) => normalizeText(term))
+    .filter(Boolean);
 
-  switch (matchType) {
-    case "exact":
-      return msg === kw;
-    case "starts_with":
-      return msg.startsWith(kw);
-    case "contains":
-      return msg.includes(kw);
-  }
+  return terms.some((kw) => {
+    switch (matchType) {
+      case "exact":
+        return msg === kw;
+      case "starts_with":
+        return msg.startsWith(kw);
+      case "contains":
+        return msg.includes(kw);
+    }
+  });
 }
 
 /**

@@ -8,7 +8,7 @@
  * em ~60 dias — renovado automaticamente em process.ts.
  */
 
-const VERSION = process.env.META_GRAPH_VERSION ?? "v21.0";
+const VERSION = process.env.META_GRAPH_VERSION ?? "v25.0";
 const GRAPH = `https://graph.instagram.com/${VERSION}`;
 
 const SCOPES = [

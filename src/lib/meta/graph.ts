@@ -6,7 +6,7 @@ import type { ReplyButton } from "@/types/database";
  * token da conta profissional (Login do Instagram).
  */
 
-const VERSION = process.env.META_GRAPH_VERSION ?? "v21.0";
+const VERSION = process.env.META_GRAPH_VERSION ?? "v25.0";
 const BASE = `https://graph.instagram.com/${VERSION}`;
 
 export class GraphApiError extends Error {

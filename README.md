@@ -56,7 +56,7 @@ e use a URL gerada em `NEXT_PUBLIC_APP_URL`, no OAuth Redirect URI e no webhook 
 | `INSTAGRAM_APP_SECRET` | Instagram App Secret ⚠️ segredo | App Meta → produto Instagram → Business login settings |
 | `META_APP_SECRET` | Segredo geral do app (assina os webhooks) ⚠️ segredo | App Meta → Settings → Basic |
 | `META_VERIFY_TOKEN` | Senha do webhook (você inventa) | O mesmo valor nos dois lados |
-| `META_GRAPH_VERSION` | Versão da Graph API | `v21.0` |
+| `META_GRAPH_VERSION` | Versão da Graph API | `v25.0` |
 | `NEXT_PUBLIC_APP_URL` | URL pública da sua instalação | Domínio da Vercel ou ngrok |
 | `TOKEN_ENCRYPTION_KEY` | Criptografa tokens no banco | `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 
