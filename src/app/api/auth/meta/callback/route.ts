@@ -2,11 +2,11 @@ import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { encryptToken } from "@/lib/crypto";
-import { subscribePageToWebhooks } from "@/lib/meta/graph";
+import { subscribeAccountToWebhooks } from "@/lib/meta/graph";
 import {
   exchangeCodeForToken,
+  getInstagramProfile,
   getLongLivedToken,
-  getPagesWithInstagram,
 } from "@/lib/meta/oauth";
 import { createClient } from "@/lib/supabase/server";
 
@@ -21,7 +21,7 @@ function redirectToAccounts(params: string) {
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
 
-  // Usuário negou a autorização no diálogo do Facebook
+  // Usuário negou a autorização no diálogo do Instagram
   if (searchParams.get("error")) {
     return redirectToAccounts("error=oauth_denied");
   }
@@ -49,59 +49,46 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // code → token curto → token longo (~60 dias) → páginas com IG Business
-    const shortToken = await exchangeCodeForToken(code);
-    const { token: longToken } = await getLongLivedToken(shortToken);
-    const pages = await getPagesWithInstagram(longToken);
+    // code → token curto → token longo (~60 dias) → perfil da conta
+    const { token: shortToken } = await exchangeCodeForToken(code);
+    const { token: longToken, expiresIn } = await getLongLivedToken(shortToken);
+    const profile = await getInstagramProfile(longToken);
 
-    if (pages.length === 0) {
-      return redirectToAccounts("error=no_ig_account");
-    }
-
-    let connected = 0;
-
-    for (const page of pages) {
-      const ig = page.instagram_business_account!;
-
-      // Necessário para o Meta entregar eventos de mensagens desta página
-      try {
-        await subscribePageToWebhooks(page.id, page.access_token);
-      } catch (err) {
-        console.warn(
-          `[oauth] falha ao inscrever página ${page.id} no webhook:`,
-          err instanceof Error ? err.message : err
-        );
-      }
-
-      // RLS (with check user_id = auth.uid()) garante a posse da linha
-      const { error } = await supabase.from("ig_accounts").upsert(
-        {
-          user_id: user.id,
-          ig_user_id: ig.id,
-          ig_username: ig.username,
-          page_id: page.id,
-          page_name: page.name,
-          profile_picture_url: ig.profile_picture_url ?? null,
-          access_token_enc: encryptToken(page.access_token),
-          token_expires_at: null,
-          status: "active",
-          connected_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,ig_user_id" }
+    // Necessário para o Meta entregar eventos de mensagens desta conta
+    try {
+      await subscribeAccountToWebhooks(longToken);
+    } catch (err) {
+      console.warn(
+        `[oauth] falha ao inscrever @${profile.username} no webhook:`,
+        err instanceof Error ? err.message : err
       );
-
-      if (error) {
-        console.error("[oauth] erro ao salvar conta:", error.message);
-      } else {
-        connected++;
-      }
     }
 
-    if (connected === 0) {
+    // RLS (with check user_id = auth.uid()) garante a posse da linha
+    const { error } = await supabase.from("ig_accounts").upsert(
+      {
+        user_id: user.id,
+        ig_user_id: profile.igUserId,
+        ig_username: profile.username,
+        page_id: null,
+        page_name: null,
+        profile_picture_url: profile.profilePictureUrl,
+        access_token_enc: encryptToken(longToken),
+        token_expires_at: expiresIn
+          ? new Date(Date.now() + expiresIn * 1000).toISOString()
+          : null,
+        status: "active",
+        connected_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,ig_user_id" }
+    );
+
+    if (error) {
+      console.error("[oauth] erro ao salvar conta:", error.message);
       return redirectToAccounts("error=unknown");
     }
 
-    return redirectToAccounts(`connected=${connected}`);
+    return redirectToAccounts("connected=1");
   } catch (err) {
     console.error("[oauth] callback falhou:", err);
     return redirectToAccounts("error=exchange_failed");

@@ -1,9 +1,13 @@
 import type { ReplyButton } from "@/types/database";
 
-/** Wrapper mínimo sobre a Meta Graph API (envio de mensagens do Instagram). */
+/**
+ * Wrapper mínimo sobre a API do Instagram (graph.instagram.com) —
+ * envio de mensagens e inscrição da conta nos webhooks, sempre com o
+ * token da conta profissional (Login do Instagram).
+ */
 
 const VERSION = process.env.META_GRAPH_VERSION ?? "v21.0";
-const BASE = `https://graph.facebook.com/${VERSION}`;
+const BASE = `https://graph.instagram.com/${VERSION}`;
 
 export class GraphApiError extends Error {
   constructor(
@@ -45,35 +49,34 @@ async function graphPost(
 }
 
 function sendMessage(
-  pageToken: string,
+  igToken: string,
   recipientId: string,
   message: Record<string, unknown>
 ) {
-  return graphPost("me/messages", pageToken, {
+  return graphPost("me/messages", igToken, {
     recipient: { id: recipientId },
-    messaging_type: "RESPONSE",
     message,
   });
 }
 
-export function sendTextMessage(pageToken: string, recipientId: string, text: string) {
-  return sendMessage(pageToken, recipientId, { text: text.slice(0, 1000) });
+export function sendTextMessage(igToken: string, recipientId: string, text: string) {
+  return sendMessage(igToken, recipientId, { text: text.slice(0, 1000) });
 }
 
-export function sendImageMessage(pageToken: string, recipientId: string, imageUrl: string) {
-  return sendMessage(pageToken, recipientId, {
+export function sendImageMessage(igToken: string, recipientId: string, imageUrl: string) {
+  return sendMessage(igToken, recipientId, {
     attachment: { type: "image", payload: { url: imageUrl } },
   });
 }
 
 /** Botões via generic template (suportado no Instagram Messaging). */
 export function sendButtonsMessage(
-  pageToken: string,
+  igToken: string,
   recipientId: string,
   text: string,
   buttons: ReplyButton[]
 ) {
-  return sendMessage(pageToken, recipientId, {
+  return sendMessage(igToken, recipientId, {
     attachment: {
       type: "template",
       payload: {
@@ -93,9 +96,9 @@ export function sendButtonsMessage(
   });
 }
 
-/** Inscreve o app nos eventos de mensagens da página (necessário para o webhook). */
-export function subscribePageToWebhooks(pageId: string, pageToken: string) {
-  return graphPost(`${pageId}/subscribed_apps`, pageToken, {
+/** Inscreve a conta profissional nos eventos de mensagens (necessário para o webhook). */
+export function subscribeAccountToWebhooks(igToken: string) {
+  return graphPost("me/subscribed_apps", igToken, {
     subscribed_fields: "messages",
   });
 }

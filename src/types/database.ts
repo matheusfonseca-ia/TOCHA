@@ -18,7 +18,8 @@ export interface IgAccount {
   user_id: string;
   ig_user_id: string;
   ig_username: string;
-  page_id: string;
+  /** Legado do fluxo via Facebook; nulo em contas conectadas com Login do Instagram. */
+  page_id: string | null;
   page_name: string | null;
   profile_picture_url: string | null;
   access_token_enc: string;

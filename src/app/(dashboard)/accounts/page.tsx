@@ -15,11 +15,12 @@ import { createClient } from "@/lib/supabase/server";
 import type { IgAccount } from "@/types/database";
 
 const ERROR_MESSAGES: Record<string, string> = {
-  oauth_denied: "Autorização cancelada no Facebook.",
+  oauth_denied: "Autorização cancelada no Instagram.",
   invalid_state: "Sessão OAuth inválida. Tente novamente.",
   no_ig_account:
-    "Nenhuma conta IG Business encontrada. Vincule seu Instagram a uma Página do Facebook e use uma conta Profissional.",
-  exchange_failed: "Falha ao trocar o código OAuth. Verifique as credenciais do app Meta.",
+    "Conta incompatível. Use uma conta Profissional (Comercial ou Criador de Conteúdo).",
+  exchange_failed:
+    "Falha ao conectar. Confira INSTAGRAM_APP_ID/INSTAGRAM_APP_SECRET e se a conta aceitou o convite de testadora no painel Meta.",
   unknown: "Erro inesperado ao conectar. Tente novamente.",
 };
 
@@ -78,7 +79,7 @@ export default async function AccountsPage({
         <EmptyState
           icon={Instagram}
           title="Nenhuma conta conectada"
-          description="Clique em “Conectar Instagram” e autorize com o Facebook. É necessária uma conta IG Profissional vinculada a uma Página."
+          description="Clique em “Conectar Instagram” e autorize com a própria conta do Instagram. É necessária uma conta Profissional (Comercial ou Criador)."
         >
           <Button asChild>
             <a href="/api/auth/meta">
@@ -102,8 +103,8 @@ export default async function AccountsPage({
             Configuração do webhook no painel Meta
           </CardTitle>
           <CardDescription>
-            No app Meta (developers.facebook.com), em Webhooks → Instagram,
-            configure:
+            No app Meta (developers.facebook.com), no produto Instagram →
+            Configure webhooks, preencha:
           </CardDescription>
         </CardHeader>
         <CardContent className="text-sm">

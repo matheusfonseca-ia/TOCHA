@@ -1,15 +1,19 @@
-/** Fluxo OAuth do Meta (Facebook Login for Business) para conectar contas IG. */
+/**
+ * Fluxo OAuth "Login do Instagram para empresas"
+ * (Instagram API with Instagram Login — graph.instagram.com).
+ *
+ * Diferente do caminho antigo via Facebook, este funciona para a própria
+ * conta sem App Review: basta a conta ser testadora do app e o app estar
+ * em modo Live. O token é da conta profissional (não de Página) e expira
+ * em ~60 dias — renovado automaticamente em process.ts.
+ */
 
 const VERSION = process.env.META_GRAPH_VERSION ?? "v21.0";
-const GRAPH = `https://graph.facebook.com/${VERSION}`;
+const GRAPH = `https://graph.instagram.com/${VERSION}`;
 
 const SCOPES = [
-  "instagram_basic",
-  "instagram_manage_messages",
-  "pages_show_list",
-  "pages_manage_metadata",
-  "pages_messaging",
-  "business_management",
+  "instagram_business_basic",
+  "instagram_business_manage_messages",
 ].join(",");
 
 export function getRedirectUri(): string {
@@ -18,77 +22,126 @@ export function getRedirectUri(): string {
 
 export function getOAuthDialogUrl(state: string): string {
   const params = new URLSearchParams({
-    client_id: process.env.META_APP_ID!,
+    client_id: process.env.INSTAGRAM_APP_ID!,
     redirect_uri: getRedirectUri(),
     scope: SCOPES,
     response_type: "code",
     state,
   });
-  return `https://www.facebook.com/${VERSION}/dialog/oauth?${params}`;
+  return `https://www.instagram.com/oauth/authorize?${params}`;
 }
 
-async function graphGet<T>(url: string): Promise<T> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+async function igFetch<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, {
+    ...init,
+    signal: AbortSignal.timeout(15_000),
+  });
   const json = (await res.json().catch(() => ({}))) as T & {
     error?: { message?: string };
+    error_message?: string;
   };
-  if (!res.ok || json.error) {
-    throw new Error(json.error?.message ?? `Graph API respondeu ${res.status}`);
+  if (!res.ok || json.error || json.error_message) {
+    throw new Error(
+      json.error?.message ??
+        json.error_message ??
+        `API do Instagram respondeu ${res.status}`
+    );
   }
   return json;
 }
 
-export async function exchangeCodeForToken(code: string): Promise<string> {
-  const params = new URLSearchParams({
-    client_id: process.env.META_APP_ID!,
-    client_secret: process.env.META_APP_SECRET!,
+interface ShortLivedToken {
+  token: string;
+  igUserId: string;
+}
+
+/** code → token curto. A resposta vem embrulhada em `data[0]`. */
+export async function exchangeCodeForToken(
+  code: string
+): Promise<ShortLivedToken> {
+  const body = new URLSearchParams({
+    client_id: process.env.INSTAGRAM_APP_ID!,
+    client_secret: process.env.INSTAGRAM_APP_SECRET!,
+    grant_type: "authorization_code",
     redirect_uri: getRedirectUri(),
     code,
   });
-  const json = await graphGet<{ access_token: string }>(
-    `${GRAPH}/oauth/access_token?${params}`
+
+  type TokenPayload = { access_token: string; user_id: number | string };
+  const json = await igFetch<TokenPayload & { data?: TokenPayload[] }>(
+    "https://api.instagram.com/oauth/access_token",
+    { method: "POST", body }
   );
-  return json.access_token;
+
+  const payload = json.data?.[0] ?? json;
+  if (!payload.access_token) {
+    throw new Error("Resposta do Instagram sem access_token.");
+  }
+  return { token: payload.access_token, igUserId: String(payload.user_id) };
 }
 
+/** Token curto → token longo (~60 dias). */
 export async function getLongLivedToken(
   shortToken: string
 ): Promise<{ token: string; expiresIn: number | null }> {
   const params = new URLSearchParams({
-    grant_type: "fb_exchange_token",
-    client_id: process.env.META_APP_ID!,
-    client_secret: process.env.META_APP_SECRET!,
-    fb_exchange_token: shortToken,
+    grant_type: "ig_exchange_token",
+    client_secret: process.env.INSTAGRAM_APP_SECRET!,
+    access_token: shortToken,
   });
-  const json = await graphGet<{ access_token: string; expires_in?: number }>(
-    `${GRAPH}/oauth/access_token?${params}`
+  const json = await igFetch<{ access_token: string; expires_in?: number }>(
+    `https://graph.instagram.com/access_token?${params}`
   );
   return { token: json.access_token, expiresIn: json.expires_in ?? null };
 }
 
-export interface PageWithInstagram {
-  id: string;
-  name: string;
-  access_token: string;
-  instagram_business_account?: {
-    id: string;
-    username: string;
-    profile_picture_url?: string;
-  };
+/**
+ * Renova um token longo por mais ~60 dias.
+ * Só funciona com tokens válidos e com mais de 24h de vida.
+ */
+export async function refreshLongLivedToken(
+  token: string
+): Promise<{ token: string; expiresIn: number | null }> {
+  const params = new URLSearchParams({
+    grant_type: "ig_refresh_token",
+    access_token: token,
+  });
+  const json = await igFetch<{ access_token: string; expires_in?: number }>(
+    `https://graph.instagram.com/refresh_access_token?${params}`
+  );
+  return { token: json.access_token, expiresIn: json.expires_in ?? null };
 }
 
-/** Páginas do usuário que possuem conta IG Business vinculada. */
-export async function getPagesWithInstagram(
-  userToken: string
-): Promise<PageWithInstagram[]> {
+export interface InstagramProfile {
+  igUserId: string;
+  username: string;
+  profilePictureUrl: string | null;
+}
+
+/** Perfil da conta profissional dona do token. */
+export async function getInstagramProfile(
+  token: string
+): Promise<InstagramProfile> {
   const params = new URLSearchParams({
-    fields:
-      "id,name,access_token,instagram_business_account{id,username,profile_picture_url}",
-    limit: "50",
-    access_token: userToken,
+    fields: "user_id,username,profile_picture_url",
+    access_token: token,
   });
-  const json = await graphGet<{ data: PageWithInstagram[] }>(
-    `${GRAPH}/me/accounts?${params}`
-  );
-  return (json.data ?? []).filter((p) => p.instagram_business_account);
+  const json = await igFetch<{
+    id?: string;
+    user_id?: number | string;
+    username: string;
+    profile_picture_url?: string;
+  }>(`${GRAPH}/me?${params}`);
+
+  // user_id é o ID da conta profissional (o mesmo que chega nos webhooks);
+  // id é o ID app-scoped — serve de fallback.
+  const igUserId = json.user_id ?? json.id;
+  if (!igUserId || !json.username) {
+    throw new Error("Resposta do Instagram sem os dados do perfil.");
+  }
+  return {
+    igUserId: String(igUserId),
+    username: json.username,
+    profilePictureUrl: json.profile_picture_url ?? null,
+  };
 }
