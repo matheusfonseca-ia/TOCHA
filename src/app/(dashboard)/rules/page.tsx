@@ -2,7 +2,6 @@ import Link from "next/link";
 import { Instagram } from "lucide-react";
 
 import { EmptyState } from "@/components/empty-state";
-import { PageHeader } from "@/components/layout/page-header";
 import {
   RulesManager,
   type RuleWithAccount,
@@ -29,26 +28,42 @@ export default async function RulesPage() {
   const accounts = accountsRes.data ?? [];
   const rules = (rulesRes.data ?? []) as RuleWithAccount[];
 
-  return (
-    <>
-      <PageHeader
-        title="Automação"
-        description='Regras de palavra-chave: "Se receber X, responda Y".'
-      />
+  if (accounts.length === 0) {
+    return (
+      <EmptyState
+        icon={Instagram}
+        title="Conecte uma conta primeiro"
+        description="As regras de automação precisam de uma conta do Instagram conectada."
+      >
+        <Button asChild>
+          <Link href="/accounts">Conectar Instagram</Link>
+        </Button>
+      </EmptyState>
+    );
+  }
 
-      {accounts.length === 0 ? (
-        <EmptyState
-          icon={Instagram}
-          title="Conecte uma conta primeiro"
-          description="As regras de automação precisam de uma conta do Instagram conectada."
-        >
-          <Button asChild>
-            <Link href="/accounts">Conectar Instagram</Link>
-          </Button>
-        </EmptyState>
-      ) : (
-        <RulesManager rules={rules} accounts={accounts} />
-      )}
-    </>
+  const accountIds = accounts.map((a) => a.id);
+  const executionsRes =
+    rules.length > 0
+      ? await supabase
+          .from("interactions")
+          .select("matched_rule_id")
+          .in("account_id", accountIds)
+          .eq("status", "replied")
+          .not("matched_rule_id", "is", null)
+      : { data: [] };
+
+  const executionCounts = new Map<string, number>();
+  for (const row of executionsRes.data ?? []) {
+    const ruleId = row.matched_rule_id as string;
+    executionCounts.set(ruleId, (executionCounts.get(ruleId) ?? 0) + 1);
+  }
+
+  return (
+    <RulesManager
+      rules={rules}
+      accounts={accounts}
+      executionCounts={Object.fromEntries(executionCounts)}
+    />
   );
 }

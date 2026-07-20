@@ -31,6 +31,7 @@ export interface IgAccount {
 export interface Rule {
   id: string;
   account_id: string;
+  name: string | null;
   keyword: string;
   match_type: MatchType;
   reply_type: ReplyType;

@@ -13,6 +13,7 @@ const buttonSchema = z.object({
 const ruleSchema = z.object({
   id: z.string().uuid().optional(),
   account_id: z.string().uuid("Selecione uma conta."),
+  name: z.string().trim().max(80, "Nome muito longo.").optional(),
   keyword: z
     .string()
     .trim()
@@ -60,6 +61,7 @@ export async function saveRule(raw: RuleInput): Promise<ActionResult> {
 
   const row = {
     account_id: input.account_id,
+    name: input.name || null,
     keyword: input.keyword,
     match_type: input.match_type,
     reply_type: input.reply_type,

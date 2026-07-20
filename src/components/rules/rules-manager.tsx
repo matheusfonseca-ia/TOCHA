@@ -1,6 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
+import { formatDistanceToNow } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import {
   Image as ImageIcon,
   MessageSquareText,
@@ -8,6 +11,7 @@ import {
   MousePointerClick,
   Pencil,
   Plus,
+  Search,
   Timer,
   Trash2,
   Zap,
@@ -15,6 +19,7 @@ import {
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/empty-state";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -87,6 +92,7 @@ interface ButtonSlot {
 
 interface FormState {
   id?: string;
+  name: string;
   account_id: string;
   keyword: string;
   match_type: MatchType;
@@ -100,6 +106,7 @@ interface FormState {
 
 function emptyForm(defaultAccountId: string): FormState {
   return {
+    name: "",
     account_id: defaultAccountId,
     keyword: "",
     match_type: "contains",
@@ -127,6 +134,7 @@ function formFromRule(rule: RuleWithAccount): FormState {
   });
   return {
     id: rule.id,
+    name: rule.name ?? "",
     account_id: rule.account_id,
     keyword: rule.keyword,
     match_type: rule.match_type,
@@ -142,23 +150,29 @@ function formFromRule(rule: RuleWithAccount): FormState {
 export function RulesManager({
   rules,
   accounts,
+  executionCounts,
 }: {
   rules: RuleWithAccount[];
   accounts: AccountOption[];
+  executionCounts: Record<string, number>;
 }) {
   const [isPending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const [form, setForm] = useState<FormState>(() =>
     emptyForm(accounts[0]?.id ?? "")
   );
 
+  const filteredRules = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return rules;
+    return rules.filter((rule) =>
+      [rule.name, rule.keyword].some((v) => v?.toLowerCase().includes(q))
+    );
+  }, [rules, query]);
+
   const patch = (partial: Partial<FormState>) =>
     setForm((f) => ({ ...f, ...partial }));
-
-  function openCreate() {
-    setForm(emptyForm(accounts[0]?.id ?? ""));
-    setOpen(true);
-  }
 
   function openEdit(rule: RuleWithAccount) {
     setForm(formFromRule(rule));
@@ -168,6 +182,7 @@ export function RulesManager({
   function handleSubmit() {
     const input: RuleInput = {
       id: form.id,
+      name: form.name.trim() || undefined,
       account_id: form.account_id,
       keyword: form.keyword,
       match_type: form.match_type,
@@ -185,7 +200,7 @@ export function RulesManager({
         toast.error(result.error);
         return;
       }
-      toast.success(form.id ? "Regra atualizada." : "Regra criada.");
+      toast.success(form.id ? "Automação atualizada." : "Automação criada.");
       setOpen(false);
     });
   }
@@ -198,59 +213,94 @@ export function RulesManager({
   }
 
   function handleDelete(rule: RuleWithAccount) {
-    if (!window.confirm(`Excluir a regra "${rule.keyword}"?`)) return;
+    if (!window.confirm(`Excluir a automação "${rule.name || rule.keyword}"?`))
+      return;
     startTransition(async () => {
       const result = await deleteRule(rule.id);
       if (result.error) toast.error(result.error);
-      else toast.success("Regra excluída.");
+      else toast.success("Automação excluída.");
     });
+  }
+
+  if (rules.length === 0) {
+    return (
+      <EmptyState
+        icon={Zap}
+        title="Nenhuma automação criada"
+        description="Crie sua primeira automação: se alguém enviar uma palavra-chave, o InstaReply responde na hora."
+      >
+        <Button asChild>
+          <Link href="/rules/nova">
+            <Plus />
+            Criar primeira automação
+          </Link>
+        </Button>
+      </EmptyState>
+    );
   }
 
   return (
     <>
-      <div className="mb-6 flex justify-end">
-        <Button onClick={openCreate}>
-          <Plus />
-          Nova regra
+      <div className="mb-6 flex items-center justify-between gap-4">
+        <div className="relative w-full max-w-xs">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
+          <Input
+            placeholder="Pesquisar automações..."
+            className="pl-8"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </div>
+        <Button asChild>
+          <Link href="/rules/nova">
+            <Plus />
+            Nova automação
+          </Link>
         </Button>
       </div>
 
-      {rules.length === 0 ? (
-        <EmptyState
-          icon={Zap}
-          title="Nenhuma regra criada"
-          description="Crie sua primeira regra: se alguém enviar uma palavra-chave, o InstaReply responde na hora."
-        >
-          <Button onClick={openCreate}>
-            <Plus />
-            Criar primeira regra
-          </Button>
-        </EmptyState>
+      {filteredRules.length === 0 ? (
+        <Card className="animate-fade-up">
+          <p className="px-6 py-16 text-center text-sm text-muted-foreground">
+            Nenhuma automação encontrada para &ldquo;{query}&rdquo;.
+          </p>
+        </Card>
       ) : (
         <Card className="animate-fade-up overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead>Se receber</TableHead>
+                <TableHead>Automação</TableHead>
                 <TableHead>Responder com</TableHead>
                 <TableHead>Conta</TableHead>
+                <TableHead className="text-center">Execuções</TableHead>
                 <TableHead className="text-center">Delay</TableHead>
                 <TableHead className="text-center">Ativa</TableHead>
+                <TableHead>Modificado</TableHead>
                 <TableHead className="w-12" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rules.map((rule) => {
+              {filteredRules.map((rule) => {
                 const ReplyIcon = REPLY_ICONS[rule.reply_type];
+                const title = rule.name?.trim() || rule.keyword;
+                const subtitle = rule.name?.trim()
+                  ? `${rule.keyword} · ${MATCH_LABELS[rule.match_type]}`
+                  : MATCH_LABELS[rule.match_type];
                 return (
                   <TableRow key={rule.id}>
                     <TableCell>
                       <div className="space-y-1">
-                        <code className="inline-block rounded-md border border-border/70 bg-secondary/40 px-2 py-0.5 font-mono text-xs">
-                          {rule.keyword}
-                        </code>
+                        <div className="flex items-center gap-2">
+                          <Badge variant={rule.is_active ? "success" : "muted"}>
+                            {rule.is_active ? "Ativa" : "Pausada"}
+                          </Badge>
+                          <span className="max-w-[220px] truncate text-sm font-medium">
+                            {title}
+                          </span>
+                        </div>
                         <p className="text-[11px] text-muted-foreground/80">
-                          {MATCH_LABELS[rule.match_type]}
+                          {subtitle}
                         </p>
                       </div>
                     </TableCell>
@@ -274,6 +324,9 @@ export function RulesManager({
                     <TableCell className="text-sm text-muted-foreground">
                       @{rule.ig_accounts?.ig_username ?? "—"}
                     </TableCell>
+                    <TableCell className="text-center text-sm tabular-nums text-muted-foreground">
+                      {executionCounts[rule.id] ?? 0}
+                    </TableCell>
                     <TableCell className="text-center">
                       <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
                         <Timer className="h-3.5 w-3.5" />
@@ -286,6 +339,15 @@ export function RulesManager({
                         onCheckedChange={(next) => handleToggle(rule, next)}
                         disabled={isPending}
                       />
+                    </TableCell>
+                    <TableCell
+                      className="whitespace-nowrap text-xs text-muted-foreground"
+                      title={new Date(rule.updated_at).toLocaleString("pt-BR")}
+                    >
+                      {formatDistanceToNow(new Date(rule.updated_at), {
+                        addSuffix: true,
+                        locale: ptBR,
+                      })}
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>
@@ -322,7 +384,7 @@ export function RulesManager({
         <DialogContent className="max-h-[90vh] max-w-xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
-              {form.id ? "Editar regra" : "Nova regra de auto-resposta"}
+              {form.id ? "Editar automação" : "Nova automação"}
             </DialogTitle>
             <DialogDescription>
               Se receber a palavra-chave, o InstaReply responde automaticamente
@@ -331,6 +393,19 @@ export function RulesManager({
           </DialogHeader>
 
           <div className="space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="name">Nome da automação</Label>
+              <Input
+                id="name"
+                placeholder="ex.: Auto-DM de links dos comentários"
+                value={form.name}
+                onChange={(e) => patch({ name: e.target.value })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Opcional — se vazio, a lista usa a palavra-chave como nome.
+              </p>
+            </div>
+
             <div className="space-y-2">
               <Label>Conta do Instagram</Label>
               <Select
@@ -482,7 +557,7 @@ export function RulesManager({
                     onCheckedChange={(v) => patch({ is_active: v })}
                   />
                   <span className="text-sm text-muted-foreground">
-                    {form.is_active ? "Regra ativa" : "Regra pausada"}
+                    {form.is_active ? "Automação ativa" : "Automação pausada"}
                   </span>
                 </div>
               </div>
@@ -494,7 +569,7 @@ export function RulesManager({
               Cancelar
             </Button>
             <Button onClick={handleSubmit} disabled={isPending}>
-              {isPending ? "Salvando..." : "Salvar regra"}
+              {isPending ? "Salvando..." : "Salvar automação"}
             </Button>
           </DialogFooter>
         </DialogContent>
