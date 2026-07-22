@@ -14,6 +14,10 @@ const SECTION_ITEMS = [
 export function AutomationSectionNav() {
   const pathname = usePathname();
 
+  // O editor de sequências (/rules/sequencias/nova e /rules/sequencias/<id>)
+  // é tela de trabalho: esconde o menu pra dar toda a largura ao canvas.
+  if (pathname.startsWith("/rules/sequencias/")) return null;
+
   return (
     <nav className="w-44 shrink-0 space-y-0.5">
       {SECTION_ITEMS.map(({ href, label, icon: Icon }) => {

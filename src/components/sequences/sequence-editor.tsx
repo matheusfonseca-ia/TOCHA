@@ -13,6 +13,7 @@ import {
   ReactFlowProvider,
   useEdgesState,
   useNodesState,
+  useReactFlow,
   useUpdateNodeInternals,
   type Connection,
   type Edge,
@@ -24,7 +25,9 @@ import {
   ArrowLeft,
   Hourglass,
   ListChecks,
+  Maximize2,
   MessageSquareText,
+  Minimize2,
   MousePointerClick,
   Plus,
   Timer,
@@ -48,6 +51,7 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { sourceHandlesOf, validateSequenceGraph } from "@/lib/sequences/graph";
+import { cn } from "@/lib/utils";
 import { OUT_HANDLE, type Sequence, type SequenceGraph, type SequenceGraphNode, type SequenceNodeData, type SequenceNodeType } from "@/types/sequence";
 
 /**
@@ -179,6 +183,8 @@ function EditorInner({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const updateNodeInternals = useUpdateNodeInternals();
+  const { fitView } = useReactFlow();
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const graph = useMemo(() => initialGraph(sequence), [sequence]);
   const [nodes, setNodes, onNodesChange] = useNodesState<FlowNode>(
@@ -200,6 +206,25 @@ function EditorInner({
   useEffect(() => {
     updateNodeInternals(nodes.map((n) => n.id));
   }, [nodes, updateNodeInternals]);
+
+  // Reenquadra o fluxo quando o canvas muda de tamanho (montagem e
+  // entrada/saída da tela cheia) e permite sair da tela cheia com Esc.
+  useEffect(() => {
+    const timer = setTimeout(
+      () => fitView({ padding: 0.25, maxZoom: 1 }),
+      100
+    );
+    return () => clearTimeout(timer);
+  }, [isFullscreen, fitView]);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setIsFullscreen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isFullscreen]);
 
   const onSelectionChange = useCallback(
     ({ nodes: selected }: OnSelectionChangeParams) => {
@@ -324,7 +349,13 @@ function EditorInner({
   }, [nodes, selectedId]);
 
   return (
-    <div className="space-y-4">
+    <div
+      className={cn(
+        "space-y-4",
+        isFullscreen &&
+          "fixed inset-0 z-50 flex flex-col overflow-hidden bg-background p-4 md:p-6"
+      )}
+    >
       {/* ── Barra superior: nome, conta, status, salvar ───────────────── */}
       <div className="flex flex-wrap items-center gap-3">
         <Button variant="ghost" size="icon" asChild>
@@ -359,6 +390,23 @@ function EditorInner({
               {isActive ? "Ativa" : "Pausada"}
             </span>
           </div>
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setIsFullscreen((f) => !f)}
+            title={
+              isFullscreen ? "Sair da tela cheia (Esc)" : "Tela cheia"
+            }
+            aria-label={
+              isFullscreen ? "Sair da tela cheia" : "Tela cheia"
+            }
+          >
+            {isFullscreen ? (
+              <Minimize2 className="h-4 w-4" />
+            ) : (
+              <Maximize2 className="h-4 w-4" />
+            )}
+          </Button>
           <Button onClick={handleSave} disabled={isPending}>
             {isPending ? "Salvando…" : sequence ? "Salvar" : "Criar sequência"}
           </Button>
@@ -385,8 +433,13 @@ function EditorInner({
       </div>
 
       {/* ── Canvas + inspector ────────────────────────────────────────── */}
-      <div className="flex gap-4">
-        <div className="h-[calc(100vh-330px)] min-h-[460px] min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-card/40">
+      <div className={cn("flex gap-4", isFullscreen && "min-h-0 flex-1")}>
+        <div
+          className={cn(
+            "min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-card/40",
+            isFullscreen ? "h-full" : "h-[calc(100vh-330px)] min-h-[460px]"
+          )}
+        >
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -411,7 +464,12 @@ function EditorInner({
             <Controls showInteractive={false} />
           </ReactFlow>
         </div>
-        <aside className="h-[calc(100vh-330px)] min-h-[460px] w-80 shrink-0 overflow-y-auto rounded-xl border border-border bg-card p-4">
+        <aside
+          className={cn(
+            "w-80 shrink-0 overflow-y-auto rounded-xl border border-border bg-card p-4",
+            isFullscreen ? "h-full" : "h-[calc(100vh-330px)] min-h-[460px]"
+          )}
+        >
           <SequenceInspector node={selectedNode} onChange={handleDataChange} />
         </aside>
       </div>
