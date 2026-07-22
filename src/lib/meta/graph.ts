@@ -183,10 +183,83 @@ export function replyToComment(igToken: string, commentId: string, text: string)
   });
 }
 
-/** Inscreve a conta profissional nos eventos de mensagens e comentários (necessário para o webhook). */
+export interface QuickReplyOption {
+  title: string;
+  payload: string;
+}
+
+/**
+ * Texto + respostas rápidas (até 13 botões de 20 caracteres). Ao tocar, o
+ * título vira mensagem do usuário e o webhook recebe
+ * `message.quick_reply.payload` — é a ramificação dos nós de sequência.
+ */
+export function sendQuickRepliesMessage(
+  igToken: string,
+  recipientId: string,
+  text: string,
+  options: QuickReplyOption[]
+) {
+  return sendMessage(igToken, { id: recipientId }, {
+    text: text.slice(0, 1000),
+    quick_replies: options.slice(0, 13).map((o) => ({
+      content_type: "text",
+      title: o.title.slice(0, 20),
+      payload: o.payload,
+    })),
+  });
+}
+
+export type TemplateButton =
+  | { type: "web_url"; title: string; url: string }
+  | { type: "postback"; title: string; payload: string };
+
+/**
+ * Button template (texto até 640 chars + 1–3 botões), aceitando mistura de
+ * botão de link (web_url) e de ramificação (postback) — usado pelos nós de
+ * botões das sequências.
+ */
+export function sendTemplateButtonsMessage(
+  igToken: string,
+  recipientId: string,
+  text: string,
+  buttons: TemplateButton[]
+) {
+  return sendMessage(igToken, { id: recipientId }, {
+    attachment: {
+      type: "template",
+      payload: {
+        template_type: "button",
+        text: text.slice(0, 640),
+        buttons: buttons.slice(0, 3).map((b) =>
+          b.type === "web_url"
+            ? { type: "web_url", title: b.title.slice(0, 20), url: b.url }
+            : { type: "postback", title: b.title.slice(0, 20), payload: b.payload }
+        ),
+      },
+    },
+  });
+}
+
+/**
+ * Indicador "digitando..." — a Meta recomenda exibi-lo antes de respostas
+ * automáticas para a conversa parecer natural (best-effort: falha é ignorada
+ * por quem chama).
+ */
+export function sendTypingAction(igToken: string, recipientId: string) {
+  return graphPost("me/messages", igToken, {
+    recipient: { id: recipientId },
+    sender_action: "typing_on",
+  });
+}
+
+/**
+ * Inscreve a conta profissional nos eventos necessários para o webhook:
+ * mensagens, toques em botão postback (fluxos de comentário e sequências)
+ * e comentários.
+ */
 export function subscribeAccountToWebhooks(igToken: string) {
   return graphPost("me/subscribed_apps", igToken, {
-    subscribed_fields: "messages,comments",
+    subscribed_fields: "messages,messaging_postbacks,comments",
   });
 }
 

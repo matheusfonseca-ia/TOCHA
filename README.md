@@ -4,6 +4,8 @@
 
 Você conecta sua conta do Instagram, cria regras do tipo *"se receber **preço** → responda com o link da tabela"* e o InstaReply responde sozinho, 24h por dia, com delay humanizado de 2–5s. Painel completo com métricas e logs de cada mensagem.
 
+E quando uma resposta só não basta, as **Sequências** entram em cena: um canvas visual (estilo n8n/ManyChat) onde você conecta blocos — mensagens, botões, respostas rápidas, atrasos, esperas — e monta fluxos de conversa inteiros que rodam sozinhos na DM.
+
 Cada instalação é **sua**: seu banco (Supabase, grátis), seu app Meta, sua hospedagem. Nenhum dado passa por servidores de terceiros — e, por usar o **Login do Instagram** no seu próprio app Meta, funciona com a sua conta **sem App Review** e sem precisar de Página do Facebook.
 
 > 📕 **Siga o guia ilustrado:** [docs/guia-configuracao-instareply.pdf](docs/guia-configuracao-instareply.pdf) — o passo a passo completo, com links e telas de onde tirar cada credencial.
@@ -22,7 +24,7 @@ Cada instalação é **sua**: seu banco (Supabase, grátis), seu app Meta, sua h
 
 ### Deploy com um clique (Vercel)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FSEU-USUARIO%2Finstareply&project-name=instareply&repository-name=instareply&env=NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,SUPABASE_SERVICE_ROLE_KEY,INSTAGRAM_APP_ID,INSTAGRAM_APP_SECRET,META_APP_SECRET,META_VERIFY_TOKEN,META_GRAPH_VERSION,NEXT_PUBLIC_APP_URL,TOKEN_ENCRYPTION_KEY&envDescription=Credenciais%20do%20Supabase%20e%20do%20app%20Meta%20—%20veja%20o%20guia%20em%20docs%2F)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FSEU-USUARIO%2Finstareply&project-name=instareply&repository-name=instareply&env=NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,SUPABASE_SERVICE_ROLE_KEY,INSTAGRAM_APP_ID,INSTAGRAM_APP_SECRET,META_APP_SECRET,META_VERIFY_TOKEN,META_GRAPH_VERSION,NEXT_PUBLIC_APP_URL,TOKEN_ENCRYPTION_KEY,CRON_SECRET&envDescription=Credenciais%20do%20Supabase%20e%20do%20app%20Meta%20—%20veja%20o%20guia%20em%20docs%2F)
 
 O botão clona o repositório para a sua conta do GitHub e já pede as variáveis de ambiente na tela.
 *(Mantenedor: troque `SEU-USUARIO` pela URL real do repositório.)*
@@ -59,6 +61,7 @@ e use a URL gerada em `NEXT_PUBLIC_APP_URL`, no OAuth Redirect URI e no webhook 
 | `META_GRAPH_VERSION` | Versão da Graph API | `v25.0` |
 | `NEXT_PUBLIC_APP_URL` | URL pública da sua instalação | Domínio da Vercel ou ngrok |
 | `TOKEN_ENCRYPTION_KEY` | Criptografa tokens no banco | `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
+| `CRON_SECRET` | Senha do tick das Sequências (você inventa) | Veja "Sequências" abaixo |
 
 ## 🔒 A instalação é sua e de mais ninguém
 
@@ -88,7 +91,28 @@ DM chega → Meta dispara webhook → /api/webhooks/meta
 | Sem regra → não responde | Log `no_match`, nenhuma chamada à API |
 | Delay humanizado | 2–5s, configurável por regra |
 
-**Stack:** Next.js 14 (App Router) · TypeScript · Tailwind + shadcn/ui · Supabase (Auth + Postgres com RLS) · API do Instagram com Login do Instagram (graph.instagram.com). Tokens são criptografados no banco (AES-256-GCM) e renovados automaticamente antes de expirar.
+**Stack:** Next.js 14 (App Router) · TypeScript · Tailwind + shadcn/ui · Supabase (Auth + Postgres com RLS) · API do Instagram com Login do Instagram (graph.instagram.com) · React Flow (canvas das Sequências). Tokens são criptografados no banco (AES-256-GCM) e renovados automaticamente antes de expirar.
+
+## Sequências (fluxos no canvas)
+
+Em **Automação → Sequências** você desenha fluxos de conversa num canvas de blocos conectáveis:
+
+| Bloco | O que faz |
+|---|---|
+| ⚡ **Gatilho** | Palavras-chave (ou qualquer DM) que colocam a pessoa no fluxo — cada pessoa entra 1x |
+| 💬 **Mensagem** | Envia texto ou imagem e segue para o próximo bloco |
+| 🖱️ **Botões** | Texto + até 3 botões — de link (abre página) ou de ramificação (cada botão segue um caminho) |
+| ✅ **Respostas rápidas** | Pergunta + até 13 opções; cada opção é uma saída, com saída extra para quem digita outra coisa |
+| ⏱️ **Atraso** | Espera de 5s a 23h antes de continuar (23h por causa da janela de 24h da Meta) |
+| ⏳ **Esperar resposta** | Pausa até a pessoa mandar qualquer mensagem — e a resposta renova a janela de 24h |
+
+Regras que o runtime respeita sozinho: janela de 24h da Meta (fluxo para com `window_expired` se fechar), delay humanizado + indicador "digitando…" antes de cada envio, cada saída entrega no máximo 1x (retries do Meta não duplicam), e quem está no meio de um fluxo não é "sequestrado" pelas regras de palavra-chave.
+
+**Atrasos longos (minutos/horas):** o fluxo é retomado pelo endpoint `/api/cron/sequences`, protegido por `CRON_SECRET`. Três formas de acioná-lo, da mais simples à mais precisa:
+
+1. **Automática** — a cada mensagem/comentário que chega, o InstaReply também retoma atrasos vencidos (tick oportunista). Para contas com movimento, resolve.
+2. **Cron da Vercel** — já configurado em `vercel.json` (1x/dia, limite do plano Hobby).
+3. **Agendador externo grátis** (recomendado p/ precisão de minutos) — crie um monitor no [cron-job.org](https://cron-job.org) chamando `https://SEU-APP.vercel.app/api/cron/sequences?secret=SEU_CRON_SECRET` a cada 1–5 minutos.
 
 ## Estrutura do código
 
@@ -98,11 +122,13 @@ src/
     (dashboard)/        # dashboard, rules, accounts, logs
     api/auth/meta/      # OAuth: início + callback
     api/webhooks/meta/  # verificação GET + eventos POST
+    api/cron/sequences/ # tick que retoma atrasos das sequências
     login/              # autenticação (Supabase)
-  components/           # ui/ (shadcn), layout/, dashboard/, rules/, auth/ ...
+  components/           # ui/ (shadcn), layout/, dashboard/, rules/, sequences/ ...
   lib/
     meta/               # graph.ts, oauth.ts, verify.ts, process.ts (pipeline)
     rules/engine.ts     # matching normalizado + prioridade
+    sequences/          # graph.ts (validação/travessia) + runtime.ts (executor)
     supabase/           # client com RLS + client admin (service role)
     config.ts           # trava de cadastro automática (1ª conta bloqueia as demais)
     crypto.ts           # AES-256-GCM para tokens

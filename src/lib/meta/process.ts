@@ -1,9 +1,15 @@
-import { decryptToken, encryptToken } from "@/lib/crypto";
 import {
   clampDelay,
   findMatchingCommentRule,
   findMatchingRule,
 } from "@/lib/rules/engine";
+import {
+  handleSequencePostback,
+  handleSequenceReply,
+  maybeStartSequence,
+  processDueRunsSafe,
+  type SequenceOutcome,
+} from "@/lib/sequences/runtime";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sleep } from "@/lib/utils";
 import type { IgAccount, InteractionStatus, Rule } from "@/types/database";
@@ -15,13 +21,11 @@ import {
   sendPrivateReplyWithButton,
   sendTextMessage,
 } from "./graph";
-import { refreshLongLivedToken } from "./oauth";
+import { getFreshToken } from "./token";
 
 const WINDOW_24H_MS = 24 * 60 * 60 * 1000;
 // Limite da própria Meta para resposta privada a um comentário.
 const PRIVATE_REPLY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-// Tokens do Instagram duram ~60 dias; renovamos com folga de 15 dias.
-const TOKEN_REFRESH_THRESHOLD_MS = 15 * 24 * 60 * 60 * 1000;
 // Prefixo do payload do botão postback da mensagem de boas-vindas —
 // carrega o id da regra até o toque no botão (evento messaging_postbacks).
 const COMMENT_LINK_PAYLOAD_PREFIX = "instareply:comment_link:";
@@ -32,7 +36,13 @@ interface MessagingEvent {
   sender?: { id?: string };
   recipient?: { id?: string };
   timestamp?: number;
-  message?: { mid?: string; text?: string; is_echo?: boolean };
+  message?: {
+    mid?: string;
+    text?: string;
+    is_echo?: boolean;
+    /** Presente quando o usuário toca numa resposta rápida. */
+    quick_reply?: { payload?: string };
+  };
   postback?: { mid?: string; title?: string; payload?: string };
 }
 
@@ -93,6 +103,10 @@ export async function processWebhookPayload(
       }
     }
   }
+
+  // Tick oportunista: aproveita a invocação para retomar sequências paradas
+  // em nós de atraso cujo horário venceu (complementa a rota de cron).
+  await processDueRunsSafe();
 }
 
 async function processMessagingEvent(
@@ -140,7 +154,28 @@ async function processMessagingEvent(
     { onConflict: "account_id,ig_sender_id" }
   );
 
-  // 4. Matching de regras (só as de gatilho "dm")
+  // 4a. Sequência esperando esta pessoa? Continuação tem prioridade sobre
+  // regras: quem está no meio de um fluxo não deve ser "sequestrado" por
+  // uma regra de palavra-chave (cobre quick replies e o nó "esperar resposta").
+  const seqReply = await handleSequenceReply(
+    admin,
+    account,
+    senderId,
+    message.quick_reply?.payload
+  );
+  if (seqReply) {
+    await logSequenceInteraction(
+      admin,
+      account,
+      senderId,
+      message.text,
+      seqReply,
+      startedAt
+    );
+    return;
+  }
+
+  // 4b. Matching de regras (só as de gatilho "dm")
   const { data: rules } = await admin
     .from("rules")
     .select("*")
@@ -149,6 +184,27 @@ async function processMessagingEvent(
     .eq("is_active", true);
 
   const rule = findMatchingRule(message.text, (rules ?? []) as Rule[]);
+
+  // 4c. Nenhuma regra casou → a mensagem pode ser gatilho de uma sequência
+  if (!rule) {
+    const seqStart = await maybeStartSequence(
+      admin,
+      account,
+      senderId,
+      message.text
+    );
+    if (seqStart) {
+      await logSequenceInteraction(
+        admin,
+        account,
+        senderId,
+        message.text,
+        seqStart,
+        startedAt
+      );
+      return;
+    }
+  }
 
   let status: InteractionStatus;
   let errorDetail: string | null = null;
@@ -171,6 +227,28 @@ async function processMessagingEvent(
     status,
     reply_type: rule?.reply_type ?? null,
     error_detail: errorDetail,
+    latency_ms: Date.now() - startedAt,
+  });
+}
+
+/** Log padronizado de um evento tratado por uma sequência. */
+async function logSequenceInteraction(
+  admin: AdminClient,
+  account: IgAccount,
+  senderId: string,
+  messageText: string,
+  outcome: SequenceOutcome,
+  startedAt: number
+): Promise<void> {
+  await admin.from("interactions").insert({
+    account_id: account.id,
+    ig_sender_id: senderId,
+    message_text: messageText.slice(0, 2000),
+    sequence_id: outcome.sequenceId,
+    matched_keyword: outcome.sequenceName,
+    status: outcome.status,
+    reply_type: null,
+    error_detail: outcome.errorDetail ?? null,
     latency_ms: Date.now() - startedAt,
   });
 }
@@ -257,7 +335,15 @@ async function processPostbackEvent(
   const senderId = event.sender?.id;
   const mid = event.postback?.mid;
   const payload = event.postback?.payload;
-  if (!senderId || !payload?.startsWith(COMMENT_LINK_PAYLOAD_PREFIX)) return;
+  if (!senderId || !payload) return;
+
+  // Botão de ramificação de uma sequência (nó de botões do canvas)
+  if (payload.startsWith("instareply:seq:")) {
+    await processSequencePostbackEvent(igBusinessId, senderId, mid, payload);
+    return;
+  }
+
+  if (!payload.startsWith(COMMENT_LINK_PAYLOAD_PREFIX)) return;
 
   const admin = createAdminClient();
 
@@ -334,6 +420,44 @@ async function processPostbackEvent(
     error_detail: errorDetail,
     latency_ms: Date.now() - startedAt,
   });
+}
+
+/** Toque num botão de ramificação de uma sequência (nó de botões do canvas). */
+async function processSequencePostbackEvent(
+  igBusinessId: string,
+  senderId: string,
+  mid: string | undefined,
+  payload: string
+): Promise<void> {
+  const admin = createAdminClient();
+
+  if (mid) {
+    const { error: dedupError } = await admin
+      .from("processed_events")
+      .insert({ mid });
+    if (dedupError) return;
+  }
+
+  const { data: account } = await admin
+    .from("ig_accounts")
+    .select("*")
+    .eq("ig_user_id", igBusinessId)
+    .eq("status", "active")
+    .maybeSingle<IgAccount>();
+  if (!account) return;
+
+  const startedAt = Date.now();
+  const outcome = await handleSequencePostback(admin, account, senderId, payload);
+  if (!outcome) return;
+
+  await logSequenceInteraction(
+    admin,
+    account,
+    senderId,
+    "[sequência: botão tocado]",
+    outcome,
+    startedAt
+  );
 }
 
 /** Alguém comentou numa publicação/Reel da conta. */
@@ -483,41 +607,3 @@ async function applyCommentRule(
   return { status: "replied" };
 }
 
-/**
- * Token da conta, renovado automaticamente quando está perto de expirar.
- * Falha na renovação não bloqueia o envio: segue com o token atual e,
- * se ele estiver de fato inválido, o erro 190 marca a conta como expirada.
- */
-async function getFreshToken(
-  admin: AdminClient,
-  account: IgAccount
-): Promise<string> {
-  const token = decryptToken(account.access_token_enc);
-  const expiresAt = account.token_expires_at
-    ? Date.parse(account.token_expires_at)
-    : null;
-
-  if (!expiresAt || expiresAt - Date.now() > TOKEN_REFRESH_THRESHOLD_MS) {
-    return token;
-  }
-
-  try {
-    const { token: refreshed, expiresIn } = await refreshLongLivedToken(token);
-    await admin
-      .from("ig_accounts")
-      .update({
-        access_token_enc: encryptToken(refreshed),
-        token_expires_at: expiresIn
-          ? new Date(Date.now() + expiresIn * 1000).toISOString()
-          : null,
-      })
-      .eq("id", account.id);
-    return refreshed;
-  } catch (err) {
-    console.warn(
-      `[process] falha ao renovar token de @${account.ig_username}:`,
-      err instanceof Error ? err.message : err
-    );
-    return token;
-  }
-}
