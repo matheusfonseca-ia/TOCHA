@@ -16,7 +16,7 @@ Cada instalação é **sua**: seu banco (Supabase, grátis), seu app Meta, sua h
 
 | # | Passo | Onde |
 |---|---|---|
-| 1 | Criar projeto no **Supabase** e rodar as migrations de `supabase/migrations/` (na ordem) no SQL Editor | [supabase.com/dashboard](https://supabase.com/dashboard) |
+| 1 | Criar projeto no **Supabase** e rodar `supabase/migrations/0001_init.sql` (arquivo único) no SQL Editor | [supabase.com/dashboard](https://supabase.com/dashboard) |
 | 2 | Criar **app Meta** (tipo Business), adicionar o produto **Instagram** (Login do Instagram para empresas), configurar o webhook, cadastrar sua conta como testadora e colocar o app em modo **Live** | [developers.facebook.com/apps](https://developers.facebook.com/apps) |
 | 3 | Preencher as **variáveis de ambiente** (`.env.local` ou painel da Vercel) | veja tabela abaixo |
 | 4 | **Rodar** — local (`npm run dev` + ngrok) ou deploy na Vercel | — |
@@ -132,7 +132,7 @@ src/
     supabase/           # client com RLS + client admin (service role)
     config.ts           # trava de cadastro automática (1ª conta bloqueia as demais)
     crypto.ts           # AES-256-GCM para tokens
-supabase/migrations/    # schema completo + RLS (rodar no SQL Editor)
+supabase/migrations/    # 0001_init.sql — schema completo + RLS (rodar uma vez no SQL Editor)
 docs/                   # 📕 guia de configuração em PDF
 ```
 
