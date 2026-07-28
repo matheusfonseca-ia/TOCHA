@@ -86,7 +86,7 @@ export default async function LogsPage({
         />
       ) : (
         <Card className="animate-fade-up overflow-hidden">
-          <Table>
+          <Table className="min-w-[760px]">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>Quando</TableHead>

@@ -90,7 +90,7 @@ export function MediaPicker({
 
   return (
     <div className="space-y-2.5">
-      <div className="grid grid-cols-4 gap-2">
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
         {preview.map((item) => (
           <MediaThumb
             key={item.id}
@@ -114,7 +114,7 @@ export function MediaPicker({
           <DialogHeader>
             <DialogTitle>Escolha as publicações ou Reels</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
             {media.map((item) => (
               <MediaThumb
                 key={item.id}

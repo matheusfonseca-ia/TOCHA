@@ -242,7 +242,7 @@ export function RulesManager({
 
   return (
     <>
-      <div className="mb-6 flex items-center justify-between gap-4">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="relative w-full max-w-xs">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
           <Input
@@ -268,7 +268,7 @@ export function RulesManager({
         </Card>
       ) : (
         <Card className="animate-fade-up overflow-hidden">
-          <Table>
+          <Table className="min-w-[880px]">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>Automação</TableHead>
@@ -437,7 +437,7 @@ export function RulesManager({
               </Select>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="keyword">Se receber</Label>
                 <Input
@@ -539,7 +539,7 @@ export function RulesManager({
               </Tabs>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label>Delay da resposta</Label>
                 <Select

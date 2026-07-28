@@ -365,7 +365,7 @@ function EditorInner({
         </Button>
         <Input
           placeholder="Nome da sequência (ex.: Boas-vindas novos seguidores)"
-          className="w-72"
+          className="min-w-0 flex-1 sm:w-72 sm:flex-none"
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
@@ -433,11 +433,18 @@ function EditorInner({
       </div>
 
       {/* ── Canvas + inspector ────────────────────────────────────────── */}
-      <div className={cn("flex gap-4", isFullscreen && "min-h-0 flex-1")}>
+      <div
+        className={cn(
+          "flex flex-col gap-4 lg:flex-row",
+          isFullscreen && "min-h-0 flex-1"
+        )}
+      >
         <div
           className={cn(
             "min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-card/40",
-            isFullscreen ? "h-full" : "h-[calc(100vh-330px)] min-h-[460px]"
+            isFullscreen
+              ? "min-h-0 flex-1 lg:h-full"
+              : "h-[420px] sm:h-[480px] lg:h-[calc(100vh-330px)] lg:min-h-[460px]"
           )}
         >
           <ReactFlow
@@ -466,8 +473,10 @@ function EditorInner({
         </div>
         <aside
           className={cn(
-            "w-80 shrink-0 overflow-y-auto rounded-xl border border-border bg-card p-4",
-            isFullscreen ? "h-full" : "h-[calc(100vh-330px)] min-h-[460px]"
+            "w-full shrink-0 overflow-y-auto rounded-xl border border-border bg-card p-4 lg:w-80",
+            isFullscreen
+              ? "max-h-[40vh] lg:h-full lg:max-h-none"
+              : "max-h-[45vh] lg:h-[calc(100vh-330px)] lg:max-h-none lg:min-h-[460px]"
           )}
         >
           <SequenceInspector node={selectedNode} onChange={handleDataChange} />

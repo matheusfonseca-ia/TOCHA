@@ -90,7 +90,7 @@ export function AccountCard({ account, index = 0 }: AccountCardProps) {
             className="text-muted-foreground hover:text-destructive"
           >
             <Unplug />
-            Desconectar
+            <span className="hidden sm:inline">Desconectar</span>
           </Button>
         )}
       </CardContent>

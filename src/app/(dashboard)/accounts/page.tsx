@@ -112,7 +112,7 @@ export default async function AccountsPage({
             <span className="w-28 shrink-0 text-muted-foreground">
               Callback URL
             </span>
-            <code className="rounded-md border border-border/70 bg-background/50 px-2 py-1 font-mono text-xs">
+            <code className="max-w-full break-all rounded-md border border-border/70 bg-background/50 px-2 py-1 font-mono text-xs">
               {webhookUrl}
             </code>
           </div>
@@ -120,7 +120,7 @@ export default async function AccountsPage({
             <span className="w-28 shrink-0 text-muted-foreground">
               Verify token
             </span>
-            <code className="rounded-md border border-border/70 bg-background/50 px-2 py-1 font-mono text-xs">
+            <code className="max-w-full break-all rounded-md border border-border/70 bg-background/50 px-2 py-1 font-mono text-xs">
               valor de META_VERIFY_TOKEN no seu .env
             </code>
           </div>

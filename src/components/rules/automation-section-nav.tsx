@@ -19,7 +19,7 @@ export function AutomationSectionNav() {
   if (pathname.startsWith("/rules/sequencias/")) return null;
 
   return (
-    <nav className="w-44 shrink-0 space-y-0.5">
+    <nav className="flex shrink-0 gap-1 overflow-x-auto md:w-44 md:flex-col md:gap-0.5 md:overflow-visible">
       {SECTION_ITEMS.map(({ href, label, icon: Icon }) => {
         const active =
           href === "/rules" ? pathname === "/rules" : pathname.startsWith(href);
@@ -28,7 +28,7 @@ export function AutomationSectionNav() {
             key={href}
             href={href}
             className={cn(
-              "flex items-center gap-2 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",
+              "flex shrink-0 items-center gap-2 whitespace-nowrap rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",
               active
                 ? "bg-secondary/70 text-foreground"
                 : "text-muted-foreground hover:bg-secondary/40 hover:text-foreground"

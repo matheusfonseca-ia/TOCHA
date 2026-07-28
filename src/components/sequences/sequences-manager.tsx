@@ -111,7 +111,7 @@ export function SequencesManager({
 
   return (
     <>
-      <div className="mb-6 flex items-center justify-between gap-4">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="relative w-full max-w-xs">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
           <Input
@@ -137,7 +137,7 @@ export function SequencesManager({
         </Card>
       ) : (
         <Card className="animate-fade-up overflow-hidden">
-          <Table>
+          <Table className="min-w-[880px]">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>Sequência</TableHead>
