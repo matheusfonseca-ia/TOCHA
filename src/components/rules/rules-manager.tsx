@@ -228,7 +228,7 @@ export function RulesManager({
       <EmptyState
         icon={Zap}
         title="Nenhuma automação criada"
-        description="Crie sua primeira automação: se alguém enviar uma palavra-chave, o InstaReply responde na hora."
+        description="Crie sua primeira automação: se alguém enviar uma palavra-chave, o Falow responde na hora."
       >
         <Button asChild>
           <Link href="/rules/nova">
@@ -399,7 +399,7 @@ export function RulesManager({
               {form.id ? "Editar automação" : "Nova automação"}
             </DialogTitle>
             <DialogDescription>
-              Se receber a palavra-chave, o InstaReply responde automaticamente
+              Se receber a palavra-chave, o Falow responde automaticamente
               na DM.
             </DialogDescription>
           </DialogHeader>

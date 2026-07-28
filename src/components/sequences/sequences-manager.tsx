@@ -97,7 +97,7 @@ export function SequencesManager({
       <EmptyState
         icon={Workflow}
         title="Nenhuma sequência criada"
-        description="Monte um fluxo de mensagens no canvas: gatilho, mensagens, botões, atrasos e ramificações — o InstaReply conduz a conversa sozinho."
+        description="Monte um fluxo de mensagens no canvas: gatilho, mensagens, botões, atrasos e ramificações — o Falow conduz a conversa sozinho."
       >
         <Button asChild>
           <Link href="/rules/sequencias/nova">

@@ -32,7 +32,7 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
           <Zap className="h-3.5 w-3.5 text-white" fill="currentColor" />
         </div>
         <span className="font-display text-[15px] font-semibold tracking-tight">
-          InstaReply
+          Falow
         </span>
       </div>
 

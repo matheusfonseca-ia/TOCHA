@@ -1,9 +1,9 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  title: "Política de Privacidade — InstaReply",
+  title: "Política de Privacidade — Falow",
   description:
-    "Como o InstaReply coleta, usa, armazena e exclui os dados necessários para a automação de respostas no Instagram.",
+    "Como o Falow coleta, usa, armazena e exclui os dados necessários para a automação de respostas no Instagram.",
 };
 
 // Página pública exigida pelo painel da Meta (Privacy Policy URL e
@@ -16,7 +16,7 @@ export default function PrivacidadePage() {
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-[#7C3AED] text-base text-white shadow-[0_0_14px_rgba(139,92,246,0.55)]">
             ⚡
           </div>
-          <span className="font-display text-lg font-bold">InstaReply</span>
+          <span className="font-display text-lg font-bold">Falow</span>
         </div>
         <h1 className="font-display text-3xl font-bold tracking-tight">
           Política de Privacidade
@@ -29,10 +29,10 @@ export default function PrivacidadePage() {
       <div className="space-y-10 text-sm leading-relaxed text-muted-foreground">
         <section>
           <h2 className="mb-3 font-display text-lg font-semibold text-foreground">
-            1. O que é o InstaReply
+            1. O que é o Falow
           </h2>
           <p>
-            O InstaReply é uma ferramenta de automação de mensagens diretas
+            O Falow é uma ferramenta de automação de mensagens diretas
             (DMs) do Instagram, instalada e operada pelo próprio dono da conta
             de Instagram conectada. Ele responde automaticamente a mensagens
             recebidas com base em regras de palavra-chave definidas pelo
@@ -167,7 +167,7 @@ export default function PrivacidadePage() {
             6. Contato
           </h2>
           <p>
-            Esta instalação do InstaReply é operada de forma independente pelo
+            Esta instalação do Falow é operada de forma independente pelo
             responsável pela conta de Instagram conectada. Para dúvidas sobre
             esta política ou sobre seus dados, entre em contato por mensagem
             direta com a própria conta de Instagram atendida por esta
@@ -178,7 +178,7 @@ export default function PrivacidadePage() {
 
       <footer className="mt-16 border-t border-border pt-6">
         <p className="text-xs text-muted-foreground">
-          InstaReply — automação de respostas para DMs do Instagram.
+          Falow — automação de respostas para DMs do Instagram.
         </p>
       </footer>
     </main>

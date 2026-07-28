@@ -6,6 +6,7 @@ import {
 import {
   handleSequencePostback,
   handleSequenceReply,
+  isSequencePayload,
   maybeStartSequence,
   processDueRunsSafe,
   type SequenceOutcome,
@@ -28,7 +29,10 @@ const WINDOW_24H_MS = 24 * 60 * 60 * 1000;
 const PRIVATE_REPLY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 // Prefixo do payload do botão postback da mensagem de boas-vindas —
 // carrega o id da regra até o toque no botão (evento messaging_postbacks).
-const COMMENT_LINK_PAYLOAD_PREFIX = "instareply:comment_link:";
+const COMMENT_LINK_PAYLOAD_PREFIX = "falow:comment_link:";
+// O produto se chamou InstaReply até 2026-07-28. Botões já entregues em DMs
+// carregam o payload antigo para sempre, então continuamos aceitando na leitura.
+const COMMENT_LINK_PAYLOAD_PREFIX_LEGACY = "instareply:comment_link:";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -338,12 +342,16 @@ async function processPostbackEvent(
   if (!senderId || !payload) return;
 
   // Botão de ramificação de uma sequência (nó de botões do canvas)
-  if (payload.startsWith("instareply:seq:")) {
+  if (isSequencePayload(payload)) {
     await processSequencePostbackEvent(igBusinessId, senderId, mid, payload);
     return;
   }
 
-  if (!payload.startsWith(COMMENT_LINK_PAYLOAD_PREFIX)) return;
+  const commentLinkPrefix = [
+    COMMENT_LINK_PAYLOAD_PREFIX,
+    COMMENT_LINK_PAYLOAD_PREFIX_LEGACY,
+  ].find((p) => payload.startsWith(p));
+  if (!commentLinkPrefix) return;
 
   const admin = createAdminClient();
 
@@ -354,7 +362,7 @@ async function processPostbackEvent(
     if (dedupError) return;
   }
 
-  const ruleId = payload.slice(COMMENT_LINK_PAYLOAD_PREFIX.length);
+  const ruleId = payload.slice(commentLinkPrefix.length);
   const recipientId = igBusinessId || event.recipient?.id || "";
 
   const [{ data: account }, { data: rule }] = await Promise.all([

@@ -1,5 +1,5 @@
 -- ══════════════════════════════════════════════════════════════════════════
--- InstaReply — schema completo (tabelas, índices, comentários e RLS)
+-- Falow — schema completo (tabelas, índices, comentários e RLS)
 --
 -- Rode UMA ÚNICA VEZ: copie este arquivo inteiro, cole no SQL Editor do
 -- Supabase e clique em Run (ou use `supabase db push`).

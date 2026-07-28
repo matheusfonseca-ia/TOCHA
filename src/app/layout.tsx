@@ -22,7 +22,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "InstaReply — Auto-resposta para DMs do Instagram",
+  title: "Falow — Auto-resposta para DMs do Instagram",
   description:
     "Conecte contas do Instagram, crie regras de palavra-chave e responda DMs automaticamente.",
 };

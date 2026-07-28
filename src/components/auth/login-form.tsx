@@ -41,7 +41,7 @@ export function LoginForm({ signupEnabled }: { signupEnabled: boolean }) {
             <Zap className="h-5 w-5 text-white" fill="currentColor" />
           </div>
           <h1 className="font-display text-2xl font-semibold tracking-tight">
-            InstaReply
+            Falow
           </h1>
           <p className="text-center text-sm text-muted-foreground">
             Auto-resposta para DMs do Instagram

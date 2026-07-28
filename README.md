@@ -1,14 +1,14 @@
-# ⚡ InstaReply
+# ⚡ Falow
 
 **Seu robô de auto-resposta para DMs do Instagram — instalado por você, controlado por você.**
 
-Você conecta sua conta do Instagram, cria regras do tipo *"se receber **preço** → responda com o link da tabela"* e o InstaReply responde sozinho, 24h por dia, com delay humanizado de 2–5s. Painel completo com métricas e logs de cada mensagem.
+Você conecta sua conta do Instagram, cria regras do tipo *"se receber **preço** → responda com o link da tabela"* e o Falow responde sozinho, 24h por dia, com delay humanizado de 2–5s. Painel completo com métricas e logs de cada mensagem.
 
 E quando uma resposta só não basta, as **Sequências** entram em cena: um canvas visual (estilo n8n/ManyChat) onde você conecta blocos — mensagens, botões, respostas rápidas, atrasos, esperas — e monta fluxos de conversa inteiros que rodam sozinhos na DM.
 
 Cada instalação é **sua**: seu banco (Supabase, grátis), seu app Meta, sua hospedagem. Nenhum dado passa por servidores de terceiros — e, por usar o **Login do Instagram** no seu próprio app Meta, funciona com a sua conta **sem App Review** e sem precisar de Página do Facebook.
 
-> 📕 **Siga o guia ilustrado:** [docs/guia-configuracao-instareply.pdf](docs/guia-configuracao-instareply.pdf) — o passo a passo completo, com links e telas de onde tirar cada credencial.
+> 📕 **Siga o guia ilustrado:** [docs/guia-configuracao-falow.pdf](docs/guia-configuracao-falow.pdf) — o passo a passo completo, com links e telas de onde tirar cada credencial.
 
 ---
 
@@ -24,7 +24,7 @@ Cada instalação é **sua**: seu banco (Supabase, grátis), seu app Meta, sua h
 
 ### Deploy com um clique (Vercel)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FSEU-USUARIO%2Finstareply&project-name=instareply&repository-name=instareply&env=NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,SUPABASE_SERVICE_ROLE_KEY,INSTAGRAM_APP_ID,INSTAGRAM_APP_SECRET,META_APP_SECRET,META_VERIFY_TOKEN,META_GRAPH_VERSION,NEXT_PUBLIC_APP_URL,TOKEN_ENCRYPTION_KEY,CRON_SECRET&envDescription=Credenciais%20do%20Supabase%20e%20do%20app%20Meta%20—%20veja%20o%20guia%20em%20docs%2F)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FSEU-USUARIO%2Ffalow&project-name=falow&repository-name=falow&env=NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,SUPABASE_SERVICE_ROLE_KEY,INSTAGRAM_APP_ID,INSTAGRAM_APP_SECRET,META_APP_SECRET,META_VERIFY_TOKEN,META_GRAPH_VERSION,NEXT_PUBLIC_APP_URL,TOKEN_ENCRYPTION_KEY,CRON_SECRET&envDescription=Credenciais%20do%20Supabase%20e%20do%20app%20Meta%20—%20veja%20o%20guia%20em%20docs%2F)
 
 O botão clona o repositório para a sua conta do GitHub e já pede as variáveis de ambiente na tela.
 *(Mantenedor: troque `SEU-USUARIO` pela URL real do repositório.)*
@@ -32,8 +32,8 @@ O botão clona o repositório para a sua conta do GitHub e já pede as variávei
 ### Rodando localmente
 
 ```bash
-git clone https://github.com/SEU-USUARIO/instareply.git
-cd instareply
+git clone https://github.com/SEU-USUARIO/falow.git
+cd falow
 cp .env.example .env.local   # preencha os valores (passos 1 e 2 do guia)
 npm install
 npm run dev                  # http://localhost:3000
@@ -110,7 +110,7 @@ Regras que o runtime respeita sozinho: janela de 24h da Meta (fluxo para com `wi
 
 **Atrasos longos (minutos/horas):** o fluxo é retomado pelo endpoint `/api/cron/sequences`, protegido por `CRON_SECRET`. Três formas de acioná-lo, da mais simples à mais precisa:
 
-1. **Automática** — a cada mensagem/comentário que chega, o InstaReply também retoma atrasos vencidos (tick oportunista). Para contas com movimento, resolve.
+1. **Automática** — a cada mensagem/comentário que chega, o Falow também retoma atrasos vencidos (tick oportunista). Para contas com movimento, resolve.
 2. **Cron da Vercel** — já configurado em `vercel.json` (1x/dia, limite do plano Hobby).
 3. **Agendador externo grátis** (recomendado p/ precisão de minutos) — crie um monitor no [cron-job.org](https://cron-job.org) chamando `https://SEU-APP.vercel.app/api/cron/sequences?secret=SEU_CRON_SECRET` a cada 1–5 minutos.
 

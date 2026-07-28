@@ -54,18 +54,33 @@ const INVOCATION_BUDGET_MS = 40 * 1000;
 // Trava de segurança contra ciclos no grafo.
 const MAX_TOTAL_STEPS = 100;
 
-// Payload dos botões/quick replies de sequência: instareply:seq:<runId>:<handle>
-const SEQ_PAYLOAD_PREFIX = "instareply:seq:";
+// Payload dos botões/quick replies de sequência: falow:seq:<runId>:<handle>
+const SEQ_PAYLOAD_PREFIX = "falow:seq:";
+// O produto se chamou InstaReply até 2026-07-28. Botões já entregues em DMs
+// carregam o payload antigo para sempre, então continuamos aceitando na leitura
+// (só o envio usa o prefixo novo).
+const SEQ_PAYLOAD_PREFIX_LEGACY = "instareply:seq:";
 
 export function buildSequencePayload(runId: string, handle: string): string {
   return `${SEQ_PAYLOAD_PREFIX}${runId}:${handle}`;
 }
 
+export function isSequencePayload(payload: string | undefined | null): boolean {
+  return (
+    !!payload &&
+    (payload.startsWith(SEQ_PAYLOAD_PREFIX) ||
+      payload.startsWith(SEQ_PAYLOAD_PREFIX_LEGACY))
+  );
+}
+
 export function parseSequencePayload(
   payload: string | undefined | null
 ): { runId: string; handle: string } | null {
-  if (!payload?.startsWith(SEQ_PAYLOAD_PREFIX)) return null;
-  const rest = payload.slice(SEQ_PAYLOAD_PREFIX.length);
+  const prefix = [SEQ_PAYLOAD_PREFIX, SEQ_PAYLOAD_PREFIX_LEGACY].find((p) =>
+    payload?.startsWith(p)
+  );
+  if (!prefix || !payload) return null;
+  const rest = payload.slice(prefix.length);
   const sep = rest.indexOf(":");
   if (sep <= 0) return null;
   return { runId: rest.slice(0, sep), handle: rest.slice(sep + 1) };
