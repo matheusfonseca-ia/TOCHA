@@ -136,15 +136,20 @@ function initialGraph(sequence?: Sequence): SequenceGraph {
   );
 }
 
-/** Converte o estado do canvas de volta para o formato salvo, descartando
- *  conexões órfãs (bloco removido ou botão/opção que deixou de existir). */
-function serializeGraph(nodes: FlowNode[], edges: Edge[]): SequenceGraph {
-  const graphNodes: SequenceGraphNode[] = nodes.map((n) => ({
+/** Um nó do canvas no formato do grafo salvo. */
+function toGraphNode(n: FlowNode): SequenceGraphNode {
+  return {
     id: n.id,
     type: (n.type ?? "message") as SequenceNodeType,
     position: { x: Math.round(n.position.x), y: Math.round(n.position.y) },
     data: n.data as unknown as SequenceNodeData,
-  }));
+  };
+}
+
+/** Converte o estado do canvas de volta para o formato salvo, descartando
+ *  conexões órfãs (bloco removido ou botão/opção que deixou de existir). */
+function serializeGraph(nodes: FlowNode[], edges: Edge[]): SequenceGraph {
+  const graphNodes: SequenceGraphNode[] = nodes.map(toGraphNode);
 
   const byId = new Map(graphNodes.map((n) => [n.id, n]));
   const graphEdges = edges
@@ -204,10 +209,26 @@ function EditorInner({
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // Nós com saídas dinâmicas (botões/opções) precisam avisar o React Flow
-  // quando os handles mudam de posição/quantidade.
+  // quando os handles mudam de quantidade/ordem. A dependência é a assinatura
+  // dos handles, e não o array `nodes`: o React Flow troca `nodes` a cada
+  // quadro de arrasto, então depender dele remediria o canvas inteiro ~60x/s
+  // enquanto um único bloco é movido. Ids não contêm ":" nem "|".
+  const handleSignature = useMemo(
+    () =>
+      nodes
+        .filter((n) => n.type === "buttons" || n.type === "quickReplies")
+        .map((n) => `${n.id}:${sourceHandlesOf(toGraphNode(n)).join(",")}`)
+        .join("|"),
+    [nodes]
+  );
+
   useEffect(() => {
-    updateNodeInternals(nodes.map((n) => n.id));
-  }, [nodes, updateNodeInternals]);
+    const ids = handleSignature
+      .split("|")
+      .filter(Boolean)
+      .map((entry) => entry.slice(0, entry.indexOf(":")));
+    if (ids.length > 0) updateNodeInternals(ids);
+  }, [handleSignature, updateNodeInternals]);
 
   // Reenquadra o fluxo quando o canvas muda de tamanho (montagem e
   // entrada/saída da tela cheia) e permite sair da tela cheia com Esc.

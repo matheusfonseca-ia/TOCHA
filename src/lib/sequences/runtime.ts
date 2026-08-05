@@ -102,6 +102,16 @@ export function parseSequencePayload(
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
+/**
+ * Instante em que a invocação precisa devolver o controle. Quem chama a
+ * partir de um webhook passa o início da invocação — o processamento do
+ * evento já consumiu parte dos 60s de `maxDuration` da rota, e contar o
+ * orçamento a partir do tick faria a soma estourar.
+ */
+export function invocationDeadline(startedAt = Date.now()): number {
+  return startedAt + INVOCATION_BUDGET_MS;
+}
+
 /** O que o pipeline registra em `interactions` após tratar um evento de sequência. */
 export interface SequenceOutcome {
   status: InteractionStatus;
@@ -341,9 +351,11 @@ async function resumeFromHandle(
  * pela rota de cron e, oportunisticamente, ao fim de cada webhook. Faz o
  * próprio log em `interactions`. Retorna quantos runs processou.
  */
-export async function processDueRuns(limit = 5): Promise<number> {
+export async function processDueRuns(
+  limit = 5,
+  deadline = invocationDeadline()
+): Promise<number> {
   const admin = createAdminClient();
-  const deadline = Date.now() + INVOCATION_BUDGET_MS;
 
   await recoverStaleRuns(admin);
 
@@ -489,9 +501,12 @@ async function recoverStaleRuns(
 }
 
 /** Versão à prova de falha do tick, para rodar ao fim de cada webhook. */
-export async function processDueRunsSafe(limit = 3): Promise<void> {
+export async function processDueRunsSafe(
+  limit = 3,
+  deadline = invocationDeadline()
+): Promise<void> {
   try {
-    await processDueRuns(limit);
+    await processDueRuns(limit, deadline);
   } catch (err) {
     console.warn(
       "[sequences] falha no tick oportunista:",
@@ -516,7 +531,7 @@ async function executeFrom(
   sequence: Sequence,
   run: SequenceRun,
   startNodeId: string | null,
-  deadline = Date.now() + INVOCATION_BUDGET_MS
+  deadline = invocationDeadline()
 ): Promise<SequenceOutcome> {
   const graph = sequence.graph;
   let steps = run.steps_executed;

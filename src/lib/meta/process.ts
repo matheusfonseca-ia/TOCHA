@@ -6,6 +6,7 @@ import {
 import {
   handleSequencePostback,
   handleSequenceReply,
+  invocationDeadline,
   isSequencePayload,
   maybeStartSequence,
   processDueRunsSafe,
@@ -93,6 +94,8 @@ export async function processWebhookPayload(
 ): Promise<void> {
   if (payload.object !== "instagram") return;
 
+  const invocationStart = Date.now();
+
   for (const entry of payload.entry ?? []) {
     for (const event of entry.messaging ?? []) {
       await processMessagingEvent(entry.id ?? "", event);
@@ -109,8 +112,9 @@ export async function processWebhookPayload(
   }
 
   // Tick oportunista: aproveita a invocação para retomar sequências paradas
-  // em nós de atraso cujo horário venceu (complementa a rota de cron).
-  await processDueRunsSafe();
+  // em nós de atraso cujo horário venceu (complementa a rota de cron). O
+  // orçamento conta desde o início da invocação — o que sobrou dela.
+  await processDueRunsSafe(3, invocationDeadline(invocationStart));
 }
 
 async function processMessagingEvent(
