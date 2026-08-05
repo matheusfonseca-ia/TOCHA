@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FalowMark } from "@/components/brand/falow-logo";
 import { FalowPathDecor } from "@/components/brand/falow-path-decor";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { signIn, signUp, type AuthResult } from "@/app/login/actions";
 
 export function LoginForm({ signupEnabled }: { signupEnabled: boolean }) {
@@ -38,6 +39,8 @@ export function LoginForm({ signupEnabled }: { signupEnabled: boolean }) {
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
       <FalowPathDecor className="pointer-events-none absolute -right-24 -top-16 h-[420px] w-[560px] opacity-[0.12] sm:opacity-[0.16]" />
       <FalowPathDecor className="pointer-events-none absolute -bottom-24 -left-24 h-[360px] w-[480px] rotate-180 opacity-[0.08]" />
+
+      <ThemeToggle className="absolute right-4 top-4" />
 
       <div className="relative w-full max-w-sm space-y-8 animate-fade-up">
         <div className="flex flex-col items-center gap-3">

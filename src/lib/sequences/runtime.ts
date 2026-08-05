@@ -30,6 +30,7 @@ import {
   type Sequence,
   type SequenceGraph,
   type SequenceGraphNode,
+  type SequenceNodeType,
   type SequenceRun,
   type SequenceRunStatus,
   type TriggerNodeData,
@@ -51,8 +52,21 @@ const WINDOW_MARGIN_MS = 60 * 1000;
 const INLINE_DELAY_MAX_MS = 20 * 1000;
 // Orçamento de tempo por invocação (maxDuration das rotas é 60s).
 const INVOCATION_BUDGET_MS = 40 * 1000;
+// Folga reservada para executar mais um bloco (pausa humanizada de até 3,5s +
+// ida à Graph API). Sem essa folga a execução é estacionada em vez de arriscar
+// ser morta no meio do envio.
+const NODE_BUDGET_MS = 10 * 1000;
+// Um run só fica em `running` durante uma invocação (teto de 60s). Acima disso
+// a invocação que o reivindicou morreu (timeout, deploy, crash) e ele é órfão.
+const STALE_RUNNING_MS = 5 * 60 * 1000;
 // Trava de segurança contra ciclos no grafo.
 const MAX_TOTAL_STEPS = 100;
+// Nós que falam com a Graph API — os únicos que custam tempo de verdade.
+const SENDING_NODE_TYPES: ReadonlySet<SequenceNodeType> = new Set([
+  "message",
+  "buttons",
+  "quickReplies",
+]);
 
 // Payload dos botões/quick replies de sequência: falow:seq:<runId>:<handle>
 const SEQ_PAYLOAD_PREFIX = "falow:seq:";
@@ -331,10 +345,17 @@ export async function processDueRuns(limit = 5): Promise<number> {
   const admin = createAdminClient();
   const deadline = Date.now() + INVOCATION_BUDGET_MS;
 
+  await recoverStaleRuns(admin);
+
+  // Sequência pausada congela os atrasos — mas o filtro precisa acontecer no
+  // banco, não no laço: esses runs são os mais antigos da fila, então pulá-los
+  // aqui dentro faria com que esgotassem o `limit` a cada tick para sempre e
+  // nenhum outro atraso jamais rodasse.
   const { data: due } = await admin
     .from("sequence_runs")
-    .select("*, sequences(*)")
+    .select("*, sequences!inner(*)")
     .eq("status", "waiting_delay")
+    .eq("sequences.is_active", true)
     .lte("next_run_at", new Date().toISOString())
     .order("next_run_at")
     .limit(limit);
@@ -342,17 +363,12 @@ export async function processDueRuns(limit = 5): Promise<number> {
   let processed = 0;
 
   for (const row of (due ?? []) as RunWithSequence[]) {
-    if (Date.now() > deadline) break;
+    if (Date.now() + NODE_BUDGET_MS > deadline) break;
 
+    // Rede de segurança: o `!inner` acima já garante sequência existente
+    // (o run é apagado em cascata com ela) e ativa.
     const sequence = row.sequences;
-    // Sequência pausada congela os atrasos; removida encerra o run.
-    if (!sequence) {
-      await persistRun(admin, row, "completed", {
-        last_error: "Sequência removida",
-      });
-      continue;
-    }
-    if (!sequence.is_active) continue;
+    if (!sequence || !sequence.is_active) continue;
 
     const claimed = await claimRun(admin, row.id, "waiting_delay");
     if (!claimed) continue;
@@ -374,9 +390,14 @@ export async function processDueRuns(limit = 5): Promise<number> {
     const node = claimed.current_node_id
       ? nodeById(sequence.graph, claimed.current_node_id)
       : null;
-    const nextNodeId = node
-      ? targetOf(sequence.graph, node.id, OUT_HANDLE)
-      : null;
+    // Parada num nó de atraso: o tempo venceu, segue para o sucessor. Qualquer
+    // outro nó é uma parada de orçamento (parkRun) — o bloco ainda não foi
+    // executado, então a retomada acontece nele mesmo.
+    const nextNodeId = !node
+      ? null
+      : node.type === "delay"
+        ? targetOf(sequence.graph, node.id, OUT_HANDLE)
+        : node.id;
 
     const startedAt = Date.now();
     const outcome = await executeFrom(
@@ -384,7 +405,8 @@ export async function processDueRuns(limit = 5): Promise<number> {
       account,
       sequence,
       claimed,
-      nextNodeId
+      nextNodeId,
+      deadline
     );
     processed++;
 
@@ -406,6 +428,66 @@ export async function processDueRuns(limit = 5): Promise<number> {
   return processed;
 }
 
+/**
+ * Runs órfãos em `running`: a invocação que os reivindicou morreu antes de
+ * persistir a próxima parada (timeout, deploy no meio, crash). Nenhuma
+ * retomada os procura — `processDueRuns` só olha `waiting_delay` e os claims
+ * exigem um status de espera — e o unique (sequence_id, ig_sender_id) impede
+ * a pessoa de entrar de novo, então ficariam mortos e invisíveis para sempre.
+ *
+ * Encerramos como `error` em vez de retomar: `current_node_id` aponta para a
+ * última parada persistida, que pode estar vários blocos atrás, e retomar de
+ * lá reenviaria mensagens que já saíram de verdade para a pessoa.
+ */
+async function recoverStaleRuns(
+  admin: AdminClient,
+  limit = 20
+): Promise<void> {
+  const cutoff = new Date(Date.now() - STALE_RUNNING_MS).toISOString();
+  const detail = "Execução interrompida (a invocação anterior não terminou)";
+
+  const { data: stale } = await admin
+    .from("sequence_runs")
+    .select("*, sequences(name)")
+    .eq("status", "running")
+    .lt("updated_at", cutoff)
+    .order("updated_at")
+    .limit(limit);
+
+  type StaleRun = SequenceRun & { sequences: { name: string } | null };
+
+  for (const row of (stale ?? []) as StaleRun[]) {
+    // Compare-and-swap no próprio UPDATE: outra invocação (ou o run voltando
+    // à vida) perde a corrida e nada é sobrescrito.
+    const { data: closed } = await admin
+      .from("sequence_runs")
+      .update({
+        status: "error",
+        last_error: detail,
+        next_run_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", row.id)
+      .eq("status", "running")
+      .lt("updated_at", cutoff)
+      .select("id")
+      .maybeSingle<{ id: string }>();
+    if (!closed) continue;
+
+    await admin.from("interactions").insert({
+      account_id: row.account_id,
+      ig_sender_id: row.ig_sender_id,
+      message_text: "[sequência: execução interrompida]",
+      sequence_id: row.sequence_id,
+      matched_keyword: row.sequences?.name ?? null,
+      status: "error",
+      reply_type: null,
+      error_detail: detail,
+      latency_ms: null,
+    });
+  }
+}
+
 /** Versão à prova de falha do tick, para rodar ao fim de cada webhook. */
 export async function processDueRunsSafe(limit = 3): Promise<void> {
   try {
@@ -423,16 +505,20 @@ export async function processDueRunsSafe(limit = 3): Promise<void> {
 /**
  * Percorre o grafo a partir de um nó, executando cada bloco até chegar num
  * nó de espera (persiste e para) ou no fim do fluxo (completed).
+ *
+ * `deadline` é o instante em que a invocação precisa ter devolvido controle.
+ * O tick compartilha um único deadline entre todos os runs que processa — por
+ * isso ele é parâmetro, e não recalculado aqui a cada chamada.
  */
 async function executeFrom(
   admin: AdminClient,
   account: IgAccount,
   sequence: Sequence,
   run: SequenceRun,
-  startNodeId: string | null
+  startNodeId: string | null,
+  deadline = Date.now() + INVOCATION_BUDGET_MS
 ): Promise<SequenceOutcome> {
   const graph = sequence.graph;
-  const invocationStart = Date.now();
   let steps = run.steps_executed;
   let nodeId = startNodeId;
   let token: string | null = null;
@@ -445,13 +531,25 @@ async function executeFrom(
 
   try {
     while (nodeId) {
-      if (++steps > MAX_TOTAL_STEPS) {
-        throw new Error("Limite de passos da sequência excedido (ciclo no fluxo?)");
-      }
-
       const node = nodeById(graph, nodeId);
       if (!node) {
         throw new Error("Conexão aponta para um bloco que não existe mais");
+      }
+
+      // Sem folga para mais um envio, estaciona ANTES de executar o bloco.
+      // Sem isso, um fluxo longo (cada envio custa a pausa humanizada + a
+      // Graph API) estoura o maxDuration e é morto no meio do laço: o catch
+      // nunca roda e o run fica preso em `running` para sempre.
+      if (
+        SENDING_NODE_TYPES.has(node.type) &&
+        Date.now() + NODE_BUDGET_MS > deadline
+      ) {
+        await parkRun(admin, run, node.id, steps);
+        return ok("replied");
+      }
+
+      if (++steps > MAX_TOTAL_STEPS) {
+        throw new Error("Limite de passos da sequência excedido (ciclo no fluxo?)");
       }
 
       switch (node.type) {
@@ -534,8 +632,7 @@ async function executeFrom(
 
         case "delay": {
           const ms = delayToSeconds(node.data as DelayNodeData) * 1000;
-          const elapsed = Date.now() - invocationStart;
-          if (ms <= INLINE_DELAY_MAX_MS && elapsed + ms < INVOCATION_BUDGET_MS) {
+          if (ms <= INLINE_DELAY_MAX_MS && Date.now() + ms + NODE_BUDGET_MS < deadline) {
             await sleep(ms);
             nodeId = targetOf(graph, node.id, OUT_HANDLE);
           } else {
@@ -581,6 +678,25 @@ async function executeFrom(
     });
     return { ...ok("error"), errorDetail: detail };
   }
+}
+
+/**
+ * Estaciona a execução num bloco que ainda NÃO foi executado, por falta de
+ * orçamento na invocação. Vira `waiting_delay` com vencimento imediato, e a
+ * retomada acontece no próprio bloco — `processDueRuns` só pula para o
+ * sucessor quando a parada foi num nó de atraso.
+ */
+async function parkRun(
+  admin: AdminClient,
+  run: SequenceRun,
+  nodeId: string,
+  steps: number
+): Promise<void> {
+  await persistRun(admin, run, "waiting_delay", {
+    current_node_id: nodeId,
+    next_run_at: new Date().toISOString(),
+    steps_executed: steps,
+  });
 }
 
 async function persistRun(

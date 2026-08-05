@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { FalowLogo } from "@/components/brand/falow-logo";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { signOut } from "@/app/login/actions";
 
 const NAV_ITEMS = [
@@ -39,14 +40,17 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
       {/* Topbar mobile */}
       <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border/70 bg-background/90 px-4 backdrop-blur md:hidden">
         <FalowLogo />
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setOpen(true)}
-          aria-label="Abrir menu"
-        >
-          <Menu className="h-5 w-5" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <ThemeToggle />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setOpen(true)}
+            aria-label="Abrir menu"
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+        </div>
       </header>
 
       {/* Backdrop do drawer mobile */}
@@ -120,17 +124,20 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
             <p className="truncate text-[13px] text-muted-foreground" title={userEmail}>
               {userEmail}
             </p>
-            <form action={signOut}>
-              <Button
-                variant="ghost"
-                size="icon"
-                type="submit"
-                title="Sair"
-                className="h-7 w-7 shrink-0 text-muted-foreground/70 hover:text-foreground"
-              >
-                <LogOut className="h-3.5 w-3.5" />
-              </Button>
-            </form>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <ThemeToggle className="h-7 w-7" />
+              <form action={signOut}>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  type="submit"
+                  title="Sair"
+                  className="h-7 w-7 shrink-0 text-muted-foreground/70 hover:text-foreground"
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                </Button>
+              </form>
+            </div>
           </div>
         </div>
       </aside>

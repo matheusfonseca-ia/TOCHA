@@ -32,6 +32,7 @@ import {
   Plus,
   Timer,
 } from "lucide-react";
+import { useTheme } from "next-themes";
 import { toast } from "sonner";
 
 import {
@@ -181,6 +182,7 @@ function EditorInner({
   sequence?: Sequence;
 }) {
   const router = useRouter();
+  const { resolvedTheme } = useTheme();
   const [isPending, startTransition] = useTransition();
   const updateNodeInternals = useUpdateNodeInternals();
   const { fitView } = useReactFlow();
@@ -455,7 +457,7 @@ function EditorInner({
             onConnect={onConnect}
             onSelectionChange={onSelectionChange}
             nodeTypes={sequenceNodeTypes}
-            colorMode="light"
+            colorMode={resolvedTheme === "dark" ? "dark" : "light"}
             fitView
             fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
             minZoom={0.25}
@@ -466,9 +468,9 @@ function EditorInner({
                 type: MarkerType.ArrowClosed,
                 width: 20,
                 height: 20,
-                color: "#1FAE5C",
+                color: "hsl(var(--success))",
               },
-              style: { strokeWidth: 2, stroke: "#1FAE5C" },
+              style: { strokeWidth: 2, stroke: "hsl(var(--success))" },
             }}
             isValidConnection={(conn) => conn.source !== conn.target}
           >
@@ -476,7 +478,7 @@ function EditorInner({
               variant={BackgroundVariant.Dots}
               gap={20}
               size={1.5}
-              color="hsl(80 12% 82%)"
+              color="hsl(var(--border))"
             />
             <Controls showInteractive={false} />
           </ReactFlow>

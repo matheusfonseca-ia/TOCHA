@@ -57,7 +57,14 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import type { MatchType, ReplyType, Rule } from "@/types/database";
+import type {
+  MatchType,
+  MediaMode,
+  MediaRef,
+  ReplyType,
+  Rule,
+  TriggerType,
+} from "@/types/database";
 import {
   deleteRule,
   saveRule,
@@ -91,10 +98,27 @@ interface ButtonSlot {
   url: string;
 }
 
+/**
+ * Configuração exclusiva de regras de comentário. Este diálogo não a edita
+ * (quem cria isso é o builder em /rules/nova/responder-comentario), mas
+ * precisa carregá-la de volta no salvar: `saveRule` reescreve a linha inteira,
+ * então omitir esses campos apagaria o fluxo de comentário da regra.
+ */
+interface CommentConfig {
+  media_mode: MediaMode | null;
+  media_refs: MediaRef[] | null;
+  comment_any_word: boolean;
+  public_reply_enabled: boolean;
+  public_reply_text: string | null;
+  welcome_text: string | null;
+  welcome_button_label: string | null;
+}
+
 interface FormState {
   id?: string;
   name: string;
   account_id: string;
+  trigger_type: TriggerType;
   keyword: string;
   match_type: MatchType;
   reply_type: ReplyType;
@@ -103,12 +127,15 @@ interface FormState {
   buttons: ButtonSlot[];
   delay_seconds: number;
   is_active: boolean;
+  /** Preenchido apenas quando trigger_type === "comment". */
+  comment: CommentConfig | null;
 }
 
 function emptyForm(defaultAccountId: string): FormState {
   return {
     name: "",
     account_id: defaultAccountId,
+    trigger_type: "dm",
     keyword: "",
     match_type: "contains",
     reply_type: "text",
@@ -121,6 +148,7 @@ function emptyForm(defaultAccountId: string): FormState {
     ],
     delay_seconds: 3,
     is_active: true,
+    comment: null,
   };
 }
 
@@ -137,6 +165,7 @@ function formFromRule(rule: RuleWithAccount): FormState {
     id: rule.id,
     name: rule.name ?? "",
     account_id: rule.account_id,
+    trigger_type: rule.trigger_type,
     keyword: rule.keyword ?? "",
     match_type: rule.match_type,
     reply_type: rule.reply_type,
@@ -145,6 +174,18 @@ function formFromRule(rule: RuleWithAccount): FormState {
     buttons,
     delay_seconds: rule.delay_seconds,
     is_active: rule.is_active,
+    comment:
+      rule.trigger_type === "comment"
+        ? {
+            media_mode: rule.media_mode,
+            media_refs: rule.media_refs,
+            comment_any_word: rule.comment_any_word,
+            public_reply_enabled: rule.public_reply_enabled,
+            public_reply_text: rule.public_reply_text,
+            welcome_text: rule.welcome_text,
+            welcome_button_label: rule.welcome_button_label,
+          }
+        : null,
   };
 }
 
@@ -181,10 +222,12 @@ export function RulesManager({
   }
 
   function handleSubmit() {
+    const comment = form.comment;
     const input: RuleInput = {
       id: form.id,
       name: form.name.trim() || undefined,
       account_id: form.account_id,
+      trigger_type: form.trigger_type,
       keyword: form.keyword,
       match_type: form.match_type,
       reply_type: form.reply_type,
@@ -193,6 +236,16 @@ export function RulesManager({
       reply_buttons: form.buttons.filter((b) => b.title.trim() && b.url.trim()),
       delay_seconds: form.delay_seconds,
       is_active: form.is_active,
+      // Devolve intacta a configuração de comentário que este diálogo não edita.
+      ...(comment && {
+        media_mode: comment.media_mode ?? undefined,
+        media_refs: comment.media_refs ?? undefined,
+        comment_any_word: comment.comment_any_word,
+        public_reply_enabled: comment.public_reply_enabled,
+        public_reply_text: comment.public_reply_text ?? undefined,
+        welcome_text: comment.welcome_text ?? undefined,
+        welcome_button_label: comment.welcome_button_label ?? undefined,
+      }),
     };
 
     startTransition(async () => {
@@ -399,8 +452,9 @@ export function RulesManager({
               {form.id ? "Editar automação" : "Nova automação"}
             </DialogTitle>
             <DialogDescription>
-              Se receber a palavra-chave, o Falow responde automaticamente
-              na DM.
+              {form.trigger_type === "comment"
+                ? "Automação de comentário. Aqui você ajusta o básico e a mensagem com o link — as publicações-alvo e a mensagem de boas-vindas continuam como estão."
+                : "Se receber a palavra-chave, o Falow responde automaticamente na DM."}
             </DialogDescription>
           </DialogHeader>
 
@@ -437,37 +491,54 @@ export function RulesManager({
               </Select>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="keyword">Se receber</Label>
-                <Input
-                  id="keyword"
-                  placeholder="ex.: preço"
-                  className="font-mono"
-                  value={form.keyword}
-                  onChange={(e) => patch({ keyword: e.target.value })}
-                />
+            {/* Sem palavra-chave a regra dispara em qualquer comentário — o
+                campo não teria efeito nenhum (saveRule salva keyword = null). */}
+            {form.comment?.comment_any_word ? (
+              <div className="rounded-md border border-input px-3 py-2.5 text-sm text-muted-foreground">
+                Dispara em <strong className="font-medium">qualquer comentário</strong>{" "}
+                das publicações escolhidas — sem palavra-chave.
               </div>
-              <div className="space-y-2">
-                <Label>Tipo de match</Label>
-                <Select
-                  value={form.match_type}
-                  onValueChange={(v) => patch({ match_type: v as MatchType })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="contains">Contém a palavra</SelectItem>
-                    <SelectItem value="exact">Mensagem exata</SelectItem>
-                    <SelectItem value="starts_with">Começa com</SelectItem>
-                  </SelectContent>
-                </Select>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="keyword">
+                    {form.trigger_type === "comment"
+                      ? "Se comentarem"
+                      : "Se receber"}
+                  </Label>
+                  <Input
+                    id="keyword"
+                    placeholder="ex.: preço"
+                    className="font-mono"
+                    value={form.keyword}
+                    onChange={(e) => patch({ keyword: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Tipo de match</Label>
+                  <Select
+                    value={form.match_type}
+                    onValueChange={(v) => patch({ match_type: v as MatchType })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="contains">Contém a palavra</SelectItem>
+                      <SelectItem value="exact">Mensagem exata</SelectItem>
+                      <SelectItem value="starts_with">Começa com</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="space-y-2">
-              <Label>Responder com</Label>
+              <Label>
+                {form.trigger_type === "comment"
+                  ? "Mensagem entregue ao tocar no botão"
+                  : "Responder com"}
+              </Label>
               <Tabs
                 value={form.reply_type}
                 onValueChange={(v) => patch({ reply_type: v as ReplyType })}

@@ -23,43 +23,43 @@ export function ActivityChart({ data }: { data: ActivityPoint[] }) {
         <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
           <defs>
             <linearGradient id="gradRespondidas" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#32E875" stopOpacity={0.3} />
-              <stop offset="100%" stopColor="#32E875" stopOpacity={0} />
+              <stop offset="0%" stopColor="hsl(var(--success))" stopOpacity={0.3} />
+              <stop offset="100%" stopColor="hsl(var(--success))" stopOpacity={0} />
             </linearGradient>
           </defs>
           <CartesianGrid
             strokeDasharray="3 3"
-            stroke="hsl(80 12% 89%)"
+            stroke="hsl(var(--border))"
             vertical={false}
           />
           <XAxis
             dataKey="label"
-            tick={{ fill: "hsl(90 6% 52%)", fontSize: 11 }}
+            tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
             axisLine={false}
             tickLine={false}
           />
           <YAxis
-            tick={{ fill: "hsl(90 6% 52%)", fontSize: 11 }}
+            tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
             axisLine={false}
             tickLine={false}
             allowDecimals={false}
           />
           <Tooltip
-            cursor={{ stroke: "hsl(80 12% 82%)", strokeWidth: 1 }}
+            cursor={{ stroke: "hsl(var(--border))", strokeWidth: 1 }}
             contentStyle={{
-              backgroundColor: "#FFFFFF",
-              border: "1px solid hsl(80 12% 88%)",
+              backgroundColor: "hsl(var(--popover))",
+              border: "1px solid hsl(var(--border))",
               borderRadius: "8px",
               fontSize: "12px",
               boxShadow: "0 8px 24px -8px rgb(11 13 12 / 0.18)",
             }}
-            labelStyle={{ color: "hsl(150 8% 5%)", fontWeight: 500 }}
+            labelStyle={{ color: "hsl(var(--foreground))", fontWeight: 500 }}
           />
           <Area
             type="monotone"
             dataKey="recebidas"
             name="Recebidas"
-            stroke="hsl(90 6% 62%)"
+            stroke="hsl(var(--muted-foreground))"
             strokeWidth={1.5}
             fill="transparent"
             dot={false}
@@ -69,7 +69,7 @@ export function ActivityChart({ data }: { data: ActivityPoint[] }) {
             type="monotone"
             dataKey="respondidas"
             name="Respondidas"
-            stroke="#1FAE5C"
+            stroke="hsl(var(--success))"
             strokeWidth={2}
             fill="url(#gradRespondidas)"
             dot={false}

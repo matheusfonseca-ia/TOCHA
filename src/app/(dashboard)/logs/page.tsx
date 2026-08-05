@@ -117,7 +117,7 @@ export default async function LogsPage({
                     </p>
                     {log.error_detail && (
                       <p
-                        className="max-w-[280px] truncate text-xs text-red-600"
+                        className="max-w-[280px] truncate text-xs text-red-600 dark:text-red-400"
                         title={log.error_detail}
                       >
                         {log.error_detail}
