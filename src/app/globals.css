@@ -4,42 +4,42 @@
 
 @layer base {
   :root {
-    /* Paleta Falow — dark violet */
-    --background: 259 44% 7%;          /* #0F0A1A */
-    --foreground: 270 25% 96%;
+    /* Paleta Falow — Clear White + Falow Black + Falow Green + Trigger Yellow */
+    --background: 72 26% 96%;          /* #F7F8F3 — Clear White */
+    --foreground: 150 8% 5%;           /* #0B0D0C — Falow Black */
 
-    --card: 269 40% 10%;               /* #1A1025 */
-    --card-foreground: 270 25% 96%;
+    --card: 0 0% 100%;
+    --card-foreground: 150 8% 5%;
 
-    --popover: 268 42% 9%;
-    --popover-foreground: 270 25% 96%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 150 8% 5%;
 
-    --primary: 258 90% 66%;            /* #8B5CF6 */
-    --primary-foreground: 0 0% 100%;
+    --primary: 142 80% 55%;            /* #32E875 — Falow Green */
+    --primary-foreground: 150 8% 5%;
 
-    --secondary: 266 32% 16%;
-    --secondary-foreground: 270 25% 92%;
+    --secondary: 80 14% 91%;
+    --secondary-foreground: 150 8% 5%;
 
-    --muted: 266 30% 14%;
-    --muted-foreground: 264 16% 66%;
+    --muted: 80 14% 93%;
+    --muted-foreground: 90 6% 42%;
 
-    --accent: 266 36% 19%;
-    --accent-foreground: 270 25% 96%;
+    --accent: 142 45% 93%;
+    --accent-foreground: 150 8% 5%;
 
-    --destructive: 0 72% 56%;
+    --destructive: 4 78% 52%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 152 62% 42%;
+    --success: 150 65% 30%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 38 92% 55%;
-    --warning-foreground: 30 80% 10%;
+    --warning: 47 100% 62%;            /* #FFD43B — Trigger Yellow */
+    --warning-foreground: 150 8% 5%;
 
-    --border: 266 30% 16%;
-    --input: 266 30% 20%;
-    --ring: 258 90% 66%;
+    --border: 80 12% 88%;
+    --input: 80 12% 85%;
+    --ring: 142 70% 45%;
 
-    --radius: 0.625rem;
+    --radius: 0.75rem;
   }
 
   * {
@@ -48,10 +48,15 @@
 
   body {
     @apply bg-background text-foreground font-sans antialiased;
+    background-image: radial-gradient(
+      hsl(80 12% 82% / 0.55) 1px,
+      transparent 1px
+    );
+    background-size: 22px 22px;
   }
 
   ::selection {
-    background: hsl(258 90% 66% / 0.3);
+    background: hsl(142 80% 55% / 0.28);
   }
 }
 
@@ -65,12 +70,12 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: hsl(266 20% 20%);
+    background: hsl(80 10% 82%);
     border-radius: 8px;
     border: 2px solid hsl(var(--background));
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: hsl(266 16% 28%);
+    background: hsl(80 10% 72%);
   }
 
   /* Entrada escalonada — aplicar .stagger-item com --stagger-index */
@@ -87,6 +92,19 @@
     to {
       opacity: 1;
       transform: translateY(0);
+    }
+  }
+
+  /* Traço do caminho decorativo (Falow Paths) desenhando-se na entrada */
+  .falow-path-draw {
+    stroke-dasharray: var(--path-length, 1400);
+    stroke-dashoffset: var(--path-length, 1400);
+    animation: draw-path 1.8s cubic-bezier(0.16, 1, 0.3, 1) 0.15s forwards;
+  }
+
+  @keyframes draw-path {
+    to {
+      stroke-dashoffset: 0;
     }
   }
 }

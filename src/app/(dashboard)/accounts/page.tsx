@@ -57,8 +57,8 @@ export default async function AccountsPage({
       </PageHeader>
 
       {searchParams.connected && (
-        <div className="mb-6 flex items-center gap-2.5 rounded-lg border border-success/25 bg-success/10 px-4 py-3 text-sm text-emerald-100 animate-fade-up">
-          <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-400" />
+        <div className="mb-6 flex items-center gap-2.5 rounded-lg border border-success/25 bg-success/10 px-4 py-3 text-sm text-emerald-900 animate-fade-up">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
           <span>
             {searchParams.connected} conta(s) conectada(s) com sucesso. As
             automações já estão valendo.
@@ -67,8 +67,8 @@ export default async function AccountsPage({
       )}
 
       {searchParams.error && (
-        <div className="mb-6 flex items-center gap-2.5 rounded-lg border border-destructive/25 bg-destructive/10 px-4 py-3 text-sm text-red-100 animate-fade-up">
-          <AlertTriangle className="h-4 w-4 shrink-0 text-red-400" />
+        <div className="mb-6 flex items-center gap-2.5 rounded-lg border border-destructive/25 bg-destructive/10 px-4 py-3 text-sm text-red-900 animate-fade-up">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-red-600" />
           <span>
             {ERROR_MESSAGES[searchParams.error] ?? ERROR_MESSAGES.unknown}
           </span>

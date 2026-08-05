@@ -15,6 +15,7 @@ import {
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { FalowLogo } from "@/components/brand/falow-logo";
 import { signOut } from "@/app/login/actions";
 
 const NAV_ITEMS = [
@@ -23,19 +24,6 @@ const NAV_ITEMS = [
   { href: "/accounts", label: "Contas", icon: Instagram },
   { href: "/logs", label: "Logs", icon: ScrollText },
 ];
-
-function Logo() {
-  return (
-    <div className="flex items-center gap-2.5">
-      <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary">
-        <Zap className="h-3.5 w-3.5 text-white" fill="currentColor" />
-      </div>
-      <span className="font-display text-[15px] font-semibold tracking-tight">
-        Falow
-      </span>
-    </div>
-  );
-}
 
 export function Sidebar({ userEmail }: { userEmail: string }) {
   const pathname = usePathname();
@@ -50,7 +38,7 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
     <>
       {/* Topbar mobile */}
       <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-border/70 bg-background/90 px-4 backdrop-blur md:hidden">
-        <Logo />
+        <FalowLogo />
         <Button
           variant="ghost"
           size="icon"
@@ -79,7 +67,7 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
       >
         {/* Logo */}
         <div className="flex h-14 items-center justify-between border-b border-border/70 px-5">
-          <Logo />
+          <FalowLogo />
           <Button
             variant="ghost"
             size="icon"
@@ -123,7 +111,7 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
         {/* Status + usuário */}
         <div className="border-t border-border/70 p-3">
           <div className="flex items-center gap-2 px-2.5 py-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse-dot" />
+            <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse-dot" />
             <span className="text-xs text-muted-foreground">
               Automações ativas
             </span>

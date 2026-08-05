@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Zap } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
@@ -15,6 +14,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { FalowMark } from "@/components/brand/falow-logo";
+import { FalowPathDecor } from "@/components/brand/falow-path-decor";
 import { signIn, signUp, type AuthResult } from "@/app/login/actions";
 
 export function LoginForm({ signupEnabled }: { signupEnabled: boolean }) {
@@ -34,16 +35,20 @@ export function LoginForm({ signupEnabled }: { signupEnabled: boolean }) {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center p-4">
-      <div className="w-full max-w-sm space-y-8 animate-fade-up">
+    <main className="relative flex min-h-screen items-center justify-center overflow-hidden p-4">
+      <FalowPathDecor className="pointer-events-none absolute -right-24 -top-16 h-[420px] w-[560px] opacity-[0.12] sm:opacity-[0.16]" />
+      <FalowPathDecor className="pointer-events-none absolute -bottom-24 -left-24 h-[360px] w-[480px] rotate-180 opacity-[0.08]" />
+
+      <div className="relative w-full max-w-sm space-y-8 animate-fade-up">
         <div className="flex flex-col items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary shadow-[inset_0_1px_0_0_rgb(255_255_255/0.15)]">
-            <Zap className="h-5 w-5 text-white" fill="currentColor" />
-          </div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">
-            Falow
+          <FalowMark className="h-11 w-11" />
+          <h1 className="font-display text-2xl font-bold tracking-tight">
+            falow
           </h1>
-          <p className="text-center text-sm text-muted-foreground">
+          <p className="text-center text-sm font-medium text-foreground/80">
+            Conversas que viram vendas.
+          </p>
+          <p className="text-center text-xs text-muted-foreground">
             Auto-resposta para DMs do Instagram
           </p>
         </div>

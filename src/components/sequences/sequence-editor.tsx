@@ -441,7 +441,7 @@ function EditorInner({
       >
         <div
           className={cn(
-            "min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-card/40",
+            "min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-card",
             isFullscreen
               ? "min-h-0 flex-1 lg:h-full"
               : "h-[420px] sm:h-[480px] lg:h-[calc(100vh-330px)] lg:min-h-[460px]"
@@ -455,19 +455,29 @@ function EditorInner({
             onConnect={onConnect}
             onSelectionChange={onSelectionChange}
             nodeTypes={sequenceNodeTypes}
-            colorMode="dark"
+            colorMode="light"
             fitView
             fitViewOptions={{ padding: 0.25, maxZoom: 1 }}
             minZoom={0.25}
             maxZoom={1.5}
             deleteKeyCode={["Backspace", "Delete"]}
             defaultEdgeOptions={{
-              markerEnd: { type: MarkerType.ArrowClosed, width: 20, height: 20 },
-              style: { strokeWidth: 1.5 },
+              markerEnd: {
+                type: MarkerType.ArrowClosed,
+                width: 20,
+                height: 20,
+                color: "#1FAE5C",
+              },
+              style: { strokeWidth: 2, stroke: "#1FAE5C" },
             }}
             isValidConnection={(conn) => conn.source !== conn.target}
           >
-            <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} />
+            <Background
+              variant={BackgroundVariant.Dots}
+              gap={20}
+              size={1.5}
+              color="hsl(80 12% 82%)"
+            />
             <Controls showInteractive={false} />
           </ReactFlow>
         </div>

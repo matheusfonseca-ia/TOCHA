@@ -100,7 +100,7 @@ export function TriggerNode({ data, selected }: NodeProps) {
   return (
     <NodeFrame
       icon={Zap}
-      chipClass="bg-primary/20 text-primary"
+      chipClass="bg-warning text-[#0B0D0C]"
       title="Gatilho"
       selected={selected}
       hasTarget={false}
@@ -130,7 +130,7 @@ export function MessageNode({ data, selected }: NodeProps) {
   return (
     <NodeFrame
       icon={isImage ? ImageIcon : MessageSquareText}
-      chipClass="bg-sky-500/20 text-sky-400"
+      chipClass="bg-secondary text-foreground/70"
       title={isImage ? "Imagem" : "Mensagem"}
       selected={selected}
       hasOut
@@ -158,7 +158,7 @@ export function ButtonsNode({ data, selected }: NodeProps) {
   return (
     <NodeFrame
       icon={MousePointerClick}
-      chipClass="bg-amber-500/20 text-amber-400"
+      chipClass="bg-secondary text-foreground/70"
       title="Botões"
       selected={selected}
       hasOut={!hasBranch}
@@ -179,7 +179,7 @@ export function ButtonsNode({ data, selected }: NodeProps) {
             {b.kind === "url" ? (
               <Link2 className="h-3 w-3 shrink-0 text-muted-foreground/70" />
             ) : (
-              <GitBranch className="h-3 w-3 shrink-0 text-amber-400" />
+              <GitBranch className="h-3 w-3 shrink-0 text-primary" />
             )}
             <span className="truncate text-xs">
               {b.title.trim() || `Botão ${i + 1}`}
@@ -205,7 +205,7 @@ export function QuickRepliesNode({ data, selected }: NodeProps) {
   return (
     <NodeFrame
       icon={ListChecks}
-      chipClass="bg-emerald-500/20 text-emerald-400"
+      chipClass="bg-secondary text-foreground/70"
       title="Respostas rápidas"
       selected={selected}
     >
@@ -262,7 +262,7 @@ export function DelayNode({ data, selected }: NodeProps) {
   return (
     <NodeFrame
       icon={Timer}
-      chipClass="bg-orange-500/20 text-orange-400"
+      chipClass="bg-secondary text-foreground/70"
       title="Atraso"
       selected={selected}
       hasOut
@@ -282,7 +282,7 @@ export function WaitReplyNode({ selected }: NodeProps) {
   return (
     <NodeFrame
       icon={Hourglass}
-      chipClass="bg-pink-500/20 text-pink-400"
+      chipClass="bg-secondary text-foreground/70"
       title="Esperar resposta"
       selected={selected}
       hasOut

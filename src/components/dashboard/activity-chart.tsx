@@ -23,43 +23,43 @@ export function ActivityChart({ data }: { data: ActivityPoint[] }) {
         <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
           <defs>
             <linearGradient id="gradRespondidas" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#8B5CF6" stopOpacity={0.25} />
-              <stop offset="100%" stopColor="#8B5CF6" stopOpacity={0} />
+              <stop offset="0%" stopColor="#32E875" stopOpacity={0.3} />
+              <stop offset="100%" stopColor="#32E875" stopOpacity={0} />
             </linearGradient>
           </defs>
           <CartesianGrid
             strokeDasharray="3 3"
-            stroke="hsl(266 30% 14%)"
+            stroke="hsl(80 12% 89%)"
             vertical={false}
           />
           <XAxis
             dataKey="label"
-            tick={{ fill: "hsl(264 16% 55%)", fontSize: 11 }}
+            tick={{ fill: "hsl(90 6% 52%)", fontSize: 11 }}
             axisLine={false}
             tickLine={false}
           />
           <YAxis
-            tick={{ fill: "hsl(264 16% 55%)", fontSize: 11 }}
+            tick={{ fill: "hsl(90 6% 52%)", fontSize: 11 }}
             axisLine={false}
             tickLine={false}
             allowDecimals={false}
           />
           <Tooltip
-            cursor={{ stroke: "hsl(266 30% 24%)", strokeWidth: 1 }}
+            cursor={{ stroke: "hsl(80 12% 82%)", strokeWidth: 1 }}
             contentStyle={{
-              backgroundColor: "hsl(268 42% 9%)",
-              border: "1px solid hsl(266 30% 18%)",
+              backgroundColor: "#FFFFFF",
+              border: "1px solid hsl(80 12% 88%)",
               borderRadius: "8px",
               fontSize: "12px",
-              boxShadow: "0 8px 24px -8px rgb(0 0 0 / 0.6)",
+              boxShadow: "0 8px 24px -8px rgb(11 13 12 / 0.18)",
             }}
-            labelStyle={{ color: "hsl(270 25% 96%)", fontWeight: 500 }}
+            labelStyle={{ color: "hsl(150 8% 5%)", fontWeight: 500 }}
           />
           <Area
             type="monotone"
             dataKey="recebidas"
             name="Recebidas"
-            stroke="hsl(264 16% 45%)"
+            stroke="hsl(90 6% 62%)"
             strokeWidth={1.5}
             fill="transparent"
             dot={false}
@@ -69,8 +69,8 @@ export function ActivityChart({ data }: { data: ActivityPoint[] }) {
             type="monotone"
             dataKey="respondidas"
             name="Respondidas"
-            stroke="#8B5CF6"
-            strokeWidth={1.75}
+            stroke="#1FAE5C"
+            strokeWidth={2}
             fill="url(#gradRespondidas)"
             dot={false}
             activeDot={{ r: 3, strokeWidth: 0 }}

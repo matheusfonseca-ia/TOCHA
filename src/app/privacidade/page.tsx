@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 
+import { FalowLogo } from "@/components/brand/falow-logo";
+
 export const metadata: Metadata = {
   title: "Política de Privacidade — Falow",
   description:
@@ -12,12 +14,7 @@ export default function PrivacidadePage() {
   return (
     <main className="mx-auto max-w-3xl px-6 py-16">
       <header className="mb-12">
-        <div className="mb-6 flex items-center gap-2.5">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary to-[#7C3AED] text-base text-white shadow-[0_0_14px_rgba(139,92,246,0.55)]">
-            ⚡
-          </div>
-          <span className="font-display text-lg font-bold">Falow</span>
-        </div>
+        <FalowLogo className="mb-6" markClassName="h-8 w-8" textClassName="text-lg" />
         <h1 className="font-display text-3xl font-bold tracking-tight">
           Política de Privacidade
         </h1>

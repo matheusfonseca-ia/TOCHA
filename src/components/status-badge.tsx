@@ -2,11 +2,11 @@ import { cn } from "@/lib/utils";
 import type { InteractionStatus } from "@/types/database";
 
 const STATUS_MAP: Record<InteractionStatus, { label: string; dot: string }> = {
-  replied: { label: "Respondida", dot: "bg-emerald-400" },
+  replied: { label: "Respondida", dot: "bg-primary" },
   no_match: { label: "Sem match", dot: "bg-muted-foreground/40" },
-  duplicate_skip: { label: "Duplicada", dot: "bg-amber-400" },
-  window_expired: { label: "Janela 24h", dot: "bg-amber-400" },
-  error: { label: "Erro", dot: "bg-red-400" },
+  duplicate_skip: { label: "Duplicada", dot: "bg-warning" },
+  window_expired: { label: "Janela 24h", dot: "bg-warning" },
+  error: { label: "Erro", dot: "bg-destructive" },
 };
 
 export function StatusBadge({ status }: { status: InteractionStatus }) {
