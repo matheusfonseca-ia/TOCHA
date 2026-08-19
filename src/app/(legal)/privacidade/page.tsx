@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import {
+  LEGAL_CONTACT_EMAIL,
   LEGAL_UPDATED_AT,
   LegalCallout,
   LegalContact,
@@ -49,6 +50,22 @@ export default function PrivacidadePage() {
             controlador, na linguagem da LGPD) é o administrador da conta de
             Instagram atendida por esta automação.
           </p>
+          <LegalCallout title="Controlador desta instalação">
+            <p>
+              <Term>PATRICIA POLETINI FONSECA</Term>, inscrita no CNPJ sob o nº
+              15.030.598/0001-39, estabelecida em Itatiba, Estado de São Paulo,
+              Brasil. É ela quem determina as finalidades e os meios do
+              tratamento descrito nesta política, e quem responde pelos pedidos
+              de acesso, correção e exclusão.
+            </p>
+            <p>
+              Contato:{" "}
+              <LegalLink href={`mailto:${LEGAL_CONTACT_EMAIL}`}>
+                {LEGAL_CONTACT_EMAIL}
+              </LegalLink>
+              .
+            </p>
+          </LegalCallout>
         </LegalSection>
 
         <LegalSection title="2. Quais dados são coletados">

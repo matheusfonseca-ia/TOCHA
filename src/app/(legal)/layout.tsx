@@ -2,9 +2,9 @@ import { FalowLogo } from "@/components/brand/falow-logo";
 import { LegalNav } from "@/components/legal/legal-nav";
 
 /**
- * Casca das páginas públicas (Política de Privacidade e Exclusão de dados).
- * São as duas URLs cadastradas no painel da Meta, então precisam abrir sem
- * login — o middleware libera as rotas deste grupo.
+ * Casca das três páginas públicas: Política de Privacidade, Exclusão de
+ * dados e Termos de Serviço — as URLs cadastradas no painel da Meta, que
+ * precisam abrir sem login. O middleware libera as rotas deste grupo.
  */
 export default function LegalLayout({
   children,

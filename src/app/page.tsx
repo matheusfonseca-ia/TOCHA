@@ -9,7 +9,10 @@ import {
 } from "lucide-react";
 
 import { FalowLogo, FalowMark } from "@/components/brand/falow-logo";
-import { LEGAL_PAGES } from "@/components/legal/legal-chrome";
+import {
+  LEGAL_CONTACT_EMAIL,
+  LEGAL_PAGES,
+} from "@/components/legal/legal-chrome";
 import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = {
@@ -250,12 +253,25 @@ export default function HomePage() {
                   {page.label}
                 </Link>
               ))}
+              <a
+                className="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+                href={`mailto:${LEGAL_CONTACT_EMAIL}`}
+              >
+                Contato
+              </a>
             </nav>
           </div>
 
           <p className="mt-8 text-xs leading-relaxed text-muted-foreground">
             Falow — automação de respostas para DMs e comentários do Instagram.
-            Não somos afiliados à Meta Platforms, ao Instagram nem ao Facebook.
+            Dúvidas, pedidos de exclusão de dados ou suporte:{" "}
+            <a
+              className="font-medium text-foreground underline decoration-primary decoration-2 underline-offset-4 transition-colors hover:text-primary"
+              href={`mailto:${LEGAL_CONTACT_EMAIL}`}
+            >
+              {LEGAL_CONTACT_EMAIL}
+            </a>
+            . Não somos afiliados à Meta Platforms, ao Instagram nem ao Facebook.
           </p>
         </div>
       </footer>

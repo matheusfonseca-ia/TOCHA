@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 /** Data de vigência mostrada nas páginas. */
 export const LEGAL_UPDATED_AT = "18 de agosto de 2026";
 
-/** Rotas públicas — usadas no cabeçalho e no rodapé. */
+/** Rotas legais — usadas no cabeçalho das próprias páginas e no rodapé da landing. */
 export const LEGAL_PAGES = [
   { href: "/privacidade", label: "Política de Privacidade" },
   { href: "/exclusao-de-dados", label: "Exclusão de dados" },
@@ -20,12 +20,15 @@ export const LEGAL_PAGES = [
 ] as const;
 
 /**
- * Contato do responsável pela instalação. Cada instalação do Falow é operada
- * por quem a hospeda, então o e-mail vem de env; sem ele, a página orienta o
- * contato pela própria conta de Instagram atendida pela automação.
+ * Contato do responsável pela instalação, exibido nas páginas públicas.
+ * Cada instalação do Falow é operada por quem a hospeda, então
+ * `NEXT_PUBLIC_CONTACT_EMAIL` sobrescreve o valor — quem clona o projeto
+ * aponta pro próprio e-mail. O padrão existe para que as páginas nunca fiquem
+ * sem canal de contato: a Meta exige um nas URLs cadastradas no painel, e
+ * esquecer a variável no build derrubaria essa exigência em silêncio.
  */
 export const LEGAL_CONTACT_EMAIL =
-  process.env.NEXT_PUBLIC_CONTACT_EMAIL?.trim() || null;
+  process.env.NEXT_PUBLIC_CONTACT_EMAIL?.trim() || "digitalcomvantagem@gmail.com";
 
 export function LegalSection({
   id,
@@ -160,22 +163,11 @@ export function LegalContact({
   return (
     <p>
       Esta instalação do Falow é operada de forma independente por quem hospeda o
-      aplicativo e conectou a conta de Instagram.{" "}
-      {LEGAL_CONTACT_EMAIL ? (
-        <>
-          Para {reason}, escreva para{" "}
-          <LegalLink href={`mailto:${LEGAL_CONTACT_EMAIL}`}>
-            {LEGAL_CONTACT_EMAIL}
-          </LegalLink>
-          . Respondemos em até 7 dias.
-        </>
-      ) : (
-        <>
-          Para {reason}, envie uma mensagem direta para a própria conta de
-          Instagram atendida por esta automação — é ela que recebe e responde os
-          pedidos. Respondemos em até 7 dias.
-        </>
-      )}
+      aplicativo e conectou a conta de Instagram. Para {reason}, escreva para{" "}
+      <LegalLink href={`mailto:${LEGAL_CONTACT_EMAIL}`}>
+        {LEGAL_CONTACT_EMAIL}
+      </LegalLink>
+      . Respondemos em até 7 dias.
     </p>
   );
 }

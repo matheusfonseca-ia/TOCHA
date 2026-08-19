@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import {
+  LEGAL_CONTACT_EMAIL,
   LEGAL_UPDATED_AT,
   LegalCallout,
   LegalContact,
@@ -85,6 +86,22 @@ export default function TermosDeServicoPage() {
             pelo funcionamento dela, pelo conteúdo das mensagens enviadas e pelo
             tratamento dos dados de quem interage com a conta conectada.
           </p>
+          <LegalCallout title="Quem opera esta instalação">
+            <p>
+              <Term>PATRICIA POLETINI FONSECA</Term>, inscrita no CNPJ sob o nº
+              15.030.598/0001-39, estabelecida em Itatiba, Estado de São Paulo,
+              Brasil. É com ela que você celebra estes Termos, e é ela quem
+              figura como controladora na{" "}
+              <LegalLink href="/privacidade">
+                Política de Privacidade
+              </LegalLink>
+              . Contato:{" "}
+              <LegalLink href={`mailto:${LEGAL_CONTACT_EMAIL}`}>
+                {LEGAL_CONTACT_EMAIL}
+              </LegalLink>
+              .
+            </p>
+          </LegalCallout>
         </LegalSection>
 
         <LegalSection title="4. Quem pode usar">
@@ -251,10 +268,11 @@ export default function TermosDeServicoPage() {
         <LegalSection title="13. Lei aplicável e foro">
           <p>
             Estes Termos são regidos pelas leis da República Federativa do
-            Brasil. Fica eleito o foro da comarca de São Paulo, Estado de São
-            Paulo, para dirimir controvérsias que não puderem ser resolvidas de
-            forma amigável, ressalvado o direito do consumidor de acionar o foro
-            do seu domicílio.
+            Brasil. Fica eleito o foro da comarca de Itatiba, Estado de São
+            Paulo — domicílio de quem opera esta instalação —, para dirimir
+            controvérsias que não puderem ser resolvidas de forma amigável,
+            ressalvado o direito do consumidor de acionar o foro do seu
+            domicílio.
           </p>
         </LegalSection>
 

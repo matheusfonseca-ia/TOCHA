@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { LEGAL_PAGES } from "@/components/legal/legal-chrome";
 import { cn } from "@/lib/utils";
 
-/** Alterna entre as duas páginas públicas, marcando a que está aberta. */
+/** Alterna entre as três páginas públicas, marcando a que está aberta. */
 export function LegalNav() {
   const pathname = usePathname();
 
