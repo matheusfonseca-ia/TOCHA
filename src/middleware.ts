@@ -3,13 +3,23 @@ import { NextResponse, type NextRequest } from "next/server";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
+// Rotas públicas. A landing ("/") é a porta de entrada do domínio e precisa
+// abrir sem login — é ela que a análise da Meta encontra ao visitar o app.
+// As três páginas do grupo (legal) são as URLs cadastradas no painel da Meta
+// (Privacy Policy URL, User Data Deletion e Terms of Service) e também têm de
+// abrir sem login e sem redirecionamento.
+const PUBLIC_PATHS = new Set([
+  "/",
+  "/privacidade",
+  "/exclusao-de-dados",
+  "/termos-de-servico",
+]);
+
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Rotas de API cuidam da própria autenticação (webhook usa assinatura HMAC).
-  // /privacidade é pública: o painel da Meta exige uma URL de política de
-  // privacidade acessível sem login.
-  if (pathname.startsWith("/api") || pathname === "/privacidade") {
+  if (pathname.startsWith("/api") || PUBLIC_PATHS.has(pathname)) {
     return NextResponse.next();
   }
 

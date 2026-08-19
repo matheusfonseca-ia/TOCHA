@@ -62,6 +62,23 @@ e use a URL gerada em `NEXT_PUBLIC_APP_URL`, no OAuth Redirect URI e no webhook 
 | `NEXT_PUBLIC_APP_URL` | URL pública da sua instalação | Domínio da Vercel ou ngrok |
 | `TOKEN_ENCRYPTION_KEY` | Criptografa tokens no banco | `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `CRON_SECRET` | Senha do tick das Sequências (você inventa) | Veja "Sequências" abaixo |
+| `NEXT_PUBLIC_CONTACT_EMAIL` | E-mail de contato das páginas públicas (opcional) | Veja "Páginas públicas" abaixo |
+
+## Páginas públicas
+
+Quatro rotas abrem sem login — o [middleware](src/middleware.ts) libera todas:
+
+| Rota | Para que serve |
+|---|---|
+| `/` | Landing: o que o produto faz, como funciona e quais permissões ele usa |
+| `/privacidade` | Política de Privacidade — campo **Privacy Policy URL** no painel da Meta |
+| `/exclusao-de-dados` | Passo a passo de exclusão — campo **User Data Deletion** |
+| `/termos-de-servico` | Termos de Serviço — campo **Terms of Service URL** |
+
+As três páginas legais compartilham cabeçalho, rodapé e componentes em
+[src/components/legal/](src/components/legal/), então data de vigência e contato
+nunca divergem entre elas. Com `NEXT_PUBLIC_CONTACT_EMAIL` preenchida, o e-mail
+aparece nas três; sem ela, elas orientam o contato por DM na própria conta.
 
 ## 🔒 A instalação é sua e de mais ninguém
 

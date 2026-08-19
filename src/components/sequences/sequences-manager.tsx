@@ -137,12 +137,11 @@ export function SequencesManager({
         </Card>
       ) : (
         <Card className="animate-fade-up overflow-hidden">
-          <Table className="min-w-[880px]">
+          <Table className="min-w-[760px]">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>Sequência</TableHead>
                 <TableHead>Blocos</TableHead>
-                <TableHead>Conta</TableHead>
                 <TableHead className="text-center">Execuções</TableHead>
                 <TableHead className="text-center">No fluxo</TableHead>
                 <TableHead className="text-center">Ativa</TableHead>
@@ -181,9 +180,6 @@ export function SequencesManager({
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {blockCount} {blockCount === 1 ? "bloco" : "blocos"}
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      @{sequence.ig_accounts?.ig_username ?? "—"}
                     </TableCell>
                     <TableCell className="text-center text-sm tabular-nums text-muted-foreground">
                       {stat.total}

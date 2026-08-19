@@ -13,7 +13,6 @@ import {
   Pencil,
   Plus,
   Search,
-  Timer,
   Trash2,
   Zap,
 } from "lucide-react";
@@ -321,14 +320,12 @@ export function RulesManager({
         </Card>
       ) : (
         <Card className="animate-fade-up overflow-hidden">
-          <Table className="min-w-[880px]">
+          <Table className="min-w-[700px]">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <TableHead>Automação</TableHead>
                 <TableHead>Responder com</TableHead>
-                <TableHead>Conta</TableHead>
                 <TableHead className="text-center">Execuções</TableHead>
-                <TableHead className="text-center">Delay</TableHead>
                 <TableHead className="text-center">Ativa</TableHead>
                 <TableHead>Modificado</TableHead>
                 <TableHead className="w-12" />
@@ -386,17 +383,8 @@ export function RulesManager({
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      @{rule.ig_accounts?.ig_username ?? "—"}
-                    </TableCell>
                     <TableCell className="text-center text-sm tabular-nums text-muted-foreground">
                       {executionCounts[rule.id] ?? 0}
-                    </TableCell>
-                    <TableCell className="text-center">
-                      <span className="inline-flex items-center gap-1 text-sm text-muted-foreground">
-                        <Timer className="h-3.5 w-3.5" />
-                        {rule.delay_seconds}s
-                      </span>
                     </TableCell>
                     <TableCell className="text-center">
                       <Switch
