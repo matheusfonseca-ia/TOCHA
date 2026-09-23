@@ -3,7 +3,7 @@
 ## Estado atual
 Última tag: "HANDOFF-falow-20260923-170000-claude"
 Status: em andamento
-Resumo: features + correções da revisão pushadas (8b83fb7), migration 0002 aplicada, 44 testes ok; falta deploy (manual, wrangler) e teste E2E logado.
+Resumo: E2E no navegador ok (7236f72); falta deploy manual (wrangler) e usuário apagar 3 itens de teste (2 workflows TESTE CLAUDE + Cópia de preço).
 
 ---
 
