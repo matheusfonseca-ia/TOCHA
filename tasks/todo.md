@@ -1,7 +1,7 @@
 # Falow: Duplicar automação + Automação dentro do Workflow
 
 Planejado em 2026-09-23 com 3 agentes (Opus: arquitetura rules↔sequences; Sonnet: duplicação; Sonnet: auditoria UX do editor).
-Status: **Fases 0 a 3 implementadas (2026-09-23), não commitadas.** Falta: aplicar migration 0002, teste visual logado e teste com webhook real.
+Status: **Fases 0 a 3 commitadas (e5cff59), migration 0002 aplicada.** Falta: push/deploy, teste visual logado e teste com webhook real.
 
 ## Diagnóstico (por que está "bostinha")
 
@@ -85,7 +85,7 @@ Ordem: Fase 0 primeiro (B1/B2 são pré-requisito da Fase 2). Depois 1, 2 e 3 em
 - [ ] `npm run typecheck`, `npm run build` e build Cloudflare
 - [ ] Adicionar vitest para funções puras: `validateSequenceGraph`, `cloneGraphWithFreshIds`, `commentTargetMatches`, `specificityTier`, precedência, `parseSequencePayload` v1/v2
 - [ ] Webhooks assinados via curl: comentário → private reply → toque → fluxo ramifica; regra × sequência nos níveis de especificidade; reentrega; toque duplo; botão antigo; >7 dias
-- [ ] Migration 0002 rodada 2x (idempotência) + RLS com usuário comum
+- [x] Migration 0002 aplicada no Supabase de produção via SQL Editor (23/09), colunas e índices conferidos
 - [ ] Visual 375 / 768 / 1440; zero travessão (`grep "—" src`)
 
 ## Decisões do usuário (2026-09-23)

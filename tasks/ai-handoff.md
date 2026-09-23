@@ -3,7 +3,7 @@
 ## Estado atual
 Última tag: "HANDOFF-falow-20260923-153000-claude"
 Status: em andamento
-Resumo: Fases 0 a 3 implementadas e buildando, não commitadas; falta aplicar migration 0002, teste visual logado e webhook real.
+Resumo: Fases 0 a 3 commitadas (e5cff59) e migration 0002 aplicada em produção (23/09); falta push/deploy, teste visual logado e webhook real.
 
 ---
 
