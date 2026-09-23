@@ -288,7 +288,7 @@ function EditorInner({
   const { resolvedTheme } = useTheme();
   const [isPending, startTransition] = useTransition();
   const updateNodeInternals = useUpdateNodeInternals();
-  const { fitView, getInternalNode } = useReactFlow();
+  const { fitView, getInternalNode, getViewport, setCenter } = useReactFlow();
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const graph = useMemo(() => initialGraph(sequence), [sequence]);
@@ -628,8 +628,17 @@ function EditorInner({
       }
 
       setSelectedId(id);
+
+      // Traz o bloco novo para a área visível (sem mudar o zoom): antes ele
+      // podia nascer fora do canvas e parecer que nada aconteceu.
+      const { zoom } = getViewport();
+      setCenter(
+        finalPosition.x + NODE_WIDTH / 2,
+        finalPosition.y + FALLBACK_NODE_HEIGHT / 2,
+        { zoom, duration: 300 }
+      );
     },
-    [selectedId, nodes, edges, setNodes, setEdges, getInternalNode]
+    [selectedId, nodes, edges, setNodes, setEdges, getInternalNode, getViewport, setCenter]
   );
 
   const handleSave = useCallback(() => {

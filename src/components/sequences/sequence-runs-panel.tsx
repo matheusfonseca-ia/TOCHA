@@ -116,7 +116,11 @@ export function SequenceRunsPanel({
           <DialogHeader>
             <DialogTitle>Execuções da sequência</DialogTitle>
             <DialogDescription>
-              Últimas {runs.length} execuções registradas, mais recentes primeiro.
+              {runs.length === 0
+                ? "Nenhuma execução registrada ainda."
+                : runs.length === 1
+                  ? "1 execução registrada."
+                  : `Últimas ${runs.length} execuções registradas, mais recentes primeiro.`}
             </DialogDescription>
           </DialogHeader>
 
