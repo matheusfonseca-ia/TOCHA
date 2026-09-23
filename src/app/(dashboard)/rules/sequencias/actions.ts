@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { normalizeText } from "@/lib/rules/engine";
+import { keywordTerms } from "@/lib/rules/engine";
 import { cloneGraphWithFreshIds } from "@/lib/sequences/clone";
 import {
   automationRuleIdsOf,
@@ -147,6 +147,7 @@ async function findConflictingSequenceName(
   const { data } = await query;
   const candidates = (data ?? []) as ConflictCandidate[];
 
+  const terms = new Set(keywordTerms(triggerData.keyword));
   const conflict = candidates.find((c) => {
     // Gatilho por automação: só colide com outro workflow que parte da
     // mesma automação (o runtime roda apenas o mais antigo).
@@ -159,10 +160,29 @@ async function findConflictingSequenceName(
     if (triggerData.anyMessage || otherData.anyMessage) {
       return triggerData.anyMessage && otherData.anyMessage;
     }
-    return normalizeText(triggerData.keyword) === normalizeText(otherData.keyword);
+    return keywordTerms(otherData.keyword).some((t) => terms.has(t));
   });
 
-  return conflict?.name ?? null;
+  if (conflict) {
+    return entryRuleId
+      ? `O workflow "${conflict.name}" também começa por esta automação. Só o mais antigo roda.`
+      : `O workflow "${conflict.name}" também está ativo com a mesma palavra-chave. Só o mais antigo roda.`;
+  }
+
+  // Automação de DM ativa com termo em comum sempre responde primeiro: o
+  // workflow só iniciaria quando ela já tiver respondido a pessoa antes.
+  if (entryRuleId || triggerData.anyMessage || terms.size === 0) return null;
+  const { data: rules } = await supabase
+    .from("rules")
+    .select("name, keyword")
+    .eq("account_id", params.account_id)
+    .eq("trigger_type", "dm")
+    .eq("is_active", true);
+  const rule = (rules ?? []).find((r) =>
+    keywordTerms(r.keyword).some((t) => terms.has(t))
+  );
+  if (!rule) return null;
+  return `A automação "${rule.name || rule.keyword}" responde a mesma palavra-chave e tem prioridade. O workflow só inicia para quem já recebeu a resposta dela.`;
 }
 
 export async function saveSequence(

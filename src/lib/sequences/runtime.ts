@@ -128,7 +128,8 @@ export async function maybeStartSequence(
   admin: AdminClient,
   account: IgAccount,
   senderId: string,
-  messageText: string
+  messageText: string,
+  deadline = invocationDeadline()
 ): Promise<SequenceOutcome | null> {
   const { data: sequences } = await admin
     .from("sequences")
@@ -155,6 +156,7 @@ export async function maybeStartSequence(
     const startNodeId = targetOf(sequence.graph, trigger.id, OUT_HANDLE);
     return executeFrom(admin, account, sequence, inserted.run, startNodeId, {
       discardRunIfNothingSent: true,
+      deadline,
     });
   }
 
@@ -174,7 +176,8 @@ export async function startSequenceFromRule(
   admin: AdminClient,
   account: IgAccount,
   senderId: string,
-  rule: Pick<Rule, "id">
+  rule: Pick<Rule, "id">,
+  deadline = invocationDeadline()
 ): Promise<SequenceOutcome | null> {
   // Se houver mais de um workflow ativo com a mesma entrada, vale o mais
   // antigo (determinístico). Erro aqui = migration 0002 ainda não aplicada.
@@ -187,7 +190,11 @@ export async function startSequenceFromRule(
     .order("created_at")
     .limit(1)
     .maybeSingle<Sequence>();
-  if (error || !sequence) return null;
+  if (error) {
+    console.warn("[falow] startSequenceFromRule: falha ao buscar workflow", error.message);
+    return null;
+  }
+  if (!sequence) return null;
 
   // entry_rule_id é espelho do grafo; se divergirem, o grafo manda.
   const entry = findEntryAutomationNode(sequence.graph);
@@ -196,9 +203,13 @@ export async function startSequenceFromRule(
   const inserted = await insertRun(admin, account, sequence, senderId, rule.id);
   if ("outcome" in inserted) return inserted.outcome;
 
+  // Aqui o run NÃO é apagado se o 1º envio falhar (diferente da entrada por
+  // palavra-chave): a rule já respondeu e gravou rule_triggers, então a
+  // pessoa não teria como reentrar. O run fica como `error`, visível no
+  // painel de execuções.
   const startNodeId = targetOf(sequence.graph, entry.id, OUT_HANDLE);
   return executeFrom(admin, account, sequence, inserted.run, startNodeId, {
-    discardRunIfNothingSent: true,
+    deadline,
   });
 }
 

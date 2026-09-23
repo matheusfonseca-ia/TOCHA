@@ -247,7 +247,7 @@ export function ResponderComentarioBuilder({
         toast.error(result.error);
         return;
       }
-      toast.success("Automação ativada — já está respondendo comentários.");
+      toast.success("Automação ativada. Já está respondendo comentários.");
       router.push("/rules");
     });
   }
@@ -440,7 +440,7 @@ export function ResponderComentarioBuilder({
                   onChange={(e) => setWelcomeButtonLabel(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Essa é a resposta privada ao comentário — sai com um botão que,
+                  Essa é a resposta privada ao comentário: sai com um botão que,
                   ao ser tocado, libera a próxima mensagem.
                 </p>
               </div>

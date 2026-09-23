@@ -13,6 +13,7 @@ import {
 } from "@/lib/sequences/graph";
 import {
   OUT_HANDLE,
+  type AutomationNodeData,
   type ButtonsNodeData,
   type DelayNodeData,
   type MessageNodeData,
@@ -46,6 +47,8 @@ function nodeHasContentError(node: SequenceGraphNode): boolean {
   switch (node.type) {
     case "trigger": {
       const data = node.data as TriggerNodeData;
+      // Gatilho por automação não usa palavra-chave (quem dispara é a rule).
+      if (data.source === "automation") return false;
       return !data.anyMessage && !data.keyword.trim();
     }
     case "message": {
@@ -78,10 +81,9 @@ function nodeHasContentError(node: SequenceGraphNode): boolean {
     case "waitReply":
       return false;
     case "automation":
-      // Validação de conteúdo (rule existe/ativa/mesma conta) é do dono do
-      // nó "automation" em graph.ts — aqui só evita quebrar a exaustão do
-      // switch; não sinaliza erro de conteúdo por conta própria.
-      return false;
+      // Sem automação escolhida. Rule removida/de outra conta depende do
+      // contexto de rules, que só graph.ts recebe.
+      return !(node.data as AutomationNodeData).ruleId.trim();
   }
 }
 

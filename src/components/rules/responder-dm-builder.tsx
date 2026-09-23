@@ -142,7 +142,7 @@ export function ResponderDmBuilder({
         toast.error(result.error);
         return;
       }
-      toast.success("Automação ativada — já está respondendo DMs.");
+      toast.success("Automação ativada. Já está respondendo DMs.");
       router.push("/rules");
     });
   }

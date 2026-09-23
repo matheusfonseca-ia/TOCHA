@@ -31,6 +31,8 @@ export const TEXT_MAX = 1000; // mensagem de texto simples
 /** Atraso mínimo/máximo: 5s a 23h (23h para nunca estourar a janela de 24h da Meta). */
 export const DELAY_MIN_SECONDS = 5;
 export const DELAY_MAX_SECONDS = 23 * 60 * 60;
+/** Atraso mínimo para um nó de atraso contar como espera dentro de um ciclo. */
+export const CYCLE_DELAY_MIN_SECONDS = 60 * 60;
 
 const DELAY_UNIT_SECONDS: Record<DelayUnit, number> = {
   seconds: 1,
@@ -103,8 +105,11 @@ export function isWaitNode(node: SequenceGraphNode): boolean {
   switch (node.type) {
     case "waitReply":
     case "quickReplies":
-    case "delay":
       return true;
+    case "delay":
+      // Só atraso longo segura um laço: com 5s de atraso, um ciclo mandaria
+      // centenas de mensagens dentro da janela de 24h (risco de bloqueio).
+      return delayToSeconds(node.data as DelayNodeData) >= CYCLE_DELAY_MIN_SECONDS;
     case "buttons":
       return (node.data as ButtonsNodeData).buttons.some(
         (b) => b.kind === "branch"
@@ -452,7 +457,7 @@ export function validateSequenceGraph(
   // dispararia mensagens em laço. O editor destaca os nós com
   // findCyclesWithoutWait.
   if (findCyclesWithoutWait(graph).length > 0) {
-    return "Há um ciclo sem nenhum bloco de espera (esperar resposta, botões com ramificação, respostas rápidas ou atraso). Inclua uma espera no caminho de volta.";
+    return "Há um ciclo sem nenhum bloco de espera (esperar resposta, botões com ramificação, respostas rápidas ou atraso de 1 hora ou mais). Inclua uma espera no caminho de volta.";
   }
 
   return null;

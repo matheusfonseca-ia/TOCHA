@@ -16,6 +16,14 @@ export function normalizeText(text: string): string {
     .trim();
 }
 
+/** Termos da palavra-chave ("preço, link" vira ["preco", "link"]). */
+export function keywordTerms(keyword: string | null): string[] {
+  return (keyword ?? "")
+    .split(",")
+    .map((t) => normalizeText(t))
+    .filter(Boolean);
+}
+
 export function keywordMatches(
   message: string,
   keyword: string | null,

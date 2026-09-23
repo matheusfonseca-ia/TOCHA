@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -211,6 +211,7 @@ export function RulesManager({
   );
   /** Workflows que usam a automação em exclusão (null = carregando). */
   const [deleteUsage, setDeleteUsage] = useState<string[] | null>(null);
+  const deleteRequestRef = useRef<string | null>(null);
 
   const filteredRules = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -289,9 +290,12 @@ export function RulesManager({
   function openDelete(rule: RuleWithAccount) {
     setDeleteTarget(rule);
     setDeleteUsage(null);
+    deleteRequestRef.current = rule.id;
     listRuleWorkflowUsage(rule.id)
-      .then(setDeleteUsage)
-      .catch(() => setDeleteUsage([]));
+      .catch(() => [] as string[])
+      .then((usage) => {
+        if (deleteRequestRef.current === rule.id) setDeleteUsage(usage);
+      });
   }
 
   function handleDelete(rule: RuleWithAccount) {

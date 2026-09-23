@@ -140,6 +140,19 @@ function defaultDataFor(type: SequenceNodeType): SequenceNodeData {
   }
 }
 
+/** Chave do histórico: o grafo como é salvo (sem seleção nem medidas). */
+function graphKey(nodes: FlowNode[], edges: Edge[]): string {
+  return JSON.stringify(serializeGraph(nodes, edges));
+}
+
+/** Snapshot do histórico sem estado de seleção (restaurar não re-seleciona). */
+function cleanSnapshot(nodes: FlowNode[], edges: Edge[]) {
+  return {
+    nodes: nodes.map((n) => ({ ...n, selected: false })),
+    edges: edges.map((e) => ({ ...e, selected: false })),
+  };
+}
+
 function newNodeId(type: string): string {
   return `${type}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -354,43 +367,51 @@ function EditorInner({
   }, [isDirty, router]);
 
   // ── Undo/Redo ────────────────────────────────────────────────────────────
-  const history = useGraphHistory<FlowNode, Edge>({ nodes, edges });
+  // Só conta como passo do histórico o que muda o grafo salvo (mesma
+  // serialização do save): selecionar um bloco ou o React Flow medir os nós
+  // não vira snapshot, então o Desfazer não "gasta" cliques à toa.
+  const history = useGraphHistory<FlowNode, Edge>(cleanSnapshot(nodes, edges));
   const { push: pushHistory, undo: popUndo, redo: popRedo, canUndo, canRedo } = history;
   const isDraggingRef = useRef(false);
-  const suppressHistoryRef = useRef(false);
-  const isFirstHistoryEffectRef = useRef(true);
+  const lastHistoryKeyRef = useRef(graphKey(nodes, edges));
 
   useEffect(() => {
-    if (isFirstHistoryEffectRef.current) {
-      isFirstHistoryEffectRef.current = false;
-      return;
-    }
-    if (suppressHistoryRef.current) {
-      suppressHistoryRef.current = false;
-      return;
-    }
     if (isDraggingRef.current) return;
-    const timer = setTimeout(() => pushHistory({ nodes, edges }), HISTORY_DEBOUNCE_MS);
+    const key = graphKey(nodes, edges);
+    if (key === lastHistoryKeyRef.current) return;
+    const timer = setTimeout(() => {
+      pushHistory(cleanSnapshot(nodes, edges));
+      lastHistoryKeyRef.current = key;
+    }, HISTORY_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [nodes, edges, pushHistory]);
 
+  const applySnapshot = useCallback(
+    (snapshot: { nodes: FlowNode[]; edges: Edge[] }) => {
+      lastHistoryKeyRef.current = graphKey(snapshot.nodes, snapshot.edges);
+      setNodes(snapshot.nodes);
+      setEdges(snapshot.edges);
+      setSelectedId(null);
+    },
+    [setNodes, setEdges]
+  );
+
   const handleUndo = useCallback(() => {
+    // Edição ainda dentro do debounce: registra antes de voltar, senão o
+    // Desfazer pularia um passo e a edição sumiria do Refazer.
+    const key = graphKey(nodes, edges);
+    if (key !== lastHistoryKeyRef.current) {
+      pushHistory(cleanSnapshot(nodes, edges));
+      lastHistoryKeyRef.current = key;
+    }
     const snapshot = popUndo();
-    if (!snapshot) return;
-    suppressHistoryRef.current = true;
-    setNodes(snapshot.nodes);
-    setEdges(snapshot.edges);
-    setSelectedId(null);
-  }, [popUndo, setNodes, setEdges]);
+    if (snapshot) applySnapshot(snapshot);
+  }, [nodes, edges, pushHistory, popUndo, applySnapshot]);
 
   const handleRedo = useCallback(() => {
     const snapshot = popRedo();
-    if (!snapshot) return;
-    suppressHistoryRef.current = true;
-    setNodes(snapshot.nodes);
-    setEdges(snapshot.edges);
-    setSelectedId(null);
-  }, [popRedo, setNodes, setEdges]);
+    if (snapshot) applySnapshot(snapshot);
+  }, [popRedo, applySnapshot]);
 
   // Intercepta o `onNodesChange` só pra saber quando um arrasto está em
   // andamento (não empilha histórico no meio dele, só quando solta).
@@ -628,8 +649,10 @@ function EditorInner({
     });
     if (graphError) {
       toast.error(graphError);
+      const cycle = findCyclesWithoutWait(serialized);
       const badNodeId =
-        findCyclesWithoutWait(serialized)[0] ?? findFirstInvalidNode(serialized);
+        (cycle.length > 0 && /ciclo|loop/i.test(graphError) ? cycle[0] : null) ??
+        findFirstInvalidNode(serialized);
       if (badNodeId) {
         setInvalidNodeId(badNodeId);
         fitView({ nodes: [{ id: badNodeId }], duration: 400, padding: 0.6, maxZoom: 1 });
@@ -650,6 +673,7 @@ function EditorInner({
         return;
       }
       toast.success(isActive ? "Sequência ativada." : "Sequência salva.");
+      if (result.warning) toast.warning(result.warning);
       router.push("/rules/sequencias");
       router.refresh();
     });

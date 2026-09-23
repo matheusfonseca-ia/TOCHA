@@ -80,10 +80,10 @@ function NodeFrame({
     <div
       className={cn(
         "w-60 rounded-xl border bg-card text-card-foreground shadow-lg transition-shadow",
-        selected
-          ? "border-primary ring-2 ring-primary/40"
-          : isInvalid
-            ? "border-destructive ring-2 ring-destructive/50"
+        isInvalid
+          ? "border-destructive ring-2 ring-destructive/50"
+          : selected
+            ? "border-primary ring-2 ring-primary/40"
             : "border-border"
       )}
     >

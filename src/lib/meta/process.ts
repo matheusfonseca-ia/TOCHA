@@ -125,10 +125,13 @@ export async function processWebhookPayload(
   if (payload.object !== "instagram") return;
 
   const invocationStart = Date.now();
+  // Orçamento de tempo único para a invocação inteira: fluxos iniciados aqui
+  // não ganham um prazo novo a cada evento.
+  const deadline = invocationDeadline(invocationStart);
 
   for (const entry of payload.entry ?? []) {
     for (const event of entry.messaging ?? []) {
-      await processMessagingEvent(entry.id ?? "", event);
+      await processMessagingEvent(entry.id ?? "", event, deadline);
     }
 
     if (entry.field === "comments" && entry.value) {
@@ -149,10 +152,11 @@ export async function processWebhookPayload(
 
 async function processMessagingEvent(
   igBusinessId: string,
-  event: MessagingEvent
+  event: MessagingEvent,
+  deadline: number
 ): Promise<void> {
   if (event.postback) {
-    await processPostbackEvent(igBusinessId, event);
+    await processPostbackEvent(igBusinessId, event, deadline);
     return;
   }
 
@@ -228,7 +232,8 @@ async function processMessagingEvent(
       admin,
       account,
       senderId,
-      message.text
+      message.text,
+      deadline
     );
     if (seqStart) {
       await logSequenceInteraction(
@@ -262,7 +267,9 @@ async function processMessagingEvent(
   // 9. A regra respondeu agora → continua o workflow que a usa como entrada.
   if (rule && status === "replied") {
     const handoffStartedAt = Date.now();
-    const handoff = await startSequenceFromRule(admin, account, senderId, rule);
+    const handoff = await startSequenceFromRule(
+      admin, account, senderId, rule, deadline
+    );
     if (handoff) {
       await logSequenceInteraction(
         admin,
@@ -355,7 +362,8 @@ async function applyRule(
  */
 async function processPostbackEvent(
   igBusinessId: string,
-  event: MessagingEvent
+  event: MessagingEvent,
+  deadline: number
 ): Promise<void> {
   const senderId = event.sender?.id;
   const mid = event.postback?.mid;
@@ -465,7 +473,9 @@ async function processPostbackEvent(
   // (workflow pausado ou inexistente: a regra respondeu sozinha).
   if (status !== "replied") return;
   const handoffStartedAt = Date.now();
-  const handoff = await startSequenceFromRule(admin, account, senderId, rule);
+  const handoff = await startSequenceFromRule(
+    admin, account, senderId, rule, deadline
+  );
   if (handoff) {
     await logSequenceInteraction(
       admin,

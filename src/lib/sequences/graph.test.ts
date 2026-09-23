@@ -42,7 +42,8 @@ const trigger = (data: Partial<{ source: "dm" | "automation" }> = {}) =>
   });
 const msg = (id: string) => node(id, "message", { kind: "text", text: "oi", imageUrl: "" });
 const waitReply = (id: string) => node(id, "waitReply", {});
-const delay = (id: string) => node(id, "delay", { amount: 1, unit: "minutes" });
+const delay = (id: string, amount = 1, unit: "seconds" | "minutes" | "hours" = "minutes") =>
+  node(id, "delay", { amount, unit });
 const urlButtons = (id: string) =>
   node(id, "buttons", {
     text: "veja",
@@ -78,7 +79,7 @@ describe("findCyclesWithoutWait", () => {
 
   it.each([
     ["esperar resposta", waitReply("w")],
-    ["atraso", delay("w")],
+    ["atraso de 1 hora", delay("w", 1, "hours")],
     ["respostas rápidas", quickReplies("w")],
     ["botões com ramificação", branchButtons("w")],
   ])("permite ciclo que passa por %s", (_, waitNode) => {
@@ -93,6 +94,14 @@ describe("findCyclesWithoutWait", () => {
       edges: [edge("t", "a"), edge("a", "w"), edge("w", "a", handle)],
     };
     expect(findCyclesWithoutWait(graph)).toEqual([]);
+  });
+
+  it("atraso curto não segura um ciclo (mandaria mensagens sem parar)", () => {
+    const graph: SequenceGraph = {
+      nodes: [trigger(), msg("a"), delay("w", 5, "seconds")],
+      edges: [edge("t", "a"), edge("a", "w"), edge("w", "a")],
+    };
+    expect(findCyclesWithoutWait(graph).sort()).toEqual(["a", "w"]);
   });
 
   it("devolve só os nós do ciclo sem espera, não os do ciclo com espera", () => {

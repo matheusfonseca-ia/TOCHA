@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { normalizeText } from "@/lib/rules/engine";
+import { keywordTerms } from "@/lib/rules/engine";
 import { automationRuleIdsOf } from "@/lib/sequences/graph";
 import { createClient } from "@/lib/supabase/server";
 import type { SequenceGraph } from "@/types/sequence";
@@ -77,31 +77,52 @@ export interface ActionResult {
   warning?: string;
 }
 
-type ConflictCandidate = {
-  id: string;
-  name: string | null;
+type ConflictTarget = {
   keyword: string | null;
+  media_mode: "specific" | "any" | null;
   media_refs: MediaRef[] | null;
+  comment_any_word: boolean | null;
 };
+
+type ConflictCandidate = ConflictTarget & { id: string; name: string | null };
+
+function shareTerm(a: string | null, b: string | null): boolean {
+  const terms = new Set(keywordTerms(a));
+  return keywordTerms(b).some((t) => terms.has(t));
+}
+
+/**
+ * Duas regras de comentário colidem quando podem responder o MESMO
+ * comentário: publicação em comum ("qualquer publicação" vale para todas)
+ * e palavra em comum ("qualquer palavra" vale para todas).
+ */
+function commentRulesOverlap(a: ConflictTarget, b: ConflictTarget): boolean {
+  const aMedia = new Set((a.media_refs ?? []).map((m) => m.id));
+  const sameMedia =
+    a.media_mode === "any" ||
+    b.media_mode === "any" ||
+    (b.media_refs ?? []).some((m) => aMedia.has(m.id));
+  if (!sameMedia) return false;
+  if (a.comment_any_word || b.comment_any_word) return true;
+  return shareTerm(a.keyword, b.keyword);
+}
 
 /**
  * Procura outra regra ativa da mesma conta/tipo de gatilho que colidiria
- * com `input`: mesma palavra-chave (DM) ou alguma publicação em comum
- * (comentário). Não bloqueia o salvamento, só informa.
+ * com `input`: algum termo de palavra-chave em comum (DM), ou publicação e
+ * palavra em comum (comentário). Não bloqueia o salvamento, só informa.
  */
 async function findConflictingRuleName(
   supabase: ReturnType<typeof createClient>,
-  input: {
+  input: ConflictTarget & {
     id?: string;
     account_id: string;
     trigger_type: "dm" | "comment";
-    keyword: string | null;
-    media_refs: MediaRef[] | null;
   }
 ): Promise<string | null> {
   let query = supabase
     .from("rules")
-    .select("id, name, keyword, media_refs")
+    .select("id, name, keyword, media_mode, media_refs, comment_any_word")
     .eq("account_id", input.account_id)
     .eq("trigger_type", input.trigger_type)
     .eq("is_active", true);
@@ -112,20 +133,14 @@ async function findConflictingRuleName(
   const candidates = (data ?? []) as ConflictCandidate[];
   if (candidates.length === 0) return null;
 
-  let conflict: ConflictCandidate | undefined;
-  if (input.trigger_type === "comment") {
-    const mediaIds = new Set((input.media_refs ?? []).map((m) => m.id));
-    conflict = candidates.find((c) =>
-      (c.media_refs ?? []).some((m) => mediaIds.has(m.id))
-    );
-  } else {
-    const keyword = normalizeText(input.keyword ?? "");
-    if (!keyword) return null;
-    conflict = candidates.find((c) => normalizeText(c.keyword ?? "") === keyword);
-  }
+  const conflict =
+    input.trigger_type === "comment"
+      ? candidates.find((c) => commentRulesOverlap(input, c))
+      : candidates.find((c) => shareTerm(input.keyword, c.keyword));
 
   if (!conflict) return null;
-  return conflict.name || conflict.keyword || "outra automação";
+  const other = conflict.name || conflict.keyword || "outra automação";
+  return `A automação "${other}" também está ativa e pode responder a mesma mensagem. Só uma delas vai responder.`;
 }
 
 function validateReply(input: RuleInput): string | null {
@@ -227,7 +242,9 @@ export async function saveRule(raw: RuleInput): Promise<ActionResult> {
         account_id: input.account_id,
         trigger_type: input.trigger_type,
         keyword: row.keyword,
+        media_mode: row.media_mode ?? null,
         media_refs: row.media_refs ?? null,
+        comment_any_word: row.comment_any_word,
       })) ?? undefined)
     : undefined;
 
@@ -252,7 +269,7 @@ export async function toggleRule(
 
   const { data: rule } = await supabase
     .from("rules")
-    .select("account_id, trigger_type, keyword, media_refs")
+    .select("account_id, trigger_type, keyword, media_mode, media_refs, comment_any_word")
     .eq("id", id)
     .maybeSingle();
   if (!rule) return {};
@@ -263,7 +280,9 @@ export async function toggleRule(
       account_id: rule.account_id,
       trigger_type: rule.trigger_type,
       keyword: rule.keyword,
+      media_mode: rule.media_mode,
       media_refs: rule.media_refs,
+      comment_any_word: rule.comment_any_word,
     })) ?? undefined;
 
   return warning ? { warning } : {};
