@@ -1,11 +1,24 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260923-153000-claude"
+Última tag: "HANDOFF-falow-20260923-170000-claude"
 Status: em andamento
-Resumo: Fases 0 a 3 commitadas (e5cff59) e migration 0002 aplicada em produção (23/09); falta push/deploy, teste visual logado e webhook real.
+Resumo: features + correções da revisão pushadas (8b83fb7), migration 0002 aplicada, 44 testes ok; falta deploy (manual, wrangler) e teste E2E logado.
 
 ---
+
+## [HANDOFF · falow · 2026-09-23T17:00:00-03:00 · claude]
+Status: em andamento
+Objetivo: validar e corrigir as features de duplicar + nó Automação.
+Feito:
+- Revisão adversarial (Opus): 0 crítico, 8 médios corrigidos (handoff sem rollback, ciclo com atraso < 1h bloqueado, deadline da invocação, aviso de conflito no editor e por termo, undo/redo)
+- Testes de integração de process.ts/runtime.ts com fakes (44/44), build ok, push em main
+Próximo passo:
+- Usuário logar no Falow em localhost:3007 (npm run dev -- -p 3007) para teste E2E no navegador (itens "TESTE CLAUDE" pausados, apagar no fim)
+- Deploy manual: npm run build:cloudflare && npx wrangler deploy (Token DEPLOY), só com ok do usuário
+Arquivos tocados: ver commit 8b83fb7
+Decisões/contexto: deploy do Falow não é automático por push (último via wrangler em 16/09). Achados baixos não corrigidos: "—" como placeholder em logs/page.tsx e travessões nas páginas legais (fora do escopo).
+Tag: "HANDOFF-falow-20260923-170000-claude"
 
 ## [HANDOFF · falow · 2026-09-23T15:30:00-03:00 · claude]
 Status: em andamento
