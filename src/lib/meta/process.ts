@@ -3,6 +3,7 @@ import {
   findMatchingCommentRule,
   findMatchingRule,
 } from "@/lib/rules/engine";
+import { sendRuleReply } from "@/lib/sequences/automation";
 import {
   handleSequencePostback,
   handleSequenceReply,
@@ -10,6 +11,7 @@ import {
   isSequencePayload,
   maybeStartSequence,
   processDueRunsSafe,
+  startSequenceFromRule,
   type SequenceOutcome,
 } from "@/lib/sequences/runtime";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -18,10 +20,7 @@ import type { IgAccount, InteractionStatus, Rule } from "@/types/database";
 import {
   GraphApiError,
   replyToComment,
-  sendButtonsMessage,
-  sendImageMessage,
   sendPrivateReplyWithButton,
-  sendTextMessage,
 } from "./graph";
 import { getFreshToken } from "./token";
 
@@ -79,6 +78,37 @@ interface WebhookEntry {
 export interface MetaWebhookPayload {
   object?: string;
   entry?: WebhookEntry[];
+}
+
+/**
+ * Atualiza a conversa: a janela de 24h da Meta conta a partir da última
+ * mensagem/toque recebido da pessoa. Usa o horário do evento (não o de
+ * processamento) e só avança: um webhook reentregue atrasado nunca "volta"
+ * last_inbound_at para trás.
+ */
+async function touchConversation(
+  admin: AdminClient,
+  accountId: string,
+  senderId: string,
+  eventTimestampMs: number | undefined
+): Promise<void> {
+  const now = Date.now();
+  // Relógio da Meta adiantado ou timestamp ausente → usa o nosso.
+  const at = new Date(
+    eventTimestampMs && eventTimestampMs <= now ? eventTimestampMs : now
+  ).toISOString();
+
+  // 1º contato cria a linha; se ela já existe, o UPDATE abaixo decide.
+  await admin.from("conversations").upsert(
+    { account_id: accountId, ig_sender_id: senderId, last_inbound_at: at },
+    { onConflict: "account_id,ig_sender_id", ignoreDuplicates: true }
+  );
+  await admin
+    .from("conversations")
+    .update({ last_inbound_at: at })
+    .eq("account_id", accountId)
+    .eq("ig_sender_id", senderId)
+    .lt("last_inbound_at", at);
 }
 
 /**
@@ -153,14 +183,7 @@ async function processMessagingEvent(
   const startedAt = Date.now();
 
   // 3. Atualiza a conversa (janela de 24h conta a partir da última inbound)
-  await admin.from("conversations").upsert(
-    {
-      account_id: account.id,
-      ig_sender_id: senderId,
-      last_inbound_at: new Date().toISOString(),
-    },
-    { onConflict: "account_id,ig_sender_id" }
-  );
+  await touchConversation(admin, account.id, senderId, event.timestamp);
 
   // 4a. Sequência esperando esta pessoa? Continuação tem prioridade sobre
   // regras: quem está no meio de um fluxo não deve ser "sequestrado" por
@@ -192,9 +215,15 @@ async function processMessagingEvent(
     .eq("is_active", true);
 
   const rule = findMatchingRule(message.text, (rules ?? []) as Rule[]);
+  const result = rule
+    ? await applyRule(admin, account, rule, senderId, event)
+    : null;
 
-  // 4c. Nenhuma regra casou → a mensagem pode ser gatilho de uma sequência
-  if (!rule) {
+  // 4c. Nenhuma regra respondeu (não casou, ou casou mas já tinha disparado
+  // para esta pessoa: duplicate_skip) → a mensagem pode ser gatilho de uma
+  // sequência por palavra-chave. Decisão do usuário: duplicate_skip da regra
+  // não bloqueia o workflow.
+  if (!result || result.status === "duplicate_skip") {
     const seqStart = await maybeStartSequence(
       admin,
       account,
@@ -214,16 +243,8 @@ async function processMessagingEvent(
     }
   }
 
-  let status: InteractionStatus;
-  let errorDetail: string | null = null;
-
-  if (!rule) {
-    status = "no_match";
-  } else {
-    const result = await applyRule(admin, account, rule, senderId, event);
-    status = result.status;
-    errorDetail = result.errorDetail ?? null;
-  }
+  const status: InteractionStatus = result?.status ?? "no_match";
+  const errorDetail = result?.errorDetail ?? null;
 
   // 8. Log da interação
   await admin.from("interactions").insert({
@@ -237,6 +258,22 @@ async function processMessagingEvent(
     error_detail: errorDetail,
     latency_ms: Date.now() - startedAt,
   });
+
+  // 9. A regra respondeu agora → continua o workflow que a usa como entrada.
+  if (rule && status === "replied") {
+    const handoffStartedAt = Date.now();
+    const handoff = await startSequenceFromRule(admin, account, senderId, rule);
+    if (handoff) {
+      await logSequenceInteraction(
+        admin,
+        account,
+        senderId,
+        "[sequência: iniciada pela automação]",
+        handoff,
+        handoffStartedAt
+      );
+    }
+  }
 }
 
 /** Log padronizado de um evento tratado por uma sequência. */
@@ -311,26 +348,6 @@ async function applyRule(
   return { status: "replied" };
 }
 
-/** Envia a 2ª mensagem de uma regra (resposta de DM direta, ou o link após o postback do comentário). */
-async function sendRuleReply(
-  token: string,
-  recipientId: string,
-  rule: Rule
-): Promise<void> {
-  if (rule.reply_type === "text") {
-    await sendTextMessage(token, recipientId, rule.reply_text ?? "");
-  } else if (rule.reply_type === "image") {
-    await sendImageMessage(token, recipientId, rule.reply_image_url ?? "");
-  } else {
-    await sendButtonsMessage(
-      token,
-      recipientId,
-      rule.reply_text ?? "",
-      rule.reply_buttons ?? []
-    );
-  }
-}
-
 /**
  * Toque no botão da mensagem de boas-vindas do fluxo de comentário.
  * A resposta privada já abriu a janela de mensagens com o usuário, então
@@ -347,7 +364,13 @@ async function processPostbackEvent(
 
   // Botão de ramificação de uma sequência (nó de botões do canvas)
   if (isSequencePayload(payload)) {
-    await processSequencePostbackEvent(igBusinessId, senderId, mid, payload);
+    await processSequencePostbackEvent(
+      igBusinessId,
+      senderId,
+      mid,
+      payload,
+      event.timestamp
+    );
     return;
   }
 
@@ -388,6 +411,11 @@ async function processPostbackEvent(
   // gerado por nós, pra uma regra da própria conta), mas checar explicita é
   // mais barato do que confiar nisso implicitamente.
   if (!account || !rule || rule.account_id !== account.id) return;
+
+  // O toque no botão é uma interação da pessoa: abre/renova a janela de 24h.
+  // Sem isso o workflow iniciado logo abaixo morreria em window_expired
+  // (a conversa nem existia, só houve o comentário).
+  await touchConversation(admin, account.id, senderId, event.timestamp);
 
   // Trava a entrega do link a 1x por pessoa por regra — via UPDATE atômico
   // condicionado a link_delivered_at IS NULL, cobre tanto um 2º toque no
@@ -432,6 +460,22 @@ async function processPostbackEvent(
     error_detail: errorDetail,
     latency_ms: Date.now() - startedAt,
   });
+
+  // Link entregue → continua o workflow que usa esta automação como entrada
+  // (workflow pausado ou inexistente: a regra respondeu sozinha).
+  if (status !== "replied") return;
+  const handoffStartedAt = Date.now();
+  const handoff = await startSequenceFromRule(admin, account, senderId, rule);
+  if (handoff) {
+    await logSequenceInteraction(
+      admin,
+      account,
+      senderId,
+      "[sequência: iniciada pela automação de comentário]",
+      handoff,
+      handoffStartedAt
+    );
+  }
 }
 
 /** Toque num botão de ramificação de uma sequência (nó de botões do canvas). */
@@ -439,7 +483,8 @@ async function processSequencePostbackEvent(
   igBusinessId: string,
   senderId: string,
   mid: string | undefined,
-  payload: string
+  payload: string,
+  eventTimestampMs: number | undefined
 ): Promise<void> {
   const admin = createAdminClient();
 
@@ -457,6 +502,9 @@ async function processSequencePostbackEvent(
     .eq("status", "active")
     .maybeSingle<IgAccount>();
   if (!account) return;
+
+  // Toque no botão também conta como interação para a janela de 24h.
+  await touchConversation(admin, account.id, senderId, eventTimestampMs);
 
   const startedAt = Date.now();
   const outcome = await handleSequencePostback(admin, account, senderId, payload);

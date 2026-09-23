@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
+  Copy,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -17,12 +18,21 @@ import { toast } from "sonner";
 
 import {
   deleteSequence,
+  duplicateSequence,
   toggleSequence,
 } from "@/app/(dashboard)/rules/sequencias/actions";
 import { EmptyState } from "@/components/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,6 +73,9 @@ export function SequencesManager({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [query, setQuery] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<SequenceWithAccount | null>(
+    null
+  );
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -74,21 +87,28 @@ export function SequencesManager({
     startTransition(async () => {
       const result = await toggleSequence(sequence.id, next);
       if (result.error) toast.error(result.error);
+      else if (result.warning) toast.warning(result.warning);
+    });
+  }
+
+  function handleDuplicate(sequence: SequenceWithAccount) {
+    startTransition(async () => {
+      const result = await duplicateSequence(sequence.id);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Workflow duplicado. A cópia foi criada pausada.");
+      if (result.id) router.push(`/rules/sequencias/${result.id}`);
     });
   }
 
   function handleDelete(sequence: SequenceWithAccount) {
-    if (
-      !window.confirm(
-        `Excluir a sequência "${sequence.name}"? Quem estiver no meio do fluxo para de recebê-lo.`
-      )
-    ) {
-      return;
-    }
     startTransition(async () => {
       const result = await deleteSequence(sequence.id);
       if (result.error) toast.error(result.error);
       else toast.success("Sequência excluída.");
+      setDeleteTarget(null);
     });
   }
 
@@ -97,7 +117,7 @@ export function SequencesManager({
       <EmptyState
         icon={Workflow}
         title="Nenhuma sequência criada"
-        description="Monte um fluxo de mensagens no canvas: gatilho, mensagens, botões, atrasos e ramificações — o Falow conduz a conversa sozinho."
+        description="Monte um fluxo de mensagens no canvas: gatilho, mensagens, botões, atrasos e ramificações. O Falow conduz a conversa sozinho."
       >
         <Button asChild>
           <Link href="/rules/sequencias/nova">
@@ -223,8 +243,21 @@ export function SequencesManager({
                             </Link>
                           </DropdownMenuItem>
                           <DropdownMenuItem
+                            disabled={isPending}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDuplicate(sequence);
+                            }}
+                          >
+                            <Copy />
+                            Duplicar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
-                            onClick={() => handleDelete(sequence)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteTarget(sequence);
+                            }}
                           >
                             <Trash2 />
                             Excluir
@@ -239,6 +272,35 @@ export function SequencesManager({
           </Table>
         </Card>
       )}
+
+      {/* ── Confirmação de exclusão ──────────────────────────────────── */}
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(next) => !next && setDeleteTarget(null)}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Excluir sequência</DialogTitle>
+            <DialogDescription>
+              Excluir a sequência &ldquo;{deleteTarget?.name}&rdquo;? Quem
+              estiver no meio do fluxo para de recebê-lo. Essa ação não pode
+              ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={isPending}
+              onClick={() => deleteTarget && handleDelete(deleteTarget)}
+            >
+              Excluir
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

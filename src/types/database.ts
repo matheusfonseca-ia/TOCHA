@@ -83,6 +83,8 @@ export interface Interaction {
   message_text: string | null;
   matched_rule_id: string | null;
   matched_keyword: string | null;
+  /** Preenchido quando o evento foi tratado por uma sequência (workflow). */
+  sequence_id: string | null;
   status: InteractionStatus;
   reply_type: ReplyType | null;
   error_detail: string | null;

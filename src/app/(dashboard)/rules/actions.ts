@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { normalizeText } from "@/lib/rules/engine";
+import { automationRuleIdsOf } from "@/lib/sequences/graph";
 import { createClient } from "@/lib/supabase/server";
+import type { SequenceGraph } from "@/types/sequence";
+import type { MediaRef } from "@/types/database";
 
 const buttonSchema = z.object({
   title: z.string().trim().min(1, "Título do botão é obrigatório.").max(20),
@@ -18,6 +22,13 @@ const mediaRefSchema = z.object({
   caption: z.string().nullable(),
 });
 
+/**
+ * `welcome_text` vira o texto de um button template no envio da resposta
+ * privada (Meta corta em 640 caracteres), mais curto que o limite de 1000
+ * de mensagem de texto simples. Validar aqui evita truncar em silêncio.
+ */
+const WELCOME_TEXT_MAX = 640;
+
 const ruleSchema = z.object({
   id: z.string().uuid().optional(),
   account_id: z.string().uuid("Selecione uma conta."),
@@ -31,7 +42,14 @@ const ruleSchema = z.object({
   comment_any_word: z.boolean().optional(),
   public_reply_enabled: z.boolean().optional(),
   public_reply_text: z.string().trim().max(300).optional(),
-  welcome_text: z.string().trim().max(1000).optional(),
+  welcome_text: z
+    .string()
+    .trim()
+    .max(
+      WELCOME_TEXT_MAX,
+      `Mensagem de boas-vindas: máximo de ${WELCOME_TEXT_MAX} caracteres (limite do botão da Meta).`
+    )
+    .optional(),
   welcome_button_label: z.string().trim().max(20).optional(),
   // 2ª mensagem: resposta direta (dm) ou conteúdo liberado pelo botão (comment)
   reply_type: z.enum(["text", "image", "buttons"]),
@@ -49,6 +67,65 @@ export type RuleInput = z.input<typeof ruleSchema>;
 
 export interface ActionResult {
   error?: string;
+  /** Id da regra salva/duplicada. */
+  id?: string;
+  /**
+   * Aviso não bloqueante: outra automação ativa já cobre a mesma
+   * palavra-chave (DM) ou publicação (comentário). A automação é salva
+   * normalmente mesmo assim: quem decide se isso é um problema é o usuário.
+   */
+  warning?: string;
+}
+
+type ConflictCandidate = {
+  id: string;
+  name: string | null;
+  keyword: string | null;
+  media_refs: MediaRef[] | null;
+};
+
+/**
+ * Procura outra regra ativa da mesma conta/tipo de gatilho que colidiria
+ * com `input`: mesma palavra-chave (DM) ou alguma publicação em comum
+ * (comentário). Não bloqueia o salvamento, só informa.
+ */
+async function findConflictingRuleName(
+  supabase: ReturnType<typeof createClient>,
+  input: {
+    id?: string;
+    account_id: string;
+    trigger_type: "dm" | "comment";
+    keyword: string | null;
+    media_refs: MediaRef[] | null;
+  }
+): Promise<string | null> {
+  let query = supabase
+    .from("rules")
+    .select("id, name, keyword, media_refs")
+    .eq("account_id", input.account_id)
+    .eq("trigger_type", input.trigger_type)
+    .eq("is_active", true);
+
+  if (input.id) query = query.neq("id", input.id);
+
+  const { data } = await query;
+  const candidates = (data ?? []) as ConflictCandidate[];
+  if (candidates.length === 0) return null;
+
+  let conflict: ConflictCandidate | undefined;
+  if (input.trigger_type === "comment") {
+    const mediaIds = new Set((input.media_refs ?? []).map((m) => m.id));
+    conflict = candidates.find((c) =>
+      (c.media_refs ?? []).some((m) => mediaIds.has(m.id))
+    );
+  } else {
+    const keyword = normalizeText(input.keyword ?? "");
+    if (!keyword) return null;
+    conflict = candidates.find((c) => normalizeText(c.keyword ?? "") === keyword);
+  }
+
+  if (!conflict) return null;
+  return conflict.name || conflict.keyword || "outra automação";
 }
 
 function validateReply(input: RuleInput): string | null {
@@ -143,7 +220,18 @@ export async function saveRule(raw: RuleInput): Promise<ActionResult> {
 
   revalidatePath("/rules");
   revalidatePath("/dashboard");
-  return {};
+
+  const warning = input.is_active
+    ? ((await findConflictingRuleName(supabase, {
+        id: input.id,
+        account_id: input.account_id,
+        trigger_type: input.trigger_type,
+        keyword: row.keyword,
+        media_refs: row.media_refs ?? null,
+      })) ?? undefined)
+    : undefined;
+
+  return warning ? { warning } : {};
 }
 
 export async function toggleRule(
@@ -159,7 +247,50 @@ export async function toggleRule(
   if (error) return { error: "Não foi possível atualizar a regra." };
 
   revalidatePath("/rules");
-  return {};
+
+  if (!isActive) return {};
+
+  const { data: rule } = await supabase
+    .from("rules")
+    .select("account_id, trigger_type, keyword, media_refs")
+    .eq("id", id)
+    .maybeSingle();
+  if (!rule) return {};
+
+  const warning =
+    (await findConflictingRuleName(supabase, {
+      id,
+      account_id: rule.account_id,
+      trigger_type: rule.trigger_type,
+      keyword: rule.keyword,
+      media_refs: rule.media_refs,
+    })) ?? undefined;
+
+  return warning ? { warning } : {};
+}
+
+/**
+ * Nomes dos workflows que usam a automação num nó "Automação" (entrada ou
+ * meio do fluxo). O diálogo de exclusão mostra a lista antes de confirmar:
+ * depois de excluída, esses nós ficam como "Automação removida".
+ */
+export async function listRuleWorkflowUsage(id: string): Promise<string[]> {
+  const supabase = createClient();
+  const { data: rule } = await supabase
+    .from("rules")
+    .select("account_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (!rule) return [];
+
+  const { data: sequences } = await supabase
+    .from("sequences")
+    .select("name, graph")
+    .eq("account_id", rule.account_id);
+
+  return (sequences ?? [])
+    .filter((s) => automationRuleIdsOf(s.graph as SequenceGraph).includes(id))
+    .map((s) => s.name as string);
 }
 
 export async function deleteRule(id: string): Promise<ActionResult> {
@@ -171,4 +302,65 @@ export async function deleteRule(id: string): Promise<ActionResult> {
   revalidatePath("/rules");
   revalidatePath("/dashboard");
   return {};
+}
+
+const RULE_NAME_MAX = 80;
+
+/**
+ * Duplica uma automação: copia todas as colunas (exceto id/created_at),
+ * nasce pausada (`is_active = false`) para não disparar de imediato em cima
+ * da original, com nome "Cópia de X".
+ */
+export async function duplicateRule(id: string): Promise<ActionResult> {
+  const supabase = createClient();
+  // select("*") + RLS: só encontra a regra se pertencer ao usuário logado.
+  const { data: original, error: fetchError } = await supabase
+    .from("rules")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (fetchError || !original) {
+    return { error: "Não foi possível encontrar a automação para duplicar." };
+  }
+
+  const baseName = original.name || original.keyword || "automação";
+  const name = `Cópia de ${baseName}`.slice(0, RULE_NAME_MAX);
+
+  const row = {
+    account_id: original.account_id,
+    name,
+    trigger_type: original.trigger_type,
+    keyword: original.keyword,
+    match_type: original.match_type,
+    media_mode: original.media_mode,
+    media_refs: original.media_refs,
+    comment_any_word: original.comment_any_word,
+    public_reply_enabled: original.public_reply_enabled,
+    public_reply_text: original.public_reply_text,
+    welcome_text: original.welcome_text,
+    welcome_button_label: original.welcome_button_label,
+    reply_type: original.reply_type,
+    reply_text: original.reply_text,
+    reply_image_url: original.reply_image_url,
+    reply_buttons: original.reply_buttons,
+    delay_seconds: original.delay_seconds,
+    priority: original.priority,
+    is_active: false,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from("rules")
+    .insert(row)
+    .select("id")
+    .maybeSingle();
+
+  if (error || !data) {
+    return { error: "Não foi possível duplicar a automação. Tente novamente." };
+  }
+
+  revalidatePath("/rules");
+  revalidatePath("/dashboard");
+  return { id: data.id as string };
 }

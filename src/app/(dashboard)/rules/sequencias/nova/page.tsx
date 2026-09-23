@@ -5,15 +5,20 @@ import { EmptyState } from "@/components/empty-state";
 import { SequenceEditor } from "@/components/sequences/sequence-editor";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
+import type { Rule } from "@/types/database";
 
 export default async function NovaSequenciaPage() {
   const supabase = createClient();
 
-  const { data: accounts } = await supabase
-    .from("ig_accounts")
-    .select("id, ig_username")
-    .eq("status", "active")
-    .order("connected_at");
+  const [{ data: accounts }, { data: rules }] = await Promise.all([
+    supabase
+      .from("ig_accounts")
+      .select("id, ig_username, profile_picture_url")
+      .eq("status", "active")
+      .order("connected_at"),
+    // Automações para o nó "Automação" do editor (RLS limita ao usuário)
+    supabase.from("rules").select("*").order("created_at"),
+  ]);
 
   if ((accounts ?? []).length === 0) {
     return (
@@ -29,5 +34,7 @@ export default async function NovaSequenciaPage() {
     );
   }
 
-  return <SequenceEditor accounts={accounts ?? []} />;
+  return (
+    <SequenceEditor accounts={accounts ?? []} rules={(rules ?? []) as Rule[]} />
+  );
 }

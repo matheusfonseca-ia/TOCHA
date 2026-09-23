@@ -1,5 +1,6 @@
 "use client";
 
+import { createContext, useContext } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import {
   GitBranch,
@@ -10,16 +11,22 @@ import {
   MessageSquareText,
   MousePointerClick,
   Timer,
+  Workflow,
   Zap,
   type LucideIcon,
 } from "lucide-react";
 
+import {
+  AutomationNodeBody,
+  TriggerAutomationSummary,
+} from "@/components/sequences/automation";
 import { cn } from "@/lib/utils";
 import {
   buttonHandle,
   OUT_HANDLE,
   QR_FALLBACK_HANDLE,
   quickReplyHandle,
+  type AutomationNodeData,
   type ButtonsNodeData,
   type DelayNodeData,
   type MessageNodeData,
@@ -33,14 +40,23 @@ import {
  * respostas rápidas, cada opção tem a própria saída (ramificação).
  */
 
+/** Id do bloco com erro de validação (setado pelo editor após tentar salvar
+ *  sem sucesso) — usado só pra destacar a borda em vermelho e ajudar a achar
+ *  o problema no canvas. `null` quando não há erro pendente. */
+export const InvalidNodeContext = createContext<string | null>(null);
+
+// Handle visualmente discreto (~8px), mas com área de toque de 24px (mínimo
+// recomendado pra alvos de toque): a borda, pintada na cor do fundo, cria o
+// "furo" ao redor do miolo colorido sem encolher a caixa clicável.
 const HANDLE_CLASS =
-  "!h-3 !w-3 !rounded-full !border-2 !border-background !bg-primary";
+  "!h-6 !w-6 !rounded-full !border-[8px] !border-background !bg-primary";
 const ROW_HANDLE_CLASS = cn(
   HANDLE_CLASS,
-  "!absolute !top-1/2 !-translate-y-1/2 !-right-[19px]"
+  "!absolute !top-1/2 !-translate-y-1/2 !-right-[25px]"
 );
 
 function NodeFrame({
+  id,
   icon: Icon,
   chipClass,
   title,
@@ -49,6 +65,7 @@ function NodeFrame({
   hasOut = false,
   children,
 }: {
+  id: string;
   icon: LucideIcon;
   chipClass: string;
   title: string;
@@ -57,11 +74,17 @@ function NodeFrame({
   hasOut?: boolean;
   children: React.ReactNode;
 }) {
+  const invalidId = useContext(InvalidNodeContext);
+  const isInvalid = invalidId === id;
   return (
     <div
       className={cn(
         "w-60 rounded-xl border bg-card text-card-foreground shadow-lg transition-shadow",
-        selected ? "border-primary ring-2 ring-primary/40" : "border-border"
+        selected
+          ? "border-primary ring-2 ring-primary/40"
+          : isInvalid
+            ? "border-destructive ring-2 ring-destructive/50"
+            : "border-border"
       )}
     >
       {hasTarget && (
@@ -95,18 +118,21 @@ function Placeholder({ text }: { text: string }) {
   return <p className="text-xs italic text-muted-foreground/70">{text}</p>;
 }
 
-export function TriggerNode({ data, selected }: NodeProps) {
+export function TriggerNode({ id, data, selected }: NodeProps) {
   const d = data as unknown as TriggerNodeData;
   return (
     <NodeFrame
+      id={id}
       icon={Zap}
       chipClass="bg-warning text-[#0B0D0C]"
-      title="Gatilho"
+      title={d.source === "automation" ? "Gatilho por automação" : "Gatilho"}
       selected={selected}
       hasTarget={false}
       hasOut
     >
-      {d.anyMessage ? (
+      {d.source === "automation" ? (
+        <TriggerAutomationSummary />
+      ) : d.anyMessage ? (
         <p className="text-xs text-muted-foreground">
           Dispara com <span className="font-medium text-foreground">qualquer DM</span>
         </p>
@@ -124,11 +150,12 @@ export function TriggerNode({ data, selected }: NodeProps) {
   );
 }
 
-export function MessageNode({ data, selected }: NodeProps) {
+export function MessageNode({ id, data, selected }: NodeProps) {
   const d = data as unknown as MessageNodeData;
   const isImage = d.kind === "image";
   return (
     <NodeFrame
+      id={id}
       icon={isImage ? ImageIcon : MessageSquareText}
       chipClass="bg-secondary text-foreground/70"
       title={isImage ? "Imagem" : "Mensagem"}
@@ -152,11 +179,12 @@ export function MessageNode({ data, selected }: NodeProps) {
   );
 }
 
-export function ButtonsNode({ data, selected }: NodeProps) {
+export function ButtonsNode({ id, data, selected }: NodeProps) {
   const d = data as unknown as ButtonsNodeData;
   const hasBranch = d.buttons.some((b) => b.kind === "branch");
   return (
     <NodeFrame
+      id={id}
       icon={MousePointerClick}
       chipClass="bg-secondary text-foreground/70"
       title="Botões"
@@ -200,10 +228,11 @@ export function ButtonsNode({ data, selected }: NodeProps) {
   );
 }
 
-export function QuickRepliesNode({ data, selected }: NodeProps) {
+export function QuickRepliesNode({ id, data, selected }: NodeProps) {
   const d = data as unknown as QuickRepliesNodeData;
   return (
     <NodeFrame
+      id={id}
       icon={ListChecks}
       chipClass="bg-secondary text-foreground/70"
       title="Respostas rápidas"
@@ -256,11 +285,12 @@ const UNIT_LABELS: Record<DelayNodeData["unit"], [string, string]> = {
   hours: ["hora", "horas"],
 };
 
-export function DelayNode({ data, selected }: NodeProps) {
+export function DelayNode({ id, data, selected }: NodeProps) {
   const d = data as unknown as DelayNodeData;
   const [singular, plural] = UNIT_LABELS[d.unit] ?? UNIT_LABELS.minutes;
   return (
     <NodeFrame
+      id={id}
       icon={Timer}
       chipClass="bg-secondary text-foreground/70"
       title="Atraso"
@@ -278,9 +308,10 @@ export function DelayNode({ data, selected }: NodeProps) {
   );
 }
 
-export function WaitReplyNode({ selected }: NodeProps) {
+export function WaitReplyNode({ id, selected }: NodeProps) {
   return (
     <NodeFrame
+      id={id}
       icon={Hourglass}
       chipClass="bg-secondary text-foreground/70"
       title="Esperar resposta"
@@ -294,6 +325,22 @@ export function WaitReplyNode({ selected }: NodeProps) {
   );
 }
 
+export function AutomationNode({ id, data, selected }: NodeProps) {
+  const d = data as unknown as AutomationNodeData;
+  return (
+    <NodeFrame
+      id={id}
+      icon={Workflow}
+      chipClass="bg-secondary text-foreground/70"
+      title="Automação"
+      selected={selected}
+      hasOut
+    >
+      <AutomationNodeBody ruleId={d.ruleId} />
+    </NodeFrame>
+  );
+}
+
 export const sequenceNodeTypes = {
   trigger: TriggerNode,
   message: MessageNode,
@@ -301,4 +348,5 @@ export const sequenceNodeTypes = {
   quickReplies: QuickRepliesNode,
   delay: DelayNode,
   waitReply: WaitReplyNode,
+  automation: AutomationNode,
 };

@@ -2,6 +2,10 @@
 
 import { GitBranch, Link2, Plus, Trash2 } from "lucide-react";
 
+import {
+  AutomationNodeForm,
+  type AutomationPreviewAccount,
+} from "@/components/sequences/automation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,8 +26,9 @@ import {
   MAX_QUICK_REPLIES,
   TEXT_MAX,
 } from "@/lib/sequences/graph";
-import type { MatchType } from "@/types/database";
+import type { MatchType, Rule } from "@/types/database";
 import type {
+  AutomationNodeData,
   ButtonsNodeData,
   DelayNodeData,
   DelayUnit,
@@ -32,6 +37,7 @@ import type {
   SequenceNodeData,
   SequenceNodeType,
   TriggerNodeData,
+  TriggerSource,
 } from "@/types/sequence";
 
 /**
@@ -45,9 +51,21 @@ export interface InspectorNode {
   data: SequenceNodeData;
 }
 
+/** O que o nó "Automação" precisa saber do resto do fluxo. */
+export interface InspectorAutomationContext {
+  /** Automações da conta da sequência. */
+  rules: Rule[];
+  account: AutomationPreviewAccount | null;
+  /** Id do bloco ligado direto à saída do gatilho (posição de entrada). */
+  entryNodeId: string | null;
+  triggerSource: TriggerSource;
+  onTriggerSourceChange: (source: TriggerSource) => void;
+}
+
 interface InspectorProps {
   node: InspectorNode | null;
   onChange: (nodeId: string, data: SequenceNodeData) => void;
+  automation: InspectorAutomationContext;
 }
 
 const TYPE_TITLES: Record<SequenceNodeType, string> = {
@@ -57,9 +75,10 @@ const TYPE_TITLES: Record<SequenceNodeType, string> = {
   quickReplies: "Respostas rápidas",
   delay: "Atraso",
   waitReply: "Esperar resposta",
+  automation: "Automação",
 };
 
-export function SequenceInspector({ node, onChange }: InspectorProps) {
+export function SequenceInspector({ node, onChange, automation }: InspectorProps) {
   if (!node) {
     return (
       <div className="space-y-3 text-sm text-muted-foreground">
@@ -73,7 +92,7 @@ export function SequenceInspector({ node, onChange }: InspectorProps) {
           <li>
             Em <span className="text-foreground">Botões</span> e{" "}
             <span className="text-foreground">Respostas rápidas</span>, cada
-            opção tem a própria saída — é assim que o fluxo ramifica.
+            opção tem a própria saída: é assim que o fluxo ramifica.
           </li>
           <li>Clique num bloco para editá-lo aqui.</li>
           <li>
@@ -89,12 +108,20 @@ export function SequenceInspector({ node, onChange }: InspectorProps) {
   return (
     <div className="space-y-4">
       <p className="text-sm font-semibold">{TYPE_TITLES[node.type]}</p>
-      <NodeForm node={node} onChange={onChange} />
+      <NodeForm node={node} onChange={onChange} automation={automation} />
     </div>
   );
 }
 
-function NodeForm({ node, onChange }: { node: InspectorNode; onChange: InspectorProps["onChange"] }) {
+function NodeForm({
+  node,
+  onChange,
+  automation,
+}: {
+  node: InspectorNode;
+  onChange: InspectorProps["onChange"];
+  automation: InspectorAutomationContext;
+}) {
   switch (node.type) {
     case "trigger":
       return (
@@ -135,9 +162,21 @@ function NodeForm({ node, onChange }: { node: InspectorNode; onChange: Inspector
       return (
         <p className="text-xs leading-relaxed text-muted-foreground">
           O fluxo fica pausado neste ponto até a pessoa mandar qualquer
-          mensagem. Quando ela responder, continua pela saída do bloco — e a
-          resposta dela reabre a janela de 24h da Meta.
+          mensagem. Quando ela responder, continua pela saída do bloco. A
+          resposta dela também reabre a janela de 24h da Meta.
         </p>
+      );
+    case "automation":
+      return (
+        <AutomationNodeForm
+          data={node.data as AutomationNodeData}
+          onChange={(d) => onChange(node.id, d)}
+          rules={automation.rules}
+          account={automation.account}
+          isEntryPosition={automation.entryNodeId === node.id}
+          triggerSource={automation.triggerSource}
+          onTriggerSourceChange={automation.onTriggerSourceChange}
+        />
       );
   }
 }
@@ -149,6 +188,26 @@ function TriggerForm({
   data: TriggerNodeData;
   patch: (d: TriggerNodeData) => void;
 }) {
+  if (data.source === "automation") {
+    return (
+      <div className="space-y-4">
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          Este fluxo começa quando a automação do bloco ligado ao gatilho
+          dispara. A automação responde como sempre e o fluxo continua a
+          partir dela.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="w-full"
+          onClick={() => patch({ ...data, source: "dm" })}
+        >
+          Disparar por palavra-chave na DM
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between rounded-md border border-input px-3 py-2.5">
@@ -170,7 +229,7 @@ function TriggerForm({
               onChange={(e) => patch({ ...data, keyword: e.target.value })}
             />
             <p className="text-xs text-muted-foreground">
-              Separe várias por vírgula — qualquer uma dispara.
+              Separe várias por vírgula: qualquer uma dispara.
             </p>
           </div>
           <div className="space-y-2">
@@ -466,7 +525,7 @@ function DelayForm({
         </div>
       </div>
       <p className="text-xs leading-relaxed text-muted-foreground">
-        De 5 segundos a 23 horas — o limite existe porque a Meta só permite
+        De 5 segundos a 23 horas. O limite existe porque a Meta só permite
         enviar mensagens até 24h após a última resposta da pessoa. Para fluxos
         mais longos, use “Esperar resposta” no meio (a resposta renova a
         janela).

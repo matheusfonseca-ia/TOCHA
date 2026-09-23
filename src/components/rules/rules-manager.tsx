@@ -5,6 +5,7 @@ import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
+  Copy,
   Image as ImageIcon,
   MessageCircle,
   MessageSquareText,
@@ -66,6 +67,8 @@ import type {
 } from "@/types/database";
 import {
   deleteRule,
+  duplicateRule,
+  listRuleWorkflowUsage,
   saveRule,
   toggleRule,
   type RuleInput,
@@ -203,6 +206,11 @@ export function RulesManager({
   const [form, setForm] = useState<FormState>(() =>
     emptyForm(accounts[0]?.id ?? "")
   );
+  const [deleteTarget, setDeleteTarget] = useState<RuleWithAccount | null>(
+    null
+  );
+  /** Workflows que usam a automação em exclusão (null = carregando). */
+  const [deleteUsage, setDeleteUsage] = useState<string[] | null>(null);
 
   const filteredRules = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -254,6 +262,7 @@ export function RulesManager({
         return;
       }
       toast.success(form.id ? "Automação atualizada." : "Automação criada.");
+      if (result.warning) toast.warning(result.warning);
       setOpen(false);
     });
   }
@@ -262,16 +271,35 @@ export function RulesManager({
     startTransition(async () => {
       const result = await toggleRule(rule.id, next);
       if (result.error) toast.error(result.error);
+      else if (result.warning) toast.warning(result.warning);
     });
   }
 
+  function handleDuplicate(rule: RuleWithAccount) {
+    startTransition(async () => {
+      const result = await duplicateRule(rule.id);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      toast.success("Automação duplicada. A cópia foi criada pausada.");
+    });
+  }
+
+  function openDelete(rule: RuleWithAccount) {
+    setDeleteTarget(rule);
+    setDeleteUsage(null);
+    listRuleWorkflowUsage(rule.id)
+      .then(setDeleteUsage)
+      .catch(() => setDeleteUsage([]));
+  }
+
   function handleDelete(rule: RuleWithAccount) {
-    const label = rule.name || rule.keyword || "esta automação";
-    if (!window.confirm(`Excluir a automação "${label}"?`)) return;
     startTransition(async () => {
       const result = await deleteRule(rule.id);
       if (result.error) toast.error(result.error);
       else toast.success("Automação excluída.");
+      setDeleteTarget(null);
     });
   }
 
@@ -415,8 +443,15 @@ export function RulesManager({
                             Editar
                           </DropdownMenuItem>
                           <DropdownMenuItem
+                            disabled={isPending}
+                            onClick={() => handleDuplicate(rule)}
+                          >
+                            <Copy />
+                            Duplicar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
-                            onClick={() => handleDelete(rule)}
+                            onClick={() => openDelete(rule)}
                           >
                             <Trash2 />
                             Excluir
@@ -441,7 +476,7 @@ export function RulesManager({
             </DialogTitle>
             <DialogDescription>
               {form.trigger_type === "comment"
-                ? "Automação de comentário. Aqui você ajusta o básico e a mensagem com o link — as publicações-alvo e a mensagem de boas-vindas continuam como estão."
+                ? "Automação de comentário. Aqui você ajusta o básico e a mensagem com o link (as publicações-alvo e a mensagem de boas-vindas continuam como estão)."
                 : "Se receber a palavra-chave, o Falow responde automaticamente na DM."}
             </DialogDescription>
           </DialogHeader>
@@ -456,7 +491,7 @@ export function RulesManager({
                 onChange={(e) => patch({ name: e.target.value })}
               />
               <p className="text-xs text-muted-foreground">
-                Opcional — se vazio, a lista usa a palavra-chave como nome.
+                Opcional, se vazio a lista usa a palavra-chave como nome.
               </p>
             </div>
 
@@ -479,12 +514,12 @@ export function RulesManager({
               </Select>
             </div>
 
-            {/* Sem palavra-chave a regra dispara em qualquer comentário — o
+            {/* Sem palavra-chave a regra dispara em qualquer comentário: o
                 campo não teria efeito nenhum (saveRule salva keyword = null). */}
             {form.comment?.comment_any_word ? (
               <div className="rounded-md border border-input px-3 py-2.5 text-sm text-muted-foreground">
                 Dispara em <strong className="font-medium">qualquer comentário</strong>{" "}
-                das publicações escolhidas — sem palavra-chave.
+                das publicações escolhidas, sem palavra-chave.
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">
@@ -617,7 +652,7 @@ export function RulesManager({
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Simula digitação humana (2–5s).
+                  Simula digitação humana (2 a 5s).
                 </p>
               </div>
               <div className="space-y-2">
@@ -641,6 +676,47 @@ export function RulesManager({
             </Button>
             <Button onClick={handleSubmit} disabled={isPending}>
               {isPending ? "Salvando..." : "Salvar automação"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Confirmação de exclusão ──────────────────────────────────── */}
+      <Dialog
+        open={deleteTarget !== null}
+        onOpenChange={(next) => !next && setDeleteTarget(null)}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Excluir automação</DialogTitle>
+            <DialogDescription>
+              Excluir a automação &ldquo;
+              {deleteTarget?.name || deleteTarget?.keyword || "esta automação"}
+              &rdquo;? Essa ação não pode ser desfeita.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteUsage && deleteUsage.length > 0 && (
+            <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+              <p className="font-medium">
+                Usada em {deleteUsage.length}{" "}
+                {deleteUsage.length === 1 ? "workflow" : "workflows"}:
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                {deleteUsage.join(", ")}. Nesses fluxos o bloco vai aparecer
+                como &ldquo;Automação removida&rdquo; e precisa ser trocado.
+              </p>
+            </div>
+          )}
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>
+              Cancelar
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={isPending || deleteUsage === null}
+              onClick={() => deleteTarget && handleDelete(deleteTarget)}
+            >
+              Excluir
             </Button>
           </DialogFooter>
         </DialogContent>

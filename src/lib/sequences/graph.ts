@@ -1,8 +1,10 @@
+import type { Rule } from "@/types/database";
 import {
   buttonHandle,
   OUT_HANDLE,
   QR_FALLBACK_HANDLE,
   quickReplyHandle,
+  type AutomationNodeData,
   type ButtonsNodeData,
   type DelayNodeData,
   type DelayUnit,
@@ -11,6 +13,7 @@ import {
   type SequenceGraph,
   type SequenceGraphNode,
   type TriggerNodeData,
+  type TriggerSource,
 } from "@/types/sequence";
 
 /**
@@ -48,6 +51,141 @@ export function nodeById(
 
 export function findTriggerNode(graph: SequenceGraph): SequenceGraphNode | null {
   return graph.nodes.find((n) => n.type === "trigger") ?? null;
+}
+
+/** Origem do gatilho; grafos anteriores ao nó Automação não têm o campo (= "dm"). */
+export function triggerSourceOf(graph: SequenceGraph): TriggerSource {
+  const trigger = findTriggerNode(graph);
+  return (trigger?.data as TriggerNodeData | undefined)?.source === "automation"
+    ? "automation"
+    : "dm";
+}
+
+/**
+ * Nó Automação de entrada: o ligado direto ao gatilho quando o gatilho está
+ * em source "automation". null em fluxos de gatilho por DM.
+ */
+export function findEntryAutomationNode(
+  graph: SequenceGraph
+): SequenceGraphNode | null {
+  const trigger = findTriggerNode(graph);
+  if (!trigger || triggerSourceOf(graph) !== "automation") return null;
+  const firstId = targetOf(graph, trigger.id, OUT_HANDLE);
+  const first = firstId ? nodeById(graph, firstId) : null;
+  return first?.type === "automation" ? first : null;
+}
+
+/**
+ * Rule que dá entrada no fluxo, ou null. É o valor que o save grava em
+ * `sequences.entry_rule_id` (o webhook busca o workflow por essa coluna).
+ */
+export function entryRuleIdOf(graph: SequenceGraph): string | null {
+  const entry = findEntryAutomationNode(graph);
+  const ruleId = (entry?.data as AutomationNodeData | undefined)?.ruleId;
+  return ruleId?.trim() ? ruleId : null;
+}
+
+/** Ids (únicos) de todas as rules referenciadas por nós Automação. */
+export function automationRuleIdsOf(graph: SequenceGraph): string[] {
+  const ids = graph.nodes
+    .filter((n) => n.type === "automation")
+    .map((n) => (n.data as AutomationNodeData).ruleId)
+    .filter((id): id is string => !!id?.trim());
+  return Array.from(new Set(ids));
+}
+
+/**
+ * Nós em que o fluxo para e espera algo de fora (resposta, toque, tempo).
+ * Um ciclo que passa por um deles não gira sozinho: cada volta depende da
+ * pessoa ou do relógio.
+ */
+export function isWaitNode(node: SequenceGraphNode): boolean {
+  switch (node.type) {
+    case "waitReply":
+    case "quickReplies":
+    case "delay":
+      return true;
+    case "buttons":
+      return (node.data as ButtonsNodeData).buttons.some(
+        (b) => b.kind === "branch"
+      );
+    default:
+      return false;
+  }
+}
+
+/**
+ * Ids dos nós que participam de algum ciclo sem nenhum nó de espera (um
+ * laço desses dispararia mensagens sem parar). Ciclos com espera são
+ * permitidos (menu que volta para o início, por exemplo).
+ *
+ * Tirando os nós de espera do grafo, todo ciclo que sobra é um ciclo sem
+ * espera: basta achar os componentes fortemente conexos (Tarjan) com mais de
+ * um nó, ou com laço no próprio nó. Retorna [] se não houver nenhum.
+ */
+export function findCyclesWithoutWait(graph: SequenceGraph): string[] {
+  const candidates = graph.nodes.filter((n) => !isWaitNode(n)).map((n) => n.id);
+  const adjacency = new Map<string, string[]>(candidates.map((id) => [id, []]));
+  for (const edge of graph.edges) {
+    const out = adjacency.get(edge.source);
+    if (out && adjacency.has(edge.target)) out.push(edge.target);
+  }
+
+  let counter = 0;
+  const index = new Map<string, number>();
+  const low = new Map<string, number>();
+  const onStack = new Set<string>();
+  const stack: string[] = [];
+  const result: string[] = [];
+
+  const visit = (id: string) => {
+    index.set(id, counter);
+    low.set(id, counter++);
+    stack.push(id);
+    onStack.add(id);
+  };
+
+  // Iterativo: o grafo é pequeno (MAX_NODES), mas assim nunca estoura a pilha.
+  for (const root of candidates) {
+    if (index.has(root)) continue;
+    visit(root);
+    const work: { id: string; next: number }[] = [{ id: root, next: 0 }];
+
+    while (work.length > 0) {
+      const frame = work[work.length - 1];
+      const neighbors = adjacency.get(frame.id)!;
+      if (frame.next < neighbors.length) {
+        const w = neighbors[frame.next++];
+        if (!index.has(w)) {
+          visit(w);
+          work.push({ id: w, next: 0 });
+        } else if (onStack.has(w)) {
+          low.set(frame.id, Math.min(low.get(frame.id)!, index.get(w)!));
+        }
+        continue;
+      }
+
+      work.pop();
+      if (work.length > 0) {
+        const parent = work[work.length - 1].id;
+        low.set(parent, Math.min(low.get(parent)!, low.get(frame.id)!));
+      }
+      if (low.get(frame.id) !== index.get(frame.id)) continue;
+
+      const component: string[] = [];
+      let w: string;
+      do {
+        w = stack.pop()!;
+        onStack.delete(w);
+        component.push(w);
+      } while (w !== frame.id);
+      const selfLoop =
+        component.length === 1 && adjacency.get(frame.id)!.includes(frame.id);
+      if (component.length > 1 || selfLoop) result.push(...component);
+    }
+  }
+
+  return result;
 }
 
 /** Nó de destino da aresta que sai de (nodeId, handle) — null se não conectado. */
@@ -98,6 +236,8 @@ function validateNode(node: SequenceGraphNode): string | null {
   switch (node.type) {
     case "trigger": {
       const data = node.data as TriggerNodeData;
+      // Em source "automation" quem dispara é a rule do 1º nó (validada à parte).
+      if (data.source === "automation") return null;
       if (!data.anyMessage && !data.keyword.trim()) {
         return "Gatilho: informe a palavra-chave ou marque “qualquer mensagem”.";
       }
@@ -160,14 +300,89 @@ function validateNode(node: SequenceGraphNode): string | null {
     }
     case "waitReply":
       return null;
+    case "automation": {
+      const data = node.data as AutomationNodeData;
+      if (!data.ruleId?.trim()) return "Automação: selecione qual automação usar.";
+      return null;
+    }
   }
+}
+
+/** O que a validação precisa saber de cada rule referenciada por nós Automação. */
+export type AutomationRuleRef = Pick<Rule, "id" | "trigger_type" | "account_id">;
+
+/**
+ * Contexto opcional da validação. O grafo é puro e não sabe o tipo de cada
+ * rule; quem tem acesso ao banco passa o que sabe.
+ *
+ * Como o save (`saveSequence`) deve passar:
+ *   const ids = automationRuleIdsOf(graph);
+ *   const { data: refs } = ids.length
+ *     ? await supabase.from("rules").select("id, trigger_type, account_id").in("id", ids)
+ *     : { data: [] };
+ *   validateSequenceGraph(graph, {
+ *     accountId: input.account_id,
+ *     rulesById: new Map((refs ?? []).map((r) => [r.id, r])),
+ *   });
+ *
+ * Sem `rulesById` (ex.: validação rápida no editor antes de carregar as
+ * rules), as checagens que dependem do tipo da rule são puladas. Rule que não
+ * está no mapa conta como excluída.
+ */
+export interface GraphValidationContext {
+  rulesById?: Map<string, AutomationRuleRef>;
+  /** Conta da sequência: toda rule referenciada precisa ser dela. */
+  accountId?: string;
+}
+
+function validateAutomationNodes(
+  graph: SequenceGraph,
+  trigger: SequenceGraphNode,
+  ctx: GraphValidationContext
+): string | null {
+  const source = (trigger.data as TriggerNodeData).source ?? "dm";
+  const firstId = targetOf(graph, trigger.id, OUT_HANDLE);
+  const first = firstId ? nodeById(graph, firstId) : null;
+
+  if (source === "automation" && first?.type !== "automation") {
+    return "Gatilho por automação: ligue o gatilho direto a um bloco Automação.";
+  }
+
+  for (const node of graph.nodes) {
+    if (node.type !== "automation" || !ctx.rulesById) continue;
+    const ruleId = (node.data as AutomationNodeData).ruleId;
+    const isEntry = source === "automation" && node.id === first?.id;
+
+    const rule = ctx.rulesById.get(ruleId);
+    if (!rule) {
+      return "Automação removida: escolha outra automação no bloco ou exclua o bloco.";
+    }
+    if (ctx.accountId && rule.account_id !== ctx.accountId) {
+      return "Automação: a automação escolhida é de outra conta do Instagram.";
+    }
+    if (rule.trigger_type !== "comment") continue;
+
+    // A Meta só deixa responder um comentário no momento em que ele chega:
+    // rule de comentário só faz sentido como porta de entrada do fluxo.
+    if (!isEntry) {
+      return "Automação de comentário só pode ser o primeiro bloco, ligado ao gatilho (gatilho por automação).";
+    }
+    if (graph.edges.some((e) => e.target === node.id && e.source !== trigger.id)) {
+      return "Nada pode voltar para o bloco de automação de comentário: ele só roda na entrada.";
+    }
+  }
+
+  return null;
 }
 
 /**
  * Valida o grafo inteiro. Retorna a primeira mensagem de erro (pt-BR) ou
  * null se estiver tudo certo. Usada no editor (toast) e no servidor (action).
  */
-export function validateSequenceGraph(graph: SequenceGraph): string | null {
+export function validateSequenceGraph(
+  graph: SequenceGraph,
+  ctx: GraphValidationContext = {}
+): string | null {
   if (graph.nodes.length === 0) return "A sequência está vazia.";
   if (graph.nodes.length > MAX_NODES) {
     return `Máximo de ${MAX_NODES} blocos por sequência.`;
@@ -227,16 +442,27 @@ export function validateSequenceGraph(graph: SequenceGraph): string | null {
   }
   const orphan = graph.nodes.find((n) => !reachable.has(n.id));
   if (orphan) {
-    return "Há um bloco solto sem conexão com o fluxo — conecte ou exclua.";
+    return "Há um bloco solto sem conexão com o fluxo. Conecte ou exclua.";
+  }
+
+  const automationError = validateAutomationNodes(graph, trigger, ctx);
+  if (automationError) return automationError;
+
+  // Ciclo com espera (resposta, botão, atraso) é permitido; sem espera ele
+  // dispararia mensagens em laço. O editor destaca os nós com
+  // findCyclesWithoutWait.
+  if (findCyclesWithoutWait(graph).length > 0) {
+    return "Há um ciclo sem nenhum bloco de espera (esperar resposta, botões com ramificação, respostas rápidas ou atraso). Inclua uma espera no caminho de volta.";
   }
 
   return null;
 }
 
-/** Resumo do gatilho para listas ("preço, link" ou "Qualquer mensagem"). */
+/** Resumo do gatilho para listas ("preço, link", "Qualquer mensagem" ou por automação). */
 export function triggerSummary(graph: SequenceGraph): string {
   const trigger = findTriggerNode(graph);
-  if (!trigger) return "—";
+  if (!trigger) return "Sem gatilho";
   const data = trigger.data as TriggerNodeData;
+  if (data.source === "automation") return "Quando uma automação disparar";
   return data.anyMessage ? "Qualquer mensagem" : data.keyword;
 }

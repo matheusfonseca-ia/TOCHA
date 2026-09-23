@@ -10,19 +10,30 @@ import {
 import { getFreshToken } from "@/lib/meta/token";
 import { keywordMatches } from "@/lib/rules/engine";
 import {
+  AUTOMATION_REMOVED_ERROR,
+  sendRuleReply,
+} from "@/lib/sequences/automation";
+import {
   delayToSeconds,
+  entryRuleIdOf,
+  findEntryAutomationNode,
   findTriggerNode,
   nodeById,
   targetOf,
 } from "@/lib/sequences/graph";
+import {
+  buildSequencePayload,
+  parseSequencePayload,
+} from "@/lib/sequences/payload";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sleep } from "@/lib/utils";
-import type { IgAccount, InteractionStatus } from "@/types/database";
+import type { IgAccount, InteractionStatus, Rule } from "@/types/database";
 import {
   buttonHandle,
   OUT_HANDLE,
   QR_FALLBACK_HANDLE,
   quickReplyHandle,
+  type AutomationNodeData,
   type ButtonsNodeData,
   type DelayNodeData,
   type MessageNodeData,
@@ -59,46 +70,25 @@ const NODE_BUDGET_MS = 10 * 1000;
 // Um run só fica em `running` durante uma invocação (teto de 60s). Acima disso
 // a invocação que o reivindicou morreu (timeout, deploy, crash) e ele é órfão.
 const STALE_RUNNING_MS = 5 * 60 * 1000;
-// Trava de segurança contra ciclos no grafo.
-const MAX_TOTAL_STEPS = 100;
+// Trava de segurança contra ciclos sem espera numa mesma execução. O save já
+// bloqueia esses ciclos (findCyclesWithoutWait); isto cobre grafos legados.
+const MAX_STEPS_PER_EXECUTION = 100;
+// Teto da vida inteira do run. Ciclos com espera são permitidos (menu que
+// volta ao início), então o total cresce a cada volta; o teto só existe para
+// um laço com atraso curto não mandar mensagem para sempre.
+const MAX_TOTAL_STEPS = 1000;
 // Nós que falam com a Graph API — os únicos que custam tempo de verdade.
 const SENDING_NODE_TYPES: ReadonlySet<SequenceNodeType> = new Set([
   "message",
   "buttons",
   "quickReplies",
+  "automation",
 ]);
+// Unique violation do Postgres: a pessoa já passou por esta sequência.
+const PG_UNIQUE_VIOLATION = "23505";
 
-// Payload dos botões/quick replies de sequência: falow:seq:<runId>:<handle>
-const SEQ_PAYLOAD_PREFIX = "falow:seq:";
-// O produto se chamou InstaReply até 2026-07-28. Botões já entregues em DMs
-// carregam o payload antigo para sempre, então continuamos aceitando na leitura
-// (só o envio usa o prefixo novo).
-const SEQ_PAYLOAD_PREFIX_LEGACY = "instareply:seq:";
-
-export function buildSequencePayload(runId: string, handle: string): string {
-  return `${SEQ_PAYLOAD_PREFIX}${runId}:${handle}`;
-}
-
-export function isSequencePayload(payload: string | undefined | null): boolean {
-  return (
-    !!payload &&
-    (payload.startsWith(SEQ_PAYLOAD_PREFIX) ||
-      payload.startsWith(SEQ_PAYLOAD_PREFIX_LEGACY))
-  );
-}
-
-export function parseSequencePayload(
-  payload: string | undefined | null
-): { runId: string; handle: string } | null {
-  const prefix = [SEQ_PAYLOAD_PREFIX, SEQ_PAYLOAD_PREFIX_LEGACY].find((p) =>
-    payload?.startsWith(p)
-  );
-  if (!prefix || !payload) return null;
-  const rest = payload.slice(prefix.length);
-  const sep = rest.indexOf(":");
-  if (sep <= 0) return null;
-  return { runId: rest.slice(0, sep), handle: rest.slice(sep + 1) };
-}
+// Payload dos botões/quick replies (v1 e v2) vive em ./payload, puro e testado.
+export { isSequencePayload, parseSequencePayload } from "@/lib/sequences/payload";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -151,37 +141,105 @@ export async function maybeStartSequence(
     const trigger = findTriggerNode(sequence.graph);
     if (!trigger) continue;
     const data = trigger.data as TriggerNodeData;
+    // Gatilho por automação não reage a palavra-chave: quem inicia é a rule
+    // (ver startSequenceFromRule).
+    if (data.source === "automation") continue;
     const matched =
       data.anyMessage ||
       keywordMatches(messageText, data.keyword, data.matchType);
     if (!matched) continue;
 
-    // Anti-duplicidade: cada pessoa entra no máximo 1x em cada sequência
-    // (unique em (sequence_id, ig_sender_id) — o insert falha na 2ª vez).
-    const { data: run, error } = await admin
-      .from("sequence_runs")
-      .insert({
-        sequence_id: sequence.id,
-        account_id: account.id,
-        ig_sender_id: senderId,
-        status: "running",
-      })
-      .select("*")
-      .maybeSingle<SequenceRun>();
-
-    if (error || !run) {
-      return {
-        status: "duplicate_skip",
-        sequenceId: sequence.id,
-        sequenceName: sequence.name,
-      };
-    }
+    const inserted = await insertRun(admin, account, sequence, senderId, null);
+    if ("outcome" in inserted) return inserted.outcome;
 
     const startNodeId = targetOf(sequence.graph, trigger.id, OUT_HANDLE);
-    return executeFrom(admin, account, sequence, run, startNodeId);
+    return executeFrom(admin, account, sequence, inserted.run, startNodeId, {
+      discardRunIfNothingSent: true,
+    });
   }
 
   return null;
+}
+
+/**
+ * Handoff rule → workflow: a rule acabou de entregar a resposta (DM) ou o
+ * link (postback do comentário) e o workflow ATIVO que tem essa rule como
+ * entrada continua a partir da saída do nó Automação. Workflow pausado ou
+ * inexistente → null (a rule respondeu sozinha, sem continuação).
+ *
+ * Quem chama garante que a janela de 24h está aberta: a DM ou o toque no
+ * botão acabaram de atualizar `conversations.last_inbound_at`.
+ */
+export async function startSequenceFromRule(
+  admin: AdminClient,
+  account: IgAccount,
+  senderId: string,
+  rule: Pick<Rule, "id">
+): Promise<SequenceOutcome | null> {
+  // Se houver mais de um workflow ativo com a mesma entrada, vale o mais
+  // antigo (determinístico). Erro aqui = migration 0002 ainda não aplicada.
+  const { data: sequence, error } = await admin
+    .from("sequences")
+    .select("*")
+    .eq("account_id", account.id)
+    .eq("entry_rule_id", rule.id)
+    .eq("is_active", true)
+    .order("created_at")
+    .limit(1)
+    .maybeSingle<Sequence>();
+  if (error || !sequence) return null;
+
+  // entry_rule_id é espelho do grafo; se divergirem, o grafo manda.
+  const entry = findEntryAutomationNode(sequence.graph);
+  if (!entry || entryRuleIdOf(sequence.graph) !== rule.id) return null;
+
+  const inserted = await insertRun(admin, account, sequence, senderId, rule.id);
+  if ("outcome" in inserted) return inserted.outcome;
+
+  const startNodeId = targetOf(sequence.graph, entry.id, OUT_HANDLE);
+  return executeFrom(admin, account, sequence, inserted.run, startNodeId, {
+    discardRunIfNothingSent: true,
+  });
+}
+
+/**
+ * Anti-duplicidade: cada pessoa entra no máximo 1x em cada sequência
+ * (unique em (sequence_id, ig_sender_id): o insert falha na 2ª vez).
+ */
+async function insertRun(
+  admin: AdminClient,
+  account: IgAccount,
+  sequence: Sequence,
+  senderId: string,
+  entryRuleId: string | null
+): Promise<{ run: SequenceRun } | { outcome: SequenceOutcome }> {
+  const { data: run, error } = await admin
+    .from("sequence_runs")
+    .insert({
+      sequence_id: sequence.id,
+      account_id: account.id,
+      ig_sender_id: senderId,
+      status: "running",
+      // Só envia a coluna quando precisa: fluxo por DM segue funcionando
+      // mesmo antes da migration 0002.
+      ...(entryRuleId ? { entry_rule_id: entryRuleId } : {}),
+    })
+    .select("*")
+    .maybeSingle<SequenceRun>();
+
+  if (run) return { run };
+
+  const base = { sequenceId: sequence.id, sequenceName: sequence.name };
+  if (!error || error.code === PG_UNIQUE_VIOLATION) {
+    return { outcome: { ...base, status: "duplicate_skip" } };
+  }
+  return {
+    outcome: {
+      ...base,
+      status: "error",
+      errorDetail: `Falha ao iniciar a sequência: ${error.message}`,
+    },
+  };
 }
 
 // ── Retomadas ───────────────────────────────────────────────────────────────
@@ -205,7 +263,8 @@ export async function handleSequenceReply(
       admin,
       parsed.runId,
       "waiting_reply",
-      senderId
+      senderId,
+      parsed.nodeId
     );
     if (!claimed) return null;
     return resumeFromHandle(admin, account, claimed, parsed.handle);
@@ -259,7 +318,8 @@ export async function handleSequencePostback(
     admin,
     parsed.runId,
     "waiting_postback",
-    senderId
+    senderId,
+    parsed.nodeId
   );
   if (!claimed) return null;
   return resumeFromHandle(admin, account, claimed, parsed.handle);
@@ -282,21 +342,25 @@ async function claimRun(
 }
 
 /** Claim que também exige o remetente esperado — payloads vêm de fora, então
- *  a checagem entra no próprio UPDATE (nunca trava o run de outra pessoa). */
+ *  a checagem entra no próprio UPDATE (nunca trava o run de outra pessoa).
+ *  Payload v2 traz o nó que enviou o botão: se o run já saiu dele (botão de
+ *  uma mensagem antiga), o claim não casa e o toque é ignorado sem mexer no
+ *  run. Payload v1 (nodeId null) mantém o comportamento antigo. */
 async function claimRunForSender(
   admin: AdminClient,
   runId: string,
   expectedStatus: SequenceRunStatus,
-  senderId: string
+  senderId: string,
+  nodeId: string | null
 ): Promise<SequenceRun | null> {
-  const { data } = await admin
+  let query = admin
     .from("sequence_runs")
     .update({ status: "running", updated_at: new Date().toISOString() })
     .eq("id", runId)
     .eq("status", expectedStatus)
-    .eq("ig_sender_id", senderId)
-    .select("*")
-    .maybeSingle<SequenceRun>();
+    .eq("ig_sender_id", senderId);
+  if (nodeId) query = query.eq("current_node_id", nodeId);
+  const { data } = await query.select("*").maybeSingle<SequenceRun>();
   return data ?? null;
 }
 
@@ -418,7 +482,7 @@ export async function processDueRuns(
       sequence,
       claimed,
       nextNodeId,
-      deadline
+      { deadline }
     );
     processed++;
 
@@ -524,6 +588,11 @@ export async function processDueRunsSafe(
  * `deadline` é o instante em que a invocação precisa ter devolvido controle.
  * O tick compartilha um único deadline entre todos os runs que processa — por
  * isso ele é parâmetro, e não recalculado aqui a cada chamada.
+ *
+ * `discardRunIfNothingSent` (entrada no fluxo): se der erro antes de qualquer
+ * mensagem sair, o run é apagado em vez de ficar como `error`. Sem isso o
+ * unique (sequence_id, ig_sender_id) impediria a pessoa de entrar de novo por
+ * causa de uma falha que ela nem viu.
  */
 async function executeFrom(
   admin: AdminClient,
@@ -531,10 +600,13 @@ async function executeFrom(
   sequence: Sequence,
   run: SequenceRun,
   startNodeId: string | null,
-  deadline = invocationDeadline()
+  opts: { deadline?: number; discardRunIfNothingSent?: boolean } = {}
 ): Promise<SequenceOutcome> {
   const graph = sequence.graph;
+  const deadline = opts.deadline ?? invocationDeadline();
   let steps = run.steps_executed;
+  let stepsThisExecution = 0;
+  let sent = false;
   let nodeId = startNodeId;
   let token: string | null = null;
 
@@ -563,7 +635,10 @@ async function executeFrom(
         return ok("replied");
       }
 
-      if (++steps > MAX_TOTAL_STEPS) {
+      if (
+        ++stepsThisExecution > MAX_STEPS_PER_EXECUTION ||
+        ++steps > MAX_TOTAL_STEPS
+      ) {
         throw new Error("Limite de passos da sequência excedido (ciclo no fluxo?)");
       }
 
@@ -583,6 +658,7 @@ async function executeFrom(
           } else {
             await sendTextMessage(token, run.ig_sender_id, data.text);
           }
+          sent = true;
           nodeId = targetOf(graph, node.id, OUT_HANDLE);
           break;
         }
@@ -599,7 +675,7 @@ async function executeFrom(
               : {
                   type: "postback",
                   title: b.title,
-                  payload: buildSequencePayload(run.id, buttonHandle(i)),
+                  payload: buildSequencePayload(run.id, node.id, buttonHandle(i)),
                 }
           );
           await sendTemplateButtonsMessage(
@@ -608,6 +684,7 @@ async function executeFrom(
             data.text,
             buttons
           );
+          sent = true;
 
           const hasBranch = data.buttons.some((b) => b.kind === "branch");
           if (hasBranch) {
@@ -634,9 +711,10 @@ async function executeFrom(
             data.text,
             data.options.map((title, i) => ({
               title,
-              payload: buildSequencePayload(run.id, quickReplyHandle(i)),
+              payload: buildSequencePayload(run.id, node.id, quickReplyHandle(i)),
             }))
           );
+          sent = true;
 
           await persistRun(admin, run, "waiting_reply", {
             current_node_id: node.id,
@@ -668,6 +746,35 @@ async function executeFrom(
           });
           return ok("replied");
         }
+
+        case "automation": {
+          // Referência, não cópia: busca a rule a cada execução, então o
+          // fluxo sempre manda a resposta atual dela.
+          const { ruleId } = node.data as AutomationNodeData;
+          const { data: rule, error: ruleError } = await admin
+            .from("rules")
+            .select("*")
+            .eq("id", ruleId)
+            .eq("account_id", account.id)
+            .maybeSingle<Rule>();
+          if (ruleError) throw new Error(ruleError.message);
+          if (!rule) throw new Error(AUTOMATION_REMOVED_ERROR);
+          // Comentário só pode ser a entrada (o fluxo começa DEPOIS dele); o
+          // save bloqueia, isto cobre um grafo salvo antes da rule mudar.
+          if (rule.trigger_type === "comment") {
+            throw new Error(
+              "Automação de comentário só pode iniciar o fluxo, não ficar no meio dele"
+            );
+          }
+
+          token ??= await getFreshToken(admin, account);
+          await ensureWindowOpen(admin, account, run.ig_sender_id);
+          await humanPause(token, run.ig_sender_id);
+          await sendRuleReply(token, run.ig_sender_id, rule);
+          sent = true;
+          nodeId = targetOf(graph, node.id, OUT_HANDLE);
+          break;
+        }
       }
     }
 
@@ -675,10 +782,6 @@ async function executeFrom(
     await persistRun(admin, run, "completed", { steps_executed: steps });
     return ok("replied");
   } catch (err) {
-    if (err instanceof WindowClosedError) {
-      await persistRun(admin, run, "window_expired", { steps_executed: steps });
-      return ok("window_expired");
-    }
     // Token inválido/expirado → marca a conta para reconexão (como nas regras)
     if (err instanceof GraphApiError && err.code === 190) {
       await admin
@@ -687,6 +790,20 @@ async function executeFrom(
         .eq("id", account.id);
     }
     const detail = err instanceof Error ? err.message : String(err);
+
+    // Falhou antes da 1ª mensagem sair: apaga o run para a pessoa poder
+    // entrar de novo depois (o log em interactions continua registrando).
+    if (opts.discardRunIfNothingSent && !sent) {
+      await admin.from("sequence_runs").delete().eq("id", run.id);
+      return err instanceof WindowClosedError
+        ? ok("window_expired")
+        : { ...ok("error"), errorDetail: detail };
+    }
+
+    if (err instanceof WindowClosedError) {
+      await persistRun(admin, run, "window_expired", { steps_executed: steps });
+      return ok("window_expired");
+    }
     await persistRun(admin, run, "error", {
       steps_executed: steps,
       last_error: detail,

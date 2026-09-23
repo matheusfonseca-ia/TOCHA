@@ -13,7 +13,8 @@ export type SequenceNodeType =
   | "buttons"
   | "quickReplies"
   | "delay"
-  | "waitReply";
+  | "waitReply"
+  | "automation";
 
 /** Handle de saída padrão (nós lineares: gatilho, mensagem, atraso, esperar). */
 export const OUT_HANDLE = "out";
@@ -24,7 +25,17 @@ export const quickReplyHandle = (i: number) => `qr-${i}`;
 /** Handle seguido quando a pessoa digita algo em vez de tocar numa resposta rápida. */
 export const QR_FALLBACK_HANDLE = "qr-fallback";
 
+/**
+ * Origem do gatilho. "dm" (padrão, e o que grafos antigos sem o campo
+ * significam) = palavra-chave numa DM. "automation" = o fluxo começa quando a
+ * automação (rule) do nó ligado direto ao gatilho dispara; anyMessage/keyword
+ * são ignorados nesse modo.
+ */
+export type TriggerSource = "dm" | "automation";
+
 export interface TriggerNodeData {
+  /** Ausente = "dm" (grafos salvos antes do nó Automação continuam válidos). */
+  source?: TriggerSource;
   /** true = qualquer DM dispara; false = exige palavra-chave. */
   anyMessage: boolean;
   /** Termos separados por vírgula (OR) — mesmo formato das regras. */
@@ -65,13 +76,23 @@ export interface DelayNodeData {
 
 export type WaitReplyNodeData = Record<string, never>;
 
+/**
+ * Nó "Automação": referência (não cópia) a uma rule existente. Rule de DM
+ * pode ficar em qualquer ponto (o runtime envia a resposta atual dela); rule
+ * de comentário só como nó de entrada, com o gatilho em source "automation".
+ */
+export interface AutomationNodeData {
+  ruleId: string;
+}
+
 export type SequenceNodeData =
   | TriggerNodeData
   | MessageNodeData
   | ButtonsNodeData
   | QuickRepliesNodeData
   | DelayNodeData
-  | WaitReplyNodeData;
+  | WaitReplyNodeData
+  | AutomationNodeData;
 
 export interface SequenceGraphNode {
   id: string;
@@ -98,6 +119,12 @@ export interface Sequence {
   name: string;
   graph: SequenceGraph;
   is_active: boolean;
+  /**
+   * Rule que dá entrada no fluxo (gatilho em source "automation"). Espelho
+   * desnormalizado do grafo, gravado pelo save, para o webhook achar rápido
+   * "qual workflow continua após a rule X". Migration 0002.
+   */
+  entry_rule_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -123,6 +150,8 @@ export interface SequenceRun {
   next_run_at: string | null;
   steps_executed: number;
   last_error: string | null;
+  /** Rule que iniciou este run (entrada por automação). Migration 0002. */
+  entry_rule_id?: string | null;
   started_at: string;
   updated_at: string;
 }
