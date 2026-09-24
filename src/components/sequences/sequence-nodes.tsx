@@ -10,6 +10,8 @@ import {
   ListChecks,
   MessageSquareText,
   MousePointerClick,
+  PauseOctagon,
+  Shuffle,
   Timer,
   Workflow,
   Zap,
@@ -28,17 +30,22 @@ import {
   ConditionNodeBody,
   SetFieldNodeBody,
 } from "@/components/sequences/data";
+import { GoToSequenceNodeBody } from "@/components/sequences/extras";
 import { cn } from "@/lib/utils";
 import {
   buttonHandle,
   OUT_HANDLE,
   QR_FALLBACK_HANDLE,
   quickReplyHandle,
+  randomizerHandle,
   type AutomationNodeData,
   type ButtonsNodeData,
   type DelayNodeData,
+  type GoToSequenceNodeData,
   type MessageNodeData,
   type QuickRepliesNodeData,
+  type RandomizerNodeData,
+  type StopAutomationNodeData,
   type TriggerNodeData,
   type CollectInputNodeData,
   type ConditionNodeData,
@@ -129,20 +136,55 @@ function Placeholder({ text }: { text: string }) {
   return <p className="text-xs italic text-muted-foreground/70">{text}</p>;
 }
 
+const TRIGGER_TITLES: Record<string, string> = {
+  automation: "Gatilho por automação",
+  storyReply: "Resposta a story",
+  storyMention: "Menção em story",
+  refLink: "Link de referência",
+};
+
 export function TriggerNode({ id, data, selected }: NodeProps) {
   const d = data as unknown as TriggerNodeData;
+  const source = d.source ?? "dm";
   return (
     <NodeFrame
       id={id}
       icon={Zap}
       chipClass="bg-warning text-[#0B0D0C]"
-      title={d.source === "automation" ? "Gatilho por automação" : "Gatilho"}
+      title={TRIGGER_TITLES[source] ?? "Gatilho"}
       selected={selected}
       hasTarget={false}
       hasOut
     >
-      {d.source === "automation" ? (
+      {source === "unset" ? (
+        <Placeholder text="Escolha o gatilho…" />
+      ) : source === "automation" ? (
         <TriggerAutomationSummary />
+      ) : source === "storyMention" ? (
+        <p className="text-xs text-muted-foreground">
+          Dispara quando marcam a conta{" "}
+          <span className="font-medium text-foreground">num story</span>
+        </p>
+      ) : source === "storyReply" ? (
+        d.keyword.trim() ? (
+          <p className="break-words text-xs text-muted-foreground">
+            Resposta a story com{" "}
+            <span className="font-mono font-medium text-foreground">{d.keyword}</span>
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Dispara com <span className="font-medium text-foreground">qualquer resposta</span> a story
+          </p>
+        )
+      ) : source === "refLink" ? (
+        d.refCode?.trim() ? (
+          <p className="break-words text-xs text-muted-foreground">
+            Link com código{" "}
+            <span className="font-mono font-medium text-foreground">{d.refCode}</span>
+          </p>
+        ) : (
+          <Placeholder text="Defina o código do link…" />
+        )
       ) : d.anyMessage ? (
         <p className="text-xs text-muted-foreground">
           Dispara com <span className="font-medium text-foreground">qualquer DM</span>
@@ -404,6 +446,81 @@ export function SetFieldNode({ id, data, selected }: NodeProps) {
   );
 }
 
+// ── Extras (aleatório, ir para workflow, pausar automações) ──────────────────
+
+export function RandomizerNode({ id, data, selected }: NodeProps) {
+  const d = data as unknown as RandomizerNodeData;
+  return (
+    <NodeFrame
+      id={id}
+      icon={Shuffle}
+      chipClass="bg-secondary text-foreground/70"
+      title="Aleatório"
+      selected={selected}
+    >
+      <div className="space-y-1.5">
+        {d.branches.map((b, i) => (
+          <div
+            key={i}
+            className="relative flex items-center gap-1.5 rounded-md border border-border/70 bg-secondary/40 px-2 py-1"
+          >
+            <span className="truncate text-xs">
+              {b.label.trim() || `Caminho ${i + 1}`}
+            </span>
+            <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
+              {b.weight}%
+            </span>
+            <Handle
+              type="source"
+              position={Position.Right}
+              id={randomizerHandle(i)}
+              className={ROW_HANDLE_CLASS}
+            />
+          </div>
+        ))}
+        {d.branches.length === 0 && <Placeholder text="Adicione um caminho…" />}
+      </div>
+    </NodeFrame>
+  );
+}
+
+export function GoToSequenceNode({ id, data, selected }: NodeProps) {
+  const d = data as unknown as GoToSequenceNodeData;
+  return (
+    <NodeFrame
+      id={id}
+      icon={Workflow}
+      chipClass="bg-secondary text-foreground/70"
+      title="Ir para workflow"
+      selected={selected}
+      // Terminal: o run atual encerra aqui, não há saída pra conectar.
+    >
+      <GoToSequenceNodeBody sequenceId={d.sequenceId} />
+    </NodeFrame>
+  );
+}
+
+export function StopAutomationNode({ id, data, selected }: NodeProps) {
+  const d = data as unknown as StopAutomationNodeData;
+  return (
+    <NodeFrame
+      id={id}
+      icon={PauseOctagon}
+      chipClass="bg-secondary text-foreground/70"
+      title="Pausar automações"
+      selected={selected}
+      hasOut
+    >
+      <p className="text-xs text-muted-foreground">
+        Pausa novas automações para esta pessoa por{" "}
+        <span className="font-medium text-foreground">
+          {d.hours} {d.hours === 1 ? "hora" : "horas"}
+        </span>
+      </p>
+    </NodeFrame>
+  );
+}
+
 export const sequenceNodeTypes = {
   trigger: TriggerNode,
   message: MessageNode,
@@ -415,4 +532,7 @@ export const sequenceNodeTypes = {
   collectInput: CollectInputNode,
   condition: ConditionNode,
   setField: SetFieldNode,
+  randomizer: RandomizerNode,
+  goToSequence: GoToSequenceNode,
+  stopAutomation: StopAutomationNode,
 };

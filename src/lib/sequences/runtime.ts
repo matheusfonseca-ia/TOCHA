@@ -9,11 +9,15 @@ import {
 } from "@/lib/meta/graph";
 import { withoutExpired } from "@/lib/expiry/expiry";
 import { getFreshToken } from "@/lib/meta/token";
-import { keywordMatches } from "@/lib/rules/engine";
+import {
+  triggerMatchesInbound,
+  type ClassifiedInboundEvent,
+} from "@/lib/meta/triggers";
 import {
   AUTOMATION_REMOVED_ERROR,
   sendRuleReply,
 } from "@/lib/sequences/automation";
+import { pauseUntilFromHours } from "@/lib/sequences/automation-pause";
 import {
   delayToSeconds,
   entryRuleIdOf,
@@ -28,6 +32,7 @@ import {
 } from "@/lib/sequences/payload";
 import { validateInput } from "@/lib/sequences/collect";
 import { FlowData } from "@/lib/sequences/flow-data";
+import { pickBranch } from "@/lib/sequences/randomizer";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sleep } from "@/lib/utils";
 import type { IgAccount, InteractionStatus, Rule } from "@/types/database";
@@ -36,17 +41,21 @@ import {
   OUT_HANDLE,
   QR_FALLBACK_HANDLE,
   quickReplyHandle,
+  randomizerHandle,
   type AutomationNodeData,
   type ButtonsNodeData,
   type DelayNodeData,
+  type GoToSequenceNodeData,
   type MessageNodeData,
   type QuickRepliesNodeData,
+  type RandomizerNodeData,
   type Sequence,
   type SequenceGraph,
   type SequenceGraphNode,
   type SequenceNodeType,
   type SequenceRun,
   type SequenceRunStatus,
+  type StopAutomationNodeData,
   type TriggerNodeData,
   INVALID_HANDLE,
   NO_HANDLE,
@@ -131,14 +140,16 @@ class WindowClosedError extends Error {
 // ── Entrada no fluxo (gatilho) ──────────────────────────────────────────────
 
 /**
- * Tenta iniciar uma sequência a partir de uma DM recebida. Retorna null se
- * nenhum gatilho casou (o pipeline segue para o log de no_match).
+ * Tenta iniciar uma sequência a partir de um evento de entrada classificado
+ * (DM, resposta a story, menção em story ou link de referência — ver
+ * `classifyInboundEvent` em `lib/meta/triggers.ts`). Retorna null se nenhum
+ * gatilho casou (o pipeline segue para o log de no_match).
  */
 export async function maybeStartSequence(
   admin: AdminClient,
   account: IgAccount,
   senderId: string,
-  messageText: string,
+  event: ClassifiedInboundEvent,
   deadline = invocationDeadline()
 ): Promise<SequenceOutcome | null> {
   const { data: sequences } = await admin
@@ -152,13 +163,7 @@ export async function maybeStartSequence(
     const trigger = findTriggerNode(sequence.graph);
     if (!trigger) continue;
     const data = trigger.data as TriggerNodeData;
-    // Gatilho por automação não reage a palavra-chave: quem inicia é a rule
-    // (ver startSequenceFromRule).
-    if (data.source === "automation") continue;
-    const matched =
-      data.anyMessage ||
-      keywordMatches(messageText, data.keyword, data.matchType);
-    if (!matched) continue;
+    if (!triggerMatchesInbound(data, event)) continue;
 
     const inserted = await insertRun(admin, account, sequence, senderId, null);
     if ("outcome" in inserted) return inserted.outcome;
@@ -206,9 +211,25 @@ export async function startSequenceFromRule(
   const sequence = withoutExpired((candidates ?? []) as Sequence[])[0];
   if (!sequence) return null;
 
-  // entry_rule_id é espelho do grafo; se divergirem, o grafo manda.
-  const entry = findEntryAutomationNode(sequence.graph);
-  if (!entry || entryRuleIdOf(sequence.graph) !== rule.id) return null;
+  // entry_rule_id é espelho do grafo; se divergirem, o grafo manda. A rule
+  // pode estar direto no gatilho (source "automation" + ruleId, formato
+  // atual) ou num nó Automação ligado a ele (formato legado) — os dois valem.
+  if (entryRuleIdOf(sequence.graph) !== rule.id) return null;
+
+  const trigger = findTriggerNode(sequence.graph);
+  if (!trigger) return null;
+  const triggerData = trigger.data as TriggerNodeData;
+  const ruleOnTrigger =
+    triggerData.source === "automation" && triggerData.ruleId?.trim() === rule.id;
+
+  let startNodeId: string | null;
+  if (ruleOnTrigger) {
+    startNodeId = targetOf(sequence.graph, trigger.id, OUT_HANDLE);
+  } else {
+    const entry = findEntryAutomationNode(sequence.graph);
+    if (!entry) return null;
+    startNodeId = targetOf(sequence.graph, entry.id, OUT_HANDLE);
+  }
 
   const inserted = await insertRun(admin, account, sequence, senderId, rule.id);
   if ("outcome" in inserted) return inserted.outcome;
@@ -217,8 +238,44 @@ export async function startSequenceFromRule(
   // palavra-chave): a rule já respondeu e gravou rule_triggers, então a
   // pessoa não teria como reentrar. O run fica como `error`, visível no
   // painel de execuções.
-  const startNodeId = targetOf(sequence.graph, entry.id, OUT_HANDLE);
   return executeFrom(admin, account, sequence, inserted.run, startNodeId, {
+    deadline,
+  });
+}
+
+/**
+ * Nó "Ir para workflow": inicia outro workflow ATIVO da mesma conta para a
+ * mesma pessoa, a partir do nó seguinte ao gatilho dele — igual a um gatilho
+ * de verdade disparando, só que sem checar o gatilho em si (o "Ir para
+ * workflow" já decidiu). Se a pessoa já tiver passado por esse workflow, o
+ * unique (sequence_id, ig_sender_id) barra e `insertRun` devolve
+ * `duplicate_skip`, registrado normalmente pelo chamador.
+ */
+async function startSequenceFromGoTo(
+  admin: AdminClient,
+  account: IgAccount,
+  senderId: string,
+  targetSequenceId: string,
+  deadline: number
+): Promise<SequenceOutcome | null> {
+  const { data: target } = await admin
+    .from("sequences")
+    .select("*")
+    .eq("id", targetSequenceId)
+    .eq("account_id", account.id)
+    .eq("is_active", true)
+    .maybeSingle<Sequence>();
+  if (!target) return null;
+
+  const trigger = findTriggerNode(target.graph);
+  if (!trigger) return null;
+
+  const inserted = await insertRun(admin, account, target, senderId, null);
+  if ("outcome" in inserted) return inserted.outcome;
+
+  const startNodeId = targetOf(target.graph, trigger.id, OUT_HANDLE);
+  return executeFrom(admin, account, target, inserted.run, startNodeId, {
+    discardRunIfNothingSent: true,
     deadline,
   });
 }
@@ -901,6 +958,47 @@ async function executeFrom(
           }
           nodeId = targetOf(graph, node.id, OUT_HANDLE);
           break;
+        }
+
+        // ── Extras ──────────────────────────────────────────────────────
+        case "randomizer": {
+          const data = node.data as RandomizerNodeData;
+          const branchIndex = pickBranch(data.branches.map((b) => b.weight));
+          nodeId = targetOf(graph, node.id, randomizerHandle(branchIndex));
+          break;
+        }
+
+        case "stopAutomation": {
+          const data = node.data as StopAutomationNodeData;
+          const pausedUntil = pauseUntilFromHours(data.hours);
+          // upsert: cria a linha de conversation se, por algum motivo, ela
+          // ainda não existir (nunca deveria acontecer — chegar aqui já
+          // implica uma interação anterior que a criou).
+          await admin.from("conversations").upsert(
+            {
+              account_id: account.id,
+              ig_sender_id: run.ig_sender_id,
+              automation_paused_until: pausedUntil,
+            },
+            { onConflict: "account_id,ig_sender_id" }
+          );
+          nodeId = targetOf(graph, node.id, OUT_HANDLE);
+          break;
+        }
+
+        case "goToSequence": {
+          // Nó terminal: encerra o run atual e a execução volta pra cima
+          // (não há sourceHandle "out" — sourceHandlesOf devolve []).
+          const { sequenceId } = node.data as GoToSequenceNodeData;
+          await persistRun(admin, run, "completed", { steps_executed: steps });
+          const handoff = await startSequenceFromGoTo(
+            admin,
+            account,
+            run.ig_sender_id,
+            sequenceId,
+            deadline
+          );
+          return handoff ?? ok("replied");
         }
       }
     }

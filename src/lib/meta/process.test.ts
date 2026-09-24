@@ -342,6 +342,287 @@ describe("processWebhookPayload — handoff rule → workflow", () => {
     expect(fake.tables.sequence_runs[0].entry_rule_id).toBe(rule.id);
     expect(fake.tables.sequence_runs[0].status).toBe("completed");
   });
+
+  it("DM casa rule ativa com a automação escolhida DIRETO no gatilho (formato novo, sem nó Automação): rule responde e o workflow inicia da saída do gatilho", async () => {
+    const account = makeAccount();
+    const rule = makeRule({
+      account_id: account.id,
+      trigger_type: "dm",
+      keyword: "oi",
+      reply_type: "text",
+      reply_text: "Oi! Tudo bem?",
+    });
+    const sequence = makeSequence({
+      account_id: account.id,
+      entry_rule_id: rule.id,
+      is_active: true,
+      graph: {
+        nodes: [triggerNode({ source: "automation", ruleId: rule.id }), messageNode("m2", "Segue o fluxo novo")],
+        edges: [edge("trigger", "m2")],
+      },
+    });
+
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(rule);
+    fake.tables.sequences.push(sequence);
+
+    const payload: MetaWebhookPayload = {
+      object: "instagram",
+      entry: [
+        {
+          id: account.ig_user_id,
+          messaging: [
+            {
+              sender: { id: "sender-5" },
+              recipient: { id: account.ig_user_id },
+              timestamp: Date.now(),
+              message: { mid: "mid-5", text: "oi", is_echo: false },
+            },
+          ],
+        },
+      ],
+    };
+
+    await processWebhookPayload(payload);
+
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+    expect(sendTextMessageMock).toHaveBeenCalledWith(expect.any(String), "sender-5", "Segue o fluxo novo");
+    expect(fake.tables.sequence_runs).toHaveLength(1);
+    expect(fake.tables.sequence_runs[0].entry_rule_id).toBe(rule.id);
+    expect(fake.tables.sequence_runs[0].status).toBe("completed");
+  });
+
+  it("regra pausada (is_active false) não responde nem inicia workflow: só loga no_match", async () => {
+    const account = makeAccount();
+    const rule = makeRule({
+      account_id: account.id,
+      trigger_type: "dm",
+      keyword: "oi",
+      is_active: false,
+      reply_type: "text",
+      reply_text: "Oi! Tudo bem?",
+    });
+    const sequence = makeSequence({
+      account_id: account.id,
+      entry_rule_id: rule.id,
+      is_active: true,
+      graph: {
+        nodes: [triggerNode({ source: "automation", ruleId: rule.id }), messageNode("m2")],
+        edges: [edge("trigger", "m2")],
+      },
+    });
+
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(rule);
+    fake.tables.sequences.push(sequence);
+
+    const payload: MetaWebhookPayload = {
+      object: "instagram",
+      entry: [
+        {
+          id: account.ig_user_id,
+          messaging: [
+            {
+              sender: { id: "sender-6" },
+              recipient: { id: account.ig_user_id },
+              timestamp: Date.now(),
+              message: { mid: "mid-6", text: "oi", is_echo: false },
+            },
+          ],
+        },
+      ],
+    };
+
+    await processWebhookPayload(payload);
+
+    expect(sendRuleReplyMock).not.toHaveBeenCalled();
+    expect(fake.tables.sequence_runs).toHaveLength(0);
+    expect(fake.tables.interactions).toHaveLength(1);
+    expect(fake.tables.interactions[0].status).toBe("no_match");
+  });
+});
+
+describe("processWebhookPayload — gatilhos novos (story reply, menção em story, link de referência)", () => {
+  it("resposta a story dispara o workflow com source storyReply", async () => {
+    const account = makeAccount();
+    const sequence = makeSequence({
+      account_id: account.id,
+      is_active: true,
+      graph: {
+        nodes: [triggerNode({ source: "storyReply", keyword: "" }), messageNode("m1", "Valeu por responder o story!")],
+        edges: [edge("trigger", "m1")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+
+    const payload: MetaWebhookPayload = {
+      object: "instagram",
+      entry: [
+        {
+          id: account.ig_user_id,
+          messaging: [
+            {
+              sender: { id: "sender-20" },
+              recipient: { id: account.ig_user_id },
+              timestamp: Date.now(),
+              message: {
+                mid: "mid-20",
+                text: "adorei!",
+                is_echo: false,
+                reply_to: { story: { id: "story-1", url: "https://cdn/x.jpg" } },
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    await processWebhookPayload(payload);
+
+    expect(sendTextMessageMock).toHaveBeenCalledWith(
+      expect.any(String),
+      "sender-20",
+      "Valeu por responder o story!"
+    );
+    expect(fake.tables.sequence_runs).toHaveLength(1);
+  });
+
+  it("menção em story dispara o workflow mesmo SEM texto (attachments story_mention)", async () => {
+    const account = makeAccount();
+    const sequence = makeSequence({
+      account_id: account.id,
+      is_active: true,
+      graph: {
+        nodes: [triggerNode({ source: "storyMention", keyword: "" }), messageNode("m1", "Obrigado por marcar a gente!")],
+        edges: [edge("trigger", "m1")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+
+    const payload: MetaWebhookPayload = {
+      object: "instagram",
+      entry: [
+        {
+          id: account.ig_user_id,
+          messaging: [
+            {
+              sender: { id: "sender-21" },
+              recipient: { id: account.ig_user_id },
+              timestamp: Date.now(),
+              // Menção em story não traz texto — só o attachment.
+              message: {
+                mid: "mid-21",
+                is_echo: false,
+                attachments: [{ type: "story_mention", payload: { url: "https://cdn/story.jpg" } }],
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    await processWebhookPayload(payload);
+
+    expect(sendTextMessageMock).toHaveBeenCalledWith(
+      expect.any(String),
+      "sender-21",
+      "Obrigado por marcar a gente!"
+    );
+    expect(fake.tables.sequence_runs).toHaveLength(1);
+  });
+
+  it("link de referência (referral.ref) dispara o workflow com o refCode certo, mesmo sem mid", async () => {
+    const account = makeAccount();
+    const sequence = makeSequence({
+      account_id: account.id,
+      is_active: true,
+      graph: {
+        nodes: [
+          triggerNode({ source: "refLink", refCode: "promo10", keyword: "" }),
+          messageNode("m1", "Aqui está seu desconto!"),
+        ],
+        edges: [edge("trigger", "m1")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+
+    const payload: MetaWebhookPayload = {
+      object: "instagram",
+      entry: [
+        {
+          id: account.ig_user_id,
+          messaging: [
+            {
+              sender: { id: "sender-22" },
+              recipient: { id: account.ig_user_id },
+              timestamp: Date.now(),
+              // ig.me abrindo a conversa: sem "message", só o referral.
+              referral: { ref: "promo10", source: "https://ig.me/m/conta?ref=promo10", type: "OPEN_THREAD" },
+            },
+          ],
+        },
+      ],
+    };
+
+    await processWebhookPayload(payload);
+
+    expect(sendTextMessageMock).toHaveBeenCalledWith(
+      expect.any(String),
+      "sender-22",
+      "Aqui está seu desconto!"
+    );
+    expect(fake.tables.sequence_runs).toHaveLength(1);
+  });
+});
+
+describe("processWebhookPayload — nó Pausar automações", () => {
+  it("pessoa com automações pausadas não dispara regra nem inicia workflow novo", async () => {
+    const account = makeAccount();
+    const rule = makeRule({
+      account_id: account.id,
+      trigger_type: "dm",
+      keyword: "oi",
+      reply_type: "text",
+      reply_text: "Oi!",
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(rule);
+    fake.tables.conversations.push(
+      row({
+        account_id: account.id,
+        ig_sender_id: "sender-23",
+        last_inbound_at: new Date().toISOString(),
+        automation_paused_until: new Date(Date.now() + 3600_000).toISOString(),
+      })
+    );
+
+    const payload: MetaWebhookPayload = {
+      object: "instagram",
+      entry: [
+        {
+          id: account.ig_user_id,
+          messaging: [
+            {
+              sender: { id: "sender-23" },
+              recipient: { id: account.ig_user_id },
+              timestamp: Date.now(),
+              message: { mid: "mid-23", text: "oi", is_echo: false },
+            },
+          ],
+        },
+      ],
+    };
+
+    await processWebhookPayload(payload);
+
+    expect(sendRuleReplyMock).not.toHaveBeenCalled();
+    expect(fake.tables.interactions).toHaveLength(1);
+    expect(fake.tables.interactions[0].status).toBe("no_match");
+    expect(fake.tables.interactions[0].error_detail).toContain("pausadas");
+  });
 });
 
 describe("processWebhookPayload: variantes de resposta em comentário", () => {

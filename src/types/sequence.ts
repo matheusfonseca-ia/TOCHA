@@ -18,7 +18,11 @@ export type SequenceNodeType =
   // Dados do contato (coletar, condição, definir campo/tag)
   | "collectInput"
   | "condition"
-  | "setField";
+  | "setField"
+  // Extras (aleatório, ir para workflow, pausar automações)
+  | "randomizer"
+  | "goToSequence"
+  | "stopAutomation";
 
 /** Handle de saída padrão (nós lineares: gatilho, mensagem, atraso, esperar). */
 export const OUT_HANDLE = "out";
@@ -33,23 +37,43 @@ export const INVALID_HANDLE = "invalid";
 /** Condição: saídas "sim" e "não". */
 export const YES_HANDLE = "yes";
 export const NO_HANDLE = "no";
+/** Handle de saída do caminho i de um nó Aleatório. */
+export const randomizerHandle = (i: number) => `rnd-${i}`;
 
 /**
- * Origem do gatilho. "dm" (padrão, e o que grafos antigos sem o campo
- * significam) = palavra-chave numa DM. "automation" = o fluxo começa quando a
- * automação (rule) do nó ligado direto ao gatilho dispara; anyMessage/keyword
- * são ignorados nesse modo.
+ * Origem do gatilho. "unset" = workflow novo, ainda sem gatilho escolhido no
+ * editor (bloqueia salvar/ativar). Ausência do campo (grafos salvos antes
+ * deste campo existir) sempre significa "dm" — nunca "unset". "dm" =
+ * palavra-chave numa DM (ou qualquer DM, com `anyMessage`). "automation" = o
+ * fluxo começa quando uma automação (rule) dispara — a rule pode estar direto
+ * no gatilho (`ruleId`) ou num nó Automação ligado a ele (formato legado);
+ * anyMessage/keyword são ignorados nesse modo. "storyReply"/"storyMention" =
+ * a pessoa respondeu ou marcou a conta num story. "refLink" = a pessoa abriu
+ * um link/QR ig.me/m/<usuário>?ref=<código> (ver `refCode`).
  */
-export type TriggerSource = "dm" | "automation";
+export type TriggerSource =
+  | "unset"
+  | "dm"
+  | "automation"
+  | "storyReply"
+  | "storyMention"
+  | "refLink";
 
 export interface TriggerNodeData {
   /** Ausente = "dm" (grafos salvos antes do nó Automação continuam válidos). */
   source?: TriggerSource;
-  /** true = qualquer DM dispara; false = exige palavra-chave. */
+  /** true = qualquer DM dispara; false = exige palavra-chave. Ignorado fora do modo "dm". */
   anyMessage: boolean;
-  /** Termos separados por vírgula (OR) — mesmo formato das regras. */
+  /** Termos separados por vírgula (OR) — mesmo formato das regras. Opcional
+   *  (filtro extra) nos modos "storyReply"/"storyMention"/"refLink". */
   keyword: string;
   matchType: MatchType;
+  /** Código do link de referência (ig.me/m/<usuário>?ref=<código>). Só usado
+   *  quando source é "refLink" — é o que identifica ESTE gatilho entre vários. */
+  refCode?: string;
+  /** Automação escolhida direto no gatilho, quando source é "automation".
+   *  Ausente = formato legado (a rule está num nó Automação ligado ao gatilho). */
+  ruleId?: string;
 }
 
 export interface MessageNodeData {
@@ -138,6 +162,37 @@ export interface SetFieldNodeData {
   tagAction?: "add" | "remove";
 }
 
+// ── Extras ───────────────────────────────────────────────────────────────────
+
+/** Um caminho do nó "Aleatório": nome e peso (as porcentagens somam 100). */
+export interface RandomizerBranch {
+  label: string;
+  weight: number;
+}
+
+/** Nó "Aleatório" (teste A/B): sorteia um de 2 a 5 caminhos por peso. */
+export interface RandomizerNodeData {
+  branches: RandomizerBranch[];
+}
+
+/**
+ * Nó "Ir para workflow": encerra o run atual (completed) e inicia outro
+ * workflow ativo da mesma conta para a mesma pessoa, a partir do nó seguinte
+ * ao gatilho dele.
+ */
+export interface GoToSequenceNodeData {
+  sequenceId: string;
+}
+
+/**
+ * Nó "Pausar automações": a pessoa para de receber novas regras/workflows
+ * por N horas (grava em `conversations.automation_paused_until`). Quem já
+ * está no meio de um fluxo continua normalmente.
+ */
+export interface StopAutomationNodeData {
+  hours: number;
+}
+
 export type SequenceNodeData =
   | TriggerNodeData
   | MessageNodeData
@@ -148,7 +203,10 @@ export type SequenceNodeData =
   | AutomationNodeData
   | CollectInputNodeData
   | ConditionNodeData
-  | SetFieldNodeData;
+  | SetFieldNodeData
+  | RandomizerNodeData
+  | GoToSequenceNodeData
+  | StopAutomationNodeData;
 
 export interface SequenceGraphNode {
   id: string;

@@ -4,6 +4,11 @@ import {
   DELAY_MIN_SECONDS,
   MAX_BUTTONS,
   MAX_QUICK_REPLIES,
+  MAX_RANDOMIZER_BRANCHES,
+  MIN_RANDOMIZER_BRANCHES,
+  RANDOMIZER_WEIGHT_TOTAL,
+  STOP_AUTOMATION_MAX_HOURS,
+  STOP_AUTOMATION_MIN_HOURS,
   TEXT_MAX,
   delayToSeconds,
   findTriggerNode,
@@ -17,10 +22,13 @@ import {
   type AutomationNodeData,
   type ButtonsNodeData,
   type DelayNodeData,
+  type GoToSequenceNodeData,
   type MessageNodeData,
   type QuickRepliesNodeData,
+  type RandomizerNodeData,
   type SequenceGraph,
   type SequenceGraphNode,
+  type StopAutomationNodeData,
   type TriggerNodeData,
 } from "@/types/sequence";
 
@@ -48,9 +56,13 @@ function nodeHasContentError(node: SequenceGraphNode): boolean {
   switch (node.type) {
     case "trigger": {
       const data = node.data as TriggerNodeData;
+      const source = data.source ?? "dm";
       // Gatilho por automação não usa palavra-chave (quem dispara é a rule).
-      if (data.source === "automation") return false;
-      return !data.anyMessage && !data.keyword.trim();
+      if (source === "automation") return false;
+      if (source === "dm") return !data.anyMessage && !data.keyword.trim();
+      // storyReply/storyMention: palavra-chave é opcional. refLink exige o código.
+      if (source === "refLink") return !data.refCode?.trim();
+      return false;
     }
     case "message": {
       const data = node.data as MessageNodeData;
@@ -90,6 +102,29 @@ function nodeHasContentError(node: SequenceGraphNode): boolean {
     case "condition":
     case "setField":
       return dataNodeError(node) !== null;
+    case "randomizer": {
+      const data = node.data as RandomizerNodeData;
+      if (
+        data.branches.length < MIN_RANDOMIZER_BRANCHES ||
+        data.branches.length > MAX_RANDOMIZER_BRANCHES
+      ) {
+        return true;
+      }
+      if (data.branches.some((b) => !b.label.trim() || !(b.weight > 0))) return true;
+      return data.branches.reduce((sum, b) => sum + b.weight, 0) !== RANDOMIZER_WEIGHT_TOTAL;
+    }
+    case "goToSequence":
+      // Workflow inexistente/de outra conta depende de contexto que só
+      // graph.ts recebe; aqui só o campo vazio conta.
+      return !(node.data as GoToSequenceNodeData).sequenceId?.trim();
+    case "stopAutomation": {
+      const { hours } = node.data as StopAutomationNodeData;
+      return (
+        !Number.isFinite(hours) ||
+        hours < STOP_AUTOMATION_MIN_HOURS ||
+        hours > STOP_AUTOMATION_MAX_HOURS
+      );
+    }
   }
 }
 

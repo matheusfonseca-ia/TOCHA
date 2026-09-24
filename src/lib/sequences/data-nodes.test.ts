@@ -104,7 +104,7 @@ describe("Coletar dado", () => {
   it("pergunta e fica esperando no próprio nó (waiting_reply)", async () => {
     const account = setup(collectFlow(), "s-1");
 
-    const started = await maybeStartSequence(admin, account, "s-1", "cadastro");
+    const started = await maybeStartSequence(admin, account, "s-1", { kind: "dm", text: "cadastro" });
 
     expect(started?.status).toBe("replied");
     expect(sentTexts()).toEqual(["Qual seu e-mail?"]);
@@ -117,7 +117,7 @@ describe("Coletar dado", () => {
 
   it("resposta válida grava no contato e nas variáveis e segue por 'out'", async () => {
     const account = setup(collectFlow(), "s-2");
-    await maybeStartSequence(admin, account, "s-2", "cadastro");
+    await maybeStartSequence(admin, account, "s-2", { kind: "dm", text: "cadastro" });
 
     const resumed = await handleSequenceReply(
       admin, account, "s-2", undefined, "claro, é Ana@Exemplo.com"
@@ -139,7 +139,7 @@ describe("Coletar dado", () => {
 
   it("resposta inválida reenvia o erro e, esgotadas as tentativas, segue por 'invalid'", async () => {
     const account = setup(collectFlow(), "s-3");
-    await maybeStartSequence(admin, account, "s-3", "cadastro");
+    await maybeStartSequence(admin, account, "s-3", { kind: "dm", text: "cadastro" });
 
     const first = await handleSequenceReply(admin, account, "s-3", undefined, "não tenho");
     expect(first?.status).toBe("replied");
@@ -180,7 +180,7 @@ describe("Coletar dado", () => {
       },
     });
     const account = setup(sequence, "s-4");
-    await maybeStartSequence(admin, account, "s-4", "idade");
+    await maybeStartSequence(admin, account, "s-4", { kind: "dm", text: "idade" });
 
     await handleSequenceReply(admin, account, "s-4", undefined, "muitos");
 
@@ -214,7 +214,7 @@ describe("Condição", () => {
       row({ account_id: account.id, ig_sender_id: "s-6", ig_username: null, fields: { plano: "PRO" }, tags: [] })
     );
 
-    await maybeStartSequence(admin, account, "s-6", "plano");
+    await maybeStartSequence(admin, account, "s-6", { kind: "dm", text: "plano" });
 
     expect(sentTexts()).toEqual(["Você é Pro"]);
   });
@@ -222,7 +222,7 @@ describe("Condição", () => {
   it("falsa segue por 'não'", async () => {
     const account = setup(conditionFlow("acc-cond-2"), "s-7");
 
-    await maybeStartSequence(admin, account, "s-7", "plano");
+    await maybeStartSequence(admin, account, "s-7", { kind: "dm", text: "plano" });
 
     expect(sentTexts()).toEqual(["Conheça o Pro"]);
   });
@@ -244,7 +244,7 @@ describe("Condição", () => {
       row({ account_id: account.id, ig_sender_id: "s-8", ig_username: null, fields: {}, tags: ["VIP"] })
     );
 
-    await maybeStartSequence(admin, account, "s-8", "vip");
+    await maybeStartSequence(admin, account, "s-8", { kind: "dm", text: "vip" });
 
     expect(sentTexts()).toEqual(["Oi VIP"]);
   });
@@ -267,7 +267,7 @@ describe("Definir campo ou tag", () => {
     const account = setup(sequence, "s-9");
     fake.tables.conversations[0].ig_sender_username = "ana.dev";
 
-    const outcome = await maybeStartSequence(admin, account, "s-9", "quero");
+    const outcome = await maybeStartSequence(admin, account, "s-9", { kind: "dm", text: "quero" });
 
     expect(outcome?.status).toBe("replied");
     const contact = fake.tables.contacts[0];
@@ -295,7 +295,7 @@ describe("Definir campo ou tag", () => {
       row({ account_id: account.id, ig_sender_id: "s-10", ig_username: null, fields: { a: "1" }, tags: ["lead", "vip"] })
     );
 
-    await maybeStartSequence(admin, account, "s-10", "sair");
+    await maybeStartSequence(admin, account, "s-10", { kind: "dm", text: "sair" });
 
     expect(fake.tables.contacts).toHaveLength(1);
     expect(fake.tables.contacts[0].tags).toEqual(["vip"]);
@@ -317,7 +317,7 @@ describe("Variáveis nos textos", () => {
       row({ account_id: account.id, ig_sender_id: "s-11", ig_username: null, fields: { nome: "Bia", plano: "pro" }, tags: [] })
     );
 
-    await maybeStartSequence(admin, account, "s-11", "oi");
+    await maybeStartSequence(admin, account, "s-11", { kind: "dm", text: "oi" });
 
     expect(sentTexts()).toEqual(["Oi Bia, seu plano é pro."]);
   });

@@ -13,3 +13,4 @@ export {
   ruleTypeLabel,
   useAutomationRules,
 } from "./automation-rules-context";
+export { RuleSelect, type RuleSelectProps } from "./rule-select";

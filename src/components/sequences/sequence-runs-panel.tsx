@@ -65,6 +65,9 @@ const NODE_TYPE_LABELS: Record<SequenceNodeType, string> = {
   collectInput: "Coletar dado",
   condition: "Condição",
   setField: "Definir campo ou tag",
+  randomizer: "Aleatório",
+  goToSequence: "Ir para workflow",
+  stopAutomation: "Pausar automações",
 };
 
 const STATUS_FILTERS: { value: SequenceRunStatus | ""; label: string }[] = [

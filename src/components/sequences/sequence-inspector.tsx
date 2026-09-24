@@ -4,6 +4,9 @@ import { GitBranch, Link2, Plus, Trash2 } from "lucide-react";
 
 import {
   AutomationNodeForm,
+  RuleSelect,
+  ruleDisplayName,
+  ruleTypeLabel,
   type AutomationPreviewAccount,
 } from "@/components/sequences/automation";
 import {
@@ -12,6 +15,13 @@ import {
   SetFieldForm,
   TemplateHint,
 } from "@/components/sequences/data";
+import {
+  GoToSequenceForm,
+  RandomizerForm,
+  RefLinkFields,
+  StopAutomationForm,
+} from "@/components/sequences/extras";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +32,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -38,10 +47,13 @@ import type {
   ButtonsNodeData,
   DelayNodeData,
   DelayUnit,
+  GoToSequenceNodeData,
   MessageNodeData,
   QuickRepliesNodeData,
+  RandomizerNodeData,
   SequenceNodeData,
   SequenceNodeType,
+  StopAutomationNodeData,
   TriggerNodeData,
   TriggerSource,
   CollectInputNodeData,
@@ -75,6 +87,8 @@ interface InspectorProps {
   node: InspectorNode | null;
   onChange: (nodeId: string, data: SequenceNodeData) => void;
   automation: InspectorAutomationContext;
+  /** Outros workflows ativos da mesma conta, para o nó "Ir para workflow". */
+  goToSequenceOptions: { id: string; name: string }[];
 }
 
 const TYPE_TITLES: Record<SequenceNodeType, string> = {
@@ -88,9 +102,17 @@ const TYPE_TITLES: Record<SequenceNodeType, string> = {
   collectInput: "Coletar dado",
   condition: "Condição",
   setField: "Definir campo ou tag",
+  randomizer: "Aleatório",
+  goToSequence: "Ir para workflow",
+  stopAutomation: "Pausar automações",
 };
 
-export function SequenceInspector({ node, onChange, automation }: InspectorProps) {
+export function SequenceInspector({
+  node,
+  onChange,
+  automation,
+  goToSequenceOptions,
+}: InspectorProps) {
   if (!node) {
     return (
       <div className="space-y-3 text-sm text-muted-foreground">
@@ -120,7 +142,12 @@ export function SequenceInspector({ node, onChange, automation }: InspectorProps
   return (
     <div className="space-y-4">
       <p className="text-sm font-semibold">{TYPE_TITLES[node.type]}</p>
-      <NodeForm node={node} onChange={onChange} automation={automation} />
+      <NodeForm
+        node={node}
+        onChange={onChange}
+        automation={automation}
+        goToSequenceOptions={goToSequenceOptions}
+      />
     </div>
   );
 }
@@ -129,10 +156,12 @@ function NodeForm({
   node,
   onChange,
   automation,
+  goToSequenceOptions,
 }: {
   node: InspectorNode;
   onChange: InspectorProps["onChange"];
   automation: InspectorAutomationContext;
+  goToSequenceOptions: { id: string; name: string }[];
 }) {
   switch (node.type) {
     case "trigger":
@@ -140,6 +169,8 @@ function NodeForm({
         <TriggerForm
           data={node.data as TriggerNodeData}
           patch={(d) => onChange(node.id, d)}
+          rules={automation.rules}
+          accountUsername={automation.account?.ig_username}
         />
       );
     case "message":
@@ -212,49 +243,158 @@ function NodeForm({
           onChange={(d) => onChange(node.id, d)}
         />
       );
+    // Extras
+    case "randomizer":
+      return (
+        <RandomizerForm
+          data={node.data as RandomizerNodeData}
+          patch={(d) => onChange(node.id, d)}
+        />
+      );
+    case "goToSequence":
+      return (
+        <GoToSequenceForm
+          data={node.data as GoToSequenceNodeData}
+          onChange={(d) => onChange(node.id, d)}
+          options={goToSequenceOptions}
+        />
+      );
+    case "stopAutomation":
+      return (
+        <StopAutomationForm
+          data={node.data as StopAutomationNodeData}
+          patch={(d) => onChange(node.id, d)}
+        />
+      );
+  }
+}
+
+/** Opção do select "Quando começar" — "dm" vira duas linhas (com/sem palavra-chave). */
+type TriggerWhen =
+  | ""
+  | "automation"
+  | "dm-keyword"
+  | "dm-any"
+  | "storyReply"
+  | "storyMention"
+  | "refLink";
+
+function triggerWhenOf(data: TriggerNodeData): TriggerWhen {
+  const source = data.source ?? "dm";
+  switch (source) {
+    case "unset":
+      return "";
+    case "automation":
+    case "storyReply":
+    case "storyMention":
+    case "refLink":
+      return source;
+    default:
+      return data.anyMessage ? "dm-any" : "dm-keyword";
   }
 }
 
 function TriggerForm({
   data,
   patch,
+  rules,
+  accountUsername,
 }: {
   data: TriggerNodeData;
   patch: (d: TriggerNodeData) => void;
+  rules: Rule[];
+  accountUsername?: string;
 }) {
-  if (data.source === "automation") {
-    return (
-      <div className="space-y-4">
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          Este fluxo começa quando a automação do bloco ligado ao gatilho
-          dispara. A automação responde como sempre e o fluxo continua a
-          partir dela.
-        </p>
-        <Button
-          variant="outline"
-          size="sm"
-          className="w-full"
-          onClick={() => patch({ ...data, source: "dm" })}
-        >
-          Disparar por palavra-chave na DM
-        </Button>
-      </div>
-    );
+  const when = triggerWhenOf(data);
+
+  function selectWhen(value: TriggerWhen) {
+    switch (value) {
+      case "automation":
+        patch({ ...data, source: "automation", anyMessage: false });
+        break;
+      case "dm-keyword":
+        patch({ ...data, source: "dm", anyMessage: false });
+        break;
+      case "dm-any":
+        patch({ ...data, source: "dm", anyMessage: true });
+        break;
+      case "storyReply":
+      case "storyMention":
+      case "refLink":
+        patch({ ...data, source: value });
+        break;
+    }
   }
+
+  const rule = data.ruleId ? rules.find((r) => r.id === data.ruleId) ?? null : null;
+  const ruleRemoved = !!data.ruleId && !rule;
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between rounded-md border border-input px-3 py-2.5">
-        <span className="text-sm">Qualquer mensagem</span>
-        <Switch
-          checked={data.anyMessage}
-          onCheckedChange={(v) => patch({ ...data, anyMessage: v })}
-        />
+      <div className="space-y-2">
+        <Label>Quando começar</Label>
+        <Select value={when} onValueChange={(v) => selectWhen(v as TriggerWhen)}>
+          <SelectTrigger>
+            <SelectValue placeholder="Escolha o gatilho" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="automation">Automação existente</SelectItem>
+            <SelectItem value="dm-keyword">Palavra-chave na DM</SelectItem>
+            <SelectItem value="dm-any">Qualquer DM</SelectItem>
+            <SelectItem value="storyReply">Resposta a story</SelectItem>
+            <SelectItem value="storyMention">Menção em story</SelectItem>
+            <SelectItem value="refLink">Link de referência (ig.me)</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
-      {!data.anyMessage && (
+
+      {when === "" && (
+        <p className="text-xs text-muted-foreground">
+          Escolha acima quando este workflow deve começar.
+        </p>
+      )}
+
+      {when === "automation" && (
+        <div className="space-y-3">
+          <RuleSelect
+            rules={rules}
+            value={data.ruleId ?? ""}
+            onChange={(ruleId) => patch({ ...data, ruleId })}
+          />
+          {ruleRemoved && (
+            <p className="text-xs text-destructive">
+              A automação escolhida foi excluída. Escolha outra.
+            </p>
+          )}
+          {rule && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-foreground">{ruleDisplayName(rule)}</p>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge variant="muted">{ruleTypeLabel(rule)}</Badge>
+                <Badge variant={rule.is_active ? "success" : "warning"}>
+                  {rule.is_active ? "Ativa" : "Pausada"}
+                </Badge>
+              </div>
+            </div>
+          )}
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Quando esta automação responder (DM ou o link do comentário), o
+            fluxo continua pela saída do gatilho. Automação pausada = o
+            workflow não inicia.
+          </p>
+        </div>
+      )}
+
+      {when === "refLink" && (
+        <RefLinkFields data={data} patch={patch} accountUsername={accountUsername} />
+      )}
+
+      {(when === "dm-keyword" || when === "storyReply" || when === "storyMention") && (
         <>
           <div className="space-y-2">
-            <Label htmlFor="seq-keyword">Palavras-chave</Label>
+            <Label htmlFor="seq-keyword">
+              {when === "dm-keyword" ? "Palavras-chave" : "Palavras-chave (opcional)"}
+            </Label>
             <Input
               id="seq-keyword"
               placeholder="ex.: preço, link, comprar"
@@ -263,7 +403,9 @@ function TriggerForm({
               onChange={(e) => patch({ ...data, keyword: e.target.value })}
             />
             <p className="text-xs text-muted-foreground">
-              Separe várias por vírgula: qualquer uma dispara.
+              {when === "dm-keyword"
+                ? "Separe várias por vírgula: qualquer uma dispara."
+                : "Deixe em branco pra disparar com qualquer evento desse tipo, ou filtre pelo texto que a pessoa mandar junto."}
             </p>
           </div>
           <div className="space-y-2">
@@ -284,9 +426,12 @@ function TriggerForm({
           </div>
         </>
       )}
-      <p className="text-xs text-muted-foreground">
-        Cada pessoa entra nesta sequência no máximo uma vez.
-      </p>
+
+      {when !== "" && when !== "automation" && (
+        <p className="text-xs text-muted-foreground">
+          Cada pessoa entra nesta sequência no máximo uma vez.
+        </p>
+      )}
     </div>
   );
 }

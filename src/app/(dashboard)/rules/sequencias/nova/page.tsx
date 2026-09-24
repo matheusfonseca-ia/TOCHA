@@ -10,14 +10,16 @@ import type { Rule } from "@/types/database";
 export default async function NovaSequenciaPage() {
   const supabase = createClient();
 
-  const [{ data: accounts }, { data: rules }] = await Promise.all([
+  const [{ data: accounts }, { data: rules }, { data: sequences }] = await Promise.all([
     supabase
       .from("ig_accounts")
       .select("id, ig_username, profile_picture_url")
       .eq("status", "active")
       .order("connected_at"),
-    // Automações para o nó "Automação" do editor (RLS limita ao usuário)
+    // Automações para o nó "Automação" e o gatilho do editor (RLS limita ao usuário)
     supabase.from("rules").select("*").order("created_at"),
+    // Workflows para o nó "Ir para workflow" (RLS idem)
+    supabase.from("sequences").select("id, account_id, name").order("name"),
   ]);
 
   if ((accounts ?? []).length === 0) {
@@ -35,6 +37,10 @@ export default async function NovaSequenciaPage() {
   }
 
   return (
-    <SequenceEditor accounts={accounts ?? []} rules={(rules ?? []) as Rule[]} />
+    <SequenceEditor
+      accounts={accounts ?? []}
+      rules={(rules ?? []) as Rule[]}
+      sequences={sequences ?? []}
+    />
   );
 }

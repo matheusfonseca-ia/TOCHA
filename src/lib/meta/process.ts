@@ -6,7 +6,9 @@ import {
   findMatchingRule,
 } from "@/lib/rules/engine";
 import { pickVariant } from "@/lib/rules/variants";
+import { classifyInboundEvent } from "@/lib/meta/triggers";
 import { sendRuleReply } from "@/lib/sequences/automation";
+import { isPausedAt } from "@/lib/sequences/automation-pause";
 import {
   handleSequencePostback,
   handleSequenceReply,
@@ -49,8 +51,14 @@ interface MessagingEvent {
     is_echo?: boolean;
     /** Presente quando o usuário toca numa resposta rápida. */
     quick_reply?: { payload?: string };
+    /** Resposta a um story da conta (gatilho "storyReply"). */
+    reply_to?: { story?: { id?: string; url?: string } };
+    /** Menção em story traz `attachments[].type === "story_mention"`. */
+    attachments?: { type?: string; payload?: { url?: string } }[];
   };
   postback?: { mid?: string; title?: string; payload?: string };
+  /** ig.me/m/<usuário>?ref=<código> abrindo a conversa (gatilho "refLink"). */
+  referral?: { ref?: string; source?: string; type?: string };
 }
 
 interface CommentValue {
@@ -165,21 +173,30 @@ async function processMessagingEvent(
     return;
   }
 
-  const message = event.message;
   const senderId = event.sender?.id;
+  if (!senderId || event.message?.is_echo) return;
 
-  // Ignora echoes (mensagens da própria conta) e eventos sem texto
-  if (!message?.mid || !senderId || message.is_echo || !message.text) return;
+  // Classifica o evento (DM / resposta a story / menção em story / link de
+  // referência). null = nada que interesse (sem texto, sem story, sem
+  // referral) — ex.: eco já tratado acima, delivery receipt sem conteúdo.
+  const classified = classifyInboundEvent(event);
+  if (!classified) return;
 
   const admin = createAdminClient();
 
-  // 1. Idempotência: insert falha em mid repetido → evento já processado
-  const { error: dedupError } = await admin
-    .from("processed_events")
-    .insert({ mid: message.mid });
-  if (dedupError) return;
+  // 1. Idempotência: insert falha em mid repetido → evento já processado.
+  // Um referral "puro" (ig.me abrindo a conversa, sem mensagem) pode não
+  // trazer mid — segue sem dedupe por mid; o unique de sequence_runs cobre
+  // uma eventual reentrega dobrada do webhook.
+  const mid = event.message?.mid;
+  if (mid) {
+    const { error: dedupError } = await admin
+      .from("processed_events")
+      .insert({ mid });
+    if (dedupError) return;
+  }
 
-  // 2. Conta ativa que recebeu a DM
+  // 2. Conta ativa que recebeu o evento
   const recipientId = igBusinessId || event.recipient?.id || "";
   const { data: account } = await admin
     .from("ig_accounts")
@@ -195,53 +212,73 @@ async function processMessagingEvent(
   await touchConversation(admin, account.id, senderId, event.timestamp);
 
   // 4a. Sequência esperando esta pessoa? Continuação tem prioridade sobre
-  // regras: quem está no meio de um fluxo não deve ser "sequestrado" por
-  // uma regra de palavra-chave (cobre quick replies e o nó "esperar resposta").
+  // regras/gatilhos novos: quem está no meio de um fluxo não deve ser
+  // "sequestrado" (cobre quick replies e o nó "esperar resposta").
   const seqReply = await handleSequenceReply(
     admin,
     account,
     senderId,
-    message.quick_reply?.payload,
-    message.text
+    event.message?.quick_reply?.payload,
+    classified.text
   );
   if (seqReply) {
     await logSequenceInteraction(
       admin,
       account,
       senderId,
-      message.text,
+      classified.text,
       seqReply,
       startedAt
     );
     return;
   }
 
-  // 4b. Matching de regras (só as de gatilho "dm")
-  const { data: rules } = await admin
-    .from("rules")
-    .select("*")
-    .eq("account_id", account.id)
-    .eq("trigger_type", "dm")
-    .eq("is_active", true);
+  // 4a-bis. Nó "Pausar automações" ativo para esta pessoa: não inicia regra
+  // nem workflow novo (quem já estava no meio de um fluxo já retornou acima).
+  const pausedUntil = await automationPausedUntil(admin, account.id, senderId);
+  if (pausedUntil) {
+    await admin.from("interactions").insert({
+      account_id: account.id,
+      ig_sender_id: senderId,
+      message_text: classified.text.slice(0, 2000),
+      status: "no_match",
+      reply_type: null,
+      error_detail: `Automações pausadas até ${pausedUntil}`,
+      latency_ms: Date.now() - startedAt,
+    });
+    return;
+  }
 
-  const rule = findMatchingRule(
-    message.text,
-    withoutExpired((rules ?? []) as Rule[])
-  );
-  const result = rule
-    ? await applyRule(admin, account, rule, senderId, event)
-    : null;
+  // 4b. Matching de regras — só existe o conceito de regra pra DM (comentário
+  // é outro pipeline, story/refLink só valem pra workflows). Regras vencidas
+  // (expiração) são ignoradas mesmo antes do sweep rodar.
+  let rule: Rule | null = null;
+  let result: { status: InteractionStatus; errorDetail?: string } | null = null;
+  if (classified.kind === "dm") {
+    const { data: rules } = await admin
+      .from("rules")
+      .select("*")
+      .eq("account_id", account.id)
+      .eq("trigger_type", "dm")
+      .eq("is_active", true);
+
+    rule = findMatchingRule(
+      classified.text,
+      withoutExpired((rules ?? []) as Rule[])
+    );
+    result = rule ? await applyRule(admin, account, rule, senderId, event) : null;
+  }
 
   // 4c. Nenhuma regra respondeu (não casou, ou casou mas já tinha disparado
-  // para esta pessoa: duplicate_skip) → a mensagem pode ser gatilho de uma
-  // sequência por palavra-chave. Decisão do usuário: duplicate_skip da regra
-  // não bloqueia o workflow.
+  // para esta pessoa: duplicate_skip) → tenta os workflows (palavra-chave em
+  // DM, resposta a story, menção em story, link de referência). Decisão do
+  // usuário: duplicate_skip da regra não bloqueia o workflow.
   if (!result || result.status === "duplicate_skip") {
     const seqStart = await maybeStartSequence(
       admin,
       account,
       senderId,
-      message.text,
+      classified,
       deadline
     );
     if (seqStart) {
@@ -249,7 +286,7 @@ async function processMessagingEvent(
         admin,
         account,
         senderId,
-        message.text,
+        classified.text,
         seqStart,
         startedAt
       );
@@ -264,7 +301,7 @@ async function processMessagingEvent(
   await admin.from("interactions").insert({
     account_id: account.id,
     ig_sender_id: senderId,
-    message_text: message.text.slice(0, 2000),
+    message_text: classified.text.slice(0, 2000),
     matched_rule_id: rule?.id ?? null,
     matched_keyword: rule?.keyword ?? null,
     status,
@@ -290,6 +327,26 @@ async function processMessagingEvent(
       );
     }
   }
+}
+
+/**
+ * "Pausar automações" (nó `stopAutomation`): devolve o timestamp (ISO) até
+ * quando a pessoa está pausada, ou null se não está (nunca pausada, ou a
+ * pausa já venceu).
+ */
+async function automationPausedUntil(
+  admin: AdminClient,
+  accountId: string,
+  senderId: string
+): Promise<string | null> {
+  const { data } = await admin
+    .from("conversations")
+    .select("automation_paused_until")
+    .eq("account_id", accountId)
+    .eq("ig_sender_id", senderId)
+    .maybeSingle<{ automation_paused_until: string | null }>();
+  const until = data?.automation_paused_until ?? null;
+  return isPausedAt(until) ? until : null;
 }
 
 /** Log padronizado de um evento tratado por uma sequência. */
