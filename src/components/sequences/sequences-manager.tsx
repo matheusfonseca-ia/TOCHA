@@ -11,6 +11,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Timer,
   Trash2,
   Workflow,
 } from "lucide-react";
@@ -22,6 +23,8 @@ import {
   toggleSequence,
 } from "@/app/(dashboard)/rules/sequencias/actions";
 import { EmptyState } from "@/components/empty-state";
+import { ExpiryBadge } from "@/components/expiry/expiry-badge";
+import { ExpiryDialog, type ExpiryTarget } from "@/components/expiry/expiry-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -76,6 +79,7 @@ export function SequencesManager({
   const [deleteTarget, setDeleteTarget] = useState<SequenceWithAccount | null>(
     null
   );
+  const [expiryTarget, setExpiryTarget] = useState<ExpiryTarget | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -188,6 +192,10 @@ export function SequencesManager({
                           >
                             {sequence.is_active ? "Ativa" : "Pausada"}
                           </Badge>
+                          <ExpiryBadge
+                            expiresAt={sequence.expires_at}
+                            expireAction={sequence.expire_action}
+                          />
                           <Workflow className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
                           <span className="max-w-[220px] truncate text-sm font-medium">
                             {sequence.name}
@@ -253,6 +261,22 @@ export function SequencesManager({
                             Duplicar
                           </DropdownMenuItem>
                           <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpiryTarget({
+                                id: sequence.id,
+                                name: sequence.name,
+                                expires_at: sequence.expires_at,
+                                expire_action: sequence.expire_action,
+                              });
+                            }}
+                          >
+                            <Timer />
+                            {sequence.expires_at
+                              ? "Estender expiração"
+                              : "Tornar temporário"}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
                             onClick={(e) => {
                               e.stopPropagation();
@@ -272,6 +296,12 @@ export function SequencesManager({
           </Table>
         </Card>
       )}
+
+      <ExpiryDialog
+        kind="sequence"
+        target={expiryTarget}
+        onClose={() => setExpiryTarget(null)}
+      />
 
       {/* ── Confirmação de exclusão ──────────────────────────────────── */}
       <Dialog

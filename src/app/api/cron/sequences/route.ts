@@ -1,13 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { expireAutomationsSafe } from "@/lib/expiry/sweep";
 import { processDueRuns } from "@/lib/sequences/runtime";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * Tick das sequências: retoma execuções paradas em nós de atraso cujo
- * horário venceu. Chamado pelo cron da Vercel (vercel.json) e por qualquer
+ * Tick das sequências: expira automações/workflows temporários vencidos e
+ * retoma execuções paradas em nós de atraso cujo horário venceu. Chamado pelo cron da Vercel (vercel.json) e por qualquer
  * agendador externo (cron-job.org, UptimeRobot...) — além do tick
  * oportunista que roda ao fim de cada webhook.
  *
@@ -30,6 +31,8 @@ export async function GET(request: NextRequest) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
+  // Antes dos atrasos: workflow que acabou de expirar não retoma execuções.
+  const expired = await expireAutomationsSafe();
   const processed = await processDueRuns(10);
-  return NextResponse.json({ processed });
+  return NextResponse.json({ processed, expired });
 }

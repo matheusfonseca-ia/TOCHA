@@ -3,6 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { validateExpiry } from "@/lib/expiry/expiry";
+import {
+  EXPIRED_SEQUENCE_ACTIVATION_ERROR,
+  isStoredExpired,
+} from "@/lib/expiry/guard";
+import { expiryColumns, expiryFields } from "@/lib/expiry/schema";
 import { keywordTerms } from "@/lib/rules/engine";
 import { cloneGraphWithFreshIds } from "@/lib/sequences/clone";
 import {
@@ -106,6 +112,7 @@ const sequenceSchema = z.object({
   name: z.string().trim().min(1, "Dê um nome à sequência.").max(80),
   is_active: z.boolean(),
   graph: graphSchema,
+  ...expiryFields,
 });
 
 export type SequenceInput = z.input<typeof sequenceSchema>;
@@ -194,8 +201,20 @@ export async function saveSequence(
   }
   const input = parsed.data;
 
+  const expiryError = validateExpiry(input.expires_at);
+  if (expiryError) return { error: expiryError };
+
   const graph = input.graph as SequenceGraph;
   const supabase = createClient();
+
+  if (
+    input.id &&
+    input.is_active &&
+    input.expires_at === undefined &&
+    (await isStoredExpired(supabase, "sequences", input.id))
+  ) {
+    return { error: EXPIRED_SEQUENCE_ACTIVATION_ERROR };
+  }
 
   // Automações referenciadas pelo grafo: o validador precisa do tipo e da
   // conta de cada uma (rule de comentário só vale como entrada, e nunca de
@@ -219,6 +238,7 @@ export async function saveSequence(
     graph,
     entry_rule_id: entryRuleIdOf(graph),
     is_active: input.is_active,
+    ...expiryColumns(input),
     updated_at: new Date().toISOString(),
   };
 
@@ -256,6 +276,10 @@ export async function toggleSequence(
   isActive: boolean
 ): Promise<SequenceActionResult> {
   const supabase = createClient();
+  if (isActive && (await isStoredExpired(supabase, "sequences", id))) {
+    return { error: EXPIRED_SEQUENCE_ACTIVATION_ERROR };
+  }
+
   const { error } = await supabase
     .from("sequences")
     .update({ is_active: isActive, updated_at: new Date().toISOString() })
@@ -302,7 +326,7 @@ const SEQUENCE_NAME_MAX = 80;
  * Duplica um workflow: grafo com ids novos (`cloneGraphWithFreshIds`), não
  * copia `sequence_runs`, nasce pausado. `entry_rule_id` é derivado do
  * grafo clonado: a cópia parte da mesma automação, mas só roda quando
- * for ativada.
+ * for ativada. Não copia a expiração: a cópia nasce permanente.
  */
 export async function duplicateSequence(
   id: string

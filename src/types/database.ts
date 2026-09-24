@@ -63,6 +63,9 @@ export interface Rule {
   delay_seconds: number;
   is_active: boolean;
   priority: number;
+  /** Nulo/ausente = permanente. Migration 0003. */
+  expires_at?: string | null;
+  expire_action?: "delete" | "pause";
   created_at: string;
   updated_at: string;
 }

@@ -1,3 +1,5 @@
+import { isExpired, withoutExpired } from "@/lib/expiry/expiry";
+import { expireAutomationsSafe } from "@/lib/expiry/sweep";
 import {
   clampDelay,
   findMatchingCommentRule,
@@ -147,6 +149,8 @@ export async function processWebhookPayload(
   // Tick oportunista: aproveita a invocação para retomar sequências paradas
   // em nós de atraso cujo horário venceu (complementa a rota de cron). O
   // orçamento conta desde o início da invocação — o que sobrou dela.
+  // A expiração vem antes: workflow que acabou de vencer não retoma atrasos.
+  await expireAutomationsSafe();
   await processDueRunsSafe(3, invocationDeadline(invocationStart));
 }
 
@@ -218,7 +222,10 @@ async function processMessagingEvent(
     .eq("trigger_type", "dm")
     .eq("is_active", true);
 
-  const rule = findMatchingRule(message.text, (rules ?? []) as Rule[]);
+  const rule = findMatchingRule(
+    message.text,
+    withoutExpired((rules ?? []) as Rule[])
+  );
   const result = rule
     ? await applyRule(admin, account, rule, senderId, event)
     : null;
@@ -419,6 +426,7 @@ async function processPostbackEvent(
   // gerado por nós, pra uma regra da própria conta), mas checar explicita é
   // mais barato do que confiar nisso implicitamente.
   if (!account || !rule || rule.account_id !== account.id) return;
+  if (isExpired(rule.expires_at)) return;
 
   // O toque no botão é uma interação da pessoa: abre/renova a janela de 24h.
   // Sem isso o workflow iniciado logo abaixo morreria em window_expired
@@ -572,7 +580,11 @@ async function processCommentEvent(
     .eq("trigger_type", "comment")
     .eq("is_active", true);
 
-  const rule = findMatchingCommentRule(text, mediaId, (rules ?? []) as Rule[]);
+  const rule = findMatchingCommentRule(
+    text,
+    mediaId,
+    withoutExpired((rules ?? []) as Rule[])
+  );
 
   let status: InteractionStatus;
   let errorDetail: string | null = null;
