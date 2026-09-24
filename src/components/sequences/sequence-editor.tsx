@@ -35,6 +35,9 @@ import {
   Timer,
   Undo2,
   Workflow,
+  Split,
+  Tag,
+  TextCursorInput,
 } from "lucide-react";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
@@ -44,6 +47,12 @@ import {
   type SequenceInput,
 } from "@/app/(dashboard)/rules/sequencias/actions";
 import { AutomationRulesProvider } from "@/components/sequences/automation";
+import {
+  DataFieldsProvider,
+  defaultCollectInputData,
+  defaultConditionData,
+  defaultSetFieldData,
+} from "@/components/sequences/data";
 import { findFirstInvalidNode } from "@/components/sequences/find-invalid-node";
 import { SequenceConfirmDialog } from "@/components/sequences/sequence-confirm-dialog";
 import { SequenceInspector, type InspectorNode } from "@/components/sequences/sequence-inspector";
@@ -69,6 +78,7 @@ import {
   triggerSourceOf,
   validateSequenceGraph,
 } from "@/lib/sequences/graph";
+import { dataNodesWarning, fieldKeysOf } from "@/lib/sequences/fields";
 import { cn } from "@/lib/utils";
 import type { Rule } from "@/types/database";
 import {
@@ -107,6 +117,10 @@ const PALETTE: {
   { type: "delay", label: "Atraso", icon: Timer },
   { type: "waitReply", label: "Esperar resposta", icon: Hourglass },
   { type: "automation", label: "Automação", icon: Workflow },
+  // Dados do contato
+  { type: "collectInput", label: "Coletar dado", icon: TextCursorInput },
+  { type: "condition", label: "Condição", icon: Split },
+  { type: "setField", label: "Definir campo", icon: Tag },
 ];
 
 // Largura fixa dos blocos no canvas (w-60 em sequence-nodes.tsx) e altura
@@ -137,6 +151,12 @@ function defaultDataFor(type: SequenceNodeType): SequenceNodeData {
       return {};
     case "automation":
       return { ruleId: "" };
+    case "collectInput":
+      return defaultCollectInputData();
+    case "condition":
+      return defaultConditionData();
+    case "setField":
+      return defaultSetFieldData();
   }
 }
 
@@ -668,6 +688,9 @@ function EditorInner({
       }
       return;
     }
+    // Não bloqueia: condição com saída solta só encerra o fluxo por ali.
+    const dataWarning = dataNodesWarning(serialized);
+    if (dataWarning) toast.warning(dataWarning);
 
     startTransition(async () => {
       const result = await saveSequence({
@@ -893,6 +916,7 @@ function EditorInner({
               : "max-h-[45vh] lg:h-[calc(100vh-330px)] lg:max-h-none lg:min-h-[460px]"
           )}
         >
+          <DataFieldsProvider fields={fieldKeysOf(liveGraph)}>
           <SequenceInspector
             node={selectedNode}
             onChange={handleDataChange}
@@ -904,6 +928,7 @@ function EditorInner({
               onTriggerSourceChange: handleTriggerSourceChange,
             }}
           />
+          </DataFieldsProvider>
         </aside>
       </div>
 

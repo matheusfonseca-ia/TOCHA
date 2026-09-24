@@ -9,6 +9,7 @@ import {
   LogOut,
   Menu,
   ScrollText,
+  Users,
   X,
   Zap,
 } from "lucide-react";
@@ -22,6 +23,7 @@ import { signOut } from "@/app/login/actions";
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/rules", label: "Automação", icon: Zap },
+  { href: "/contatos", label: "Contatos", icon: Users },
   { href: "/accounts", label: "Contas", icon: Instagram },
   { href: "/logs", label: "Logs", icon: ScrollText },
 ];

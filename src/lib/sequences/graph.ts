@@ -1,6 +1,10 @@
+import { dataNodeError } from "@/lib/sequences/fields";
 import type { Rule } from "@/types/database";
 import {
   buttonHandle,
+  INVALID_HANDLE,
+  NO_HANDLE,
+  YES_HANDLE,
   OUT_HANDLE,
   QR_FALLBACK_HANDLE,
   quickReplyHandle,
@@ -105,6 +109,8 @@ export function isWaitNode(node: SequenceGraphNode): boolean {
   switch (node.type) {
     case "waitReply":
     case "quickReplies":
+    // Dados: espera a resposta da pessoa, como o "esperar resposta".
+    case "collectInput":
       return true;
     case "delay":
       // Só atraso longo segura um laço: com 5s de atraso, um ciclo mandaria
@@ -223,6 +229,11 @@ export function sourceHandlesOf(node: SequenceGraphNode): string[] {
         QR_FALLBACK_HANDLE,
       ];
     }
+    // Dados do contato
+    case "collectInput":
+      return [OUT_HANDLE, INVALID_HANDLE];
+    case "condition":
+      return [YES_HANDLE, NO_HANDLE];
     default:
       return [OUT_HANDLE];
   }
@@ -310,6 +321,11 @@ function validateNode(node: SequenceGraphNode): string | null {
       if (!data.ruleId?.trim()) return "Automação: selecione qual automação usar.";
       return null;
     }
+    // Dados do contato: regras em ./fields (compartilhadas com o editor).
+    case "collectInput":
+    case "condition":
+    case "setField":
+      return dataNodeError(node);
   }
 }
 

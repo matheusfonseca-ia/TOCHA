@@ -25,6 +25,8 @@ import {
   buildSequencePayload,
   parseSequencePayload,
 } from "@/lib/sequences/payload";
+import { validateInput } from "@/lib/sequences/collect";
+import { FlowData } from "@/lib/sequences/flow-data";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sleep } from "@/lib/utils";
 import type { IgAccount, InteractionStatus, Rule } from "@/types/database";
@@ -45,6 +47,12 @@ import {
   type SequenceRun,
   type SequenceRunStatus,
   type TriggerNodeData,
+  INVALID_HANDLE,
+  NO_HANDLE,
+  YES_HANDLE,
+  type CollectInputNodeData,
+  type ConditionNodeData,
+  type SetFieldNodeData,
 } from "@/types/sequence";
 
 /**
@@ -83,6 +91,7 @@ const SENDING_NODE_TYPES: ReadonlySet<SequenceNodeType> = new Set([
   "buttons",
   "quickReplies",
   "automation",
+  "collectInput",
 ]);
 // Unique violation do Postgres: a pessoa já passou por esta sequência.
 const PG_UNIQUE_VIOLATION = "23505";
@@ -265,7 +274,9 @@ export async function handleSequenceReply(
   admin: AdminClient,
   account: IgAccount,
   senderId: string,
-  quickReplyPayload: string | undefined
+  quickReplyPayload: string | undefined,
+  /** Texto da DM: resposta do nó "Coletar dado". */
+  messageText = ""
 ): Promise<SequenceOutcome | null> {
   // 1. Toque em resposta rápida: o payload aponta direto para o run + handle
   const parsed = parseSequencePayload(quickReplyPayload);
@@ -300,6 +311,14 @@ export async function handleSequenceReply(
     : null;
   if (!node) return null;
 
+  // Coletar dado: o waiting_reply é neste nó (e não num "esperar resposta"),
+  // então a resposta é validada e gravada antes de seguir.
+  if (node.type === "collectInput") {
+    const claimedCollect = await claimRun(admin, waiting.id, "waiting_reply");
+    if (!claimedCollect) return null;
+    return handleCollectReply(admin, account, sequence, claimedCollect, node, messageText);
+  }
+
   // Nó de respostas rápidas: quem digita em vez de tocar segue o fallback
   // (se conectado); sem fallback, o fluxo continua esperando um toque.
   const handle = node.type === "quickReplies" ? QR_FALLBACK_HANDLE : OUT_HANDLE;
@@ -313,6 +332,53 @@ export async function handleSequenceReply(
   const claimed = await claimRun(admin, waiting.id, "waiting_reply");
   if (!claimed) return null;
   return resumeFromHandle(admin, account, claimed, handle, sequence);
+}
+
+/**
+ * Resposta a um nó "Coletar dado". Válida: grava no contato e nas variáveis
+ * e segue por "out". Inválida: reenvia o texto de erro (o próprio nó volta a
+ * esperar) até esgotar `maxAttempts`, e então segue por "invalid" (sem
+ * ligação, o run termina como completed).
+ */
+async function handleCollectReply(
+  admin: AdminClient,
+  account: IgAccount,
+  sequence: Sequence,
+  run: SequenceRun,
+  node: SequenceGraphNode,
+  messageText: string
+): Promise<SequenceOutcome> {
+  const data = node.data as CollectInputNodeData;
+  const flow = new FlowData(admin, account.id, run);
+
+  try {
+    const result = validateInput(data.inputType, messageText);
+    if (result.ok) {
+      await flow.setAttempts(node.id, null);
+      await flow.setField(data.fieldKey, result.value);
+      return executeFrom(admin, account, sequence, run, targetOf(sequence.graph, node.id, OUT_HANDLE), { flow });
+    }
+
+    const attempts = flow.attemptsAt(node.id) + 1;
+    if (attempts >= data.maxAttempts) {
+      await flow.setAttempts(node.id, null);
+      return executeFrom(admin, account, sequence, run, targetOf(sequence.graph, node.id, INVALID_HANDLE), { flow });
+    }
+    await flow.setAttempts(node.id, attempts);
+    return executeFrom(admin, account, sequence, run, node.id, {
+      flow,
+      resendCollectErrorAt: node.id,
+    });
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    await persistRun(admin, run, "error", { last_error: detail });
+    return {
+      status: "error",
+      sequenceId: sequence.id,
+      sequenceName: sequence.name,
+      errorDetail: detail,
+    };
+  }
 }
 
 /** Toque num botão de ramificação (postback) de um nó de botões. */
@@ -611,10 +677,18 @@ async function executeFrom(
   sequence: Sequence,
   run: SequenceRun,
   startNodeId: string | null,
-  opts: { deadline?: number; discardRunIfNothingSent?: boolean } = {}
+  opts: {
+    deadline?: number;
+    discardRunIfNothingSent?: boolean;
+    /** Contexto de dados já carregado (retomada do "Coletar dado"). */
+    flow?: FlowData;
+    /** Nó "Coletar dado" que deve mandar o texto de erro em vez da pergunta. */
+    resendCollectErrorAt?: string;
+  } = {}
 ): Promise<SequenceOutcome> {
   const graph = sequence.graph;
   const deadline = opts.deadline ?? invocationDeadline();
+  const flow = opts.flow ?? new FlowData(admin, account.id, run);
   let steps = run.steps_executed;
   let stepsThisExecution = 0;
   let sent = false;
@@ -667,7 +741,7 @@ async function executeFrom(
           if (data.kind === "image") {
             await sendImageMessage(token, run.ig_sender_id, data.imageUrl);
           } else {
-            await sendTextMessage(token, run.ig_sender_id, data.text);
+            await sendTextMessage(token, run.ig_sender_id, await flow.render(data.text));
           }
           sent = true;
           nodeId = targetOf(graph, node.id, OUT_HANDLE);
@@ -680,19 +754,20 @@ async function executeFrom(
           await ensureWindowOpen(admin, account, run.ig_sender_id);
           await humanPause(token, run.ig_sender_id);
 
+          const titles = await flow.renderAll(data.buttons.map((b) => b.title));
           const buttons: TemplateButton[] = data.buttons.map((b, i) =>
             b.kind === "url"
-              ? { type: "web_url", title: b.title, url: b.url }
+              ? { type: "web_url", title: titles[i], url: b.url }
               : {
                   type: "postback",
-                  title: b.title,
+                  title: titles[i],
                   payload: buildSequencePayload(run.id, node.id, buttonHandle(i)),
                 }
           );
           await sendTemplateButtonsMessage(
             token,
             run.ig_sender_id,
-            data.text,
+            await flow.render(data.text),
             buttons
           );
           sent = true;
@@ -716,11 +791,12 @@ async function executeFrom(
           await ensureWindowOpen(admin, account, run.ig_sender_id);
           await humanPause(token, run.ig_sender_id);
 
+          const optionTitles = await flow.renderAll(data.options);
           await sendQuickRepliesMessage(
             token,
             run.ig_sender_id,
-            data.text,
-            data.options.map((title, i) => ({
+            await flow.render(data.text),
+            optionTitles.map((title, i) => ({
               title,
               payload: buildSequencePayload(run.id, node.id, quickReplyHandle(i)),
             }))
@@ -783,6 +859,45 @@ async function executeFrom(
           await humanPause(token, run.ig_sender_id);
           await sendRuleReply(token, run.ig_sender_id, rule);
           sent = true;
+          nodeId = targetOf(graph, node.id, OUT_HANDLE);
+          break;
+        }
+
+        // ── Dados do contato ────────────────────────────────────────────
+        case "collectInput": {
+          // Pergunta (ou, na retomada após resposta inválida, o texto de
+          // erro) e espera: a resposta chega por handleSequenceReply.
+          const data = node.data as CollectInputNodeData;
+          const isRetry = opts.resendCollectErrorAt === node.id;
+          token ??= await getFreshToken(admin, account);
+          await ensureWindowOpen(admin, account, run.ig_sender_id);
+          await humanPause(token, run.ig_sender_id);
+          await sendTextMessage(
+            token,
+            run.ig_sender_id,
+            await flow.render(isRetry ? data.errorText : data.question)
+          );
+          sent = true;
+          await persistRun(admin, run, "waiting_reply", {
+            current_node_id: node.id,
+            steps_executed: steps,
+          });
+          return ok("replied");
+        }
+
+        case "condition": {
+          const matched = await flow.evaluate(node.data as ConditionNodeData);
+          nodeId = targetOf(graph, node.id, matched ? YES_HANDLE : NO_HANDLE);
+          break;
+        }
+
+        case "setField": {
+          const data = node.data as SetFieldNodeData;
+          if (data.mode === "tag") {
+            await flow.setTag(data.value, data.tagAction ?? "add");
+          } else {
+            await flow.setField(data.fieldKey, (await flow.render(data.value)).trim());
+          }
           nodeId = targetOf(graph, node.id, OUT_HANDLE);
           break;
         }

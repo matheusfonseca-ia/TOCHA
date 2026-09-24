@@ -13,6 +13,9 @@ import {
   Timer,
   Workflow,
   Zap,
+  Split,
+  Tag,
+  TextCursorInput,
   type LucideIcon,
 } from "lucide-react";
 
@@ -20,6 +23,11 @@ import {
   AutomationNodeBody,
   TriggerAutomationSummary,
 } from "@/components/sequences/automation";
+import {
+  CollectInputNodeBody,
+  ConditionNodeBody,
+  SetFieldNodeBody,
+} from "@/components/sequences/data";
 import { cn } from "@/lib/utils";
 import {
   buttonHandle,
@@ -32,6 +40,9 @@ import {
   type MessageNodeData,
   type QuickRepliesNodeData,
   type TriggerNodeData,
+  type CollectInputNodeData,
+  type ConditionNodeData,
+  type SetFieldNodeData,
 } from "@/types/sequence";
 
 /**
@@ -341,6 +352,58 @@ export function AutomationNode({ id, data, selected }: NodeProps) {
   );
 }
 
+// ── Dados do contato (conteúdo em ./data) ───────────────────────────────────
+
+export function CollectInputNode({ id, data, selected }: NodeProps) {
+  return (
+    <NodeFrame
+      id={id}
+      icon={TextCursorInput}
+      chipClass="bg-secondary text-foreground/70"
+      title="Coletar dado"
+      selected={selected}
+    >
+      <CollectInputNodeBody
+        data={data as unknown as CollectInputNodeData}
+        handleClassName={ROW_HANDLE_CLASS}
+      />
+    </NodeFrame>
+  );
+}
+
+export function ConditionNode({ id, data, selected }: NodeProps) {
+  return (
+    <NodeFrame
+      id={id}
+      icon={Split}
+      chipClass="bg-secondary text-foreground/70"
+      title="Condição"
+      selected={selected}
+    >
+      <ConditionNodeBody
+        data={data as unknown as ConditionNodeData}
+        handleClassName={ROW_HANDLE_CLASS}
+      />
+    </NodeFrame>
+  );
+}
+
+export function SetFieldNode({ id, data, selected }: NodeProps) {
+  const d = data as unknown as SetFieldNodeData;
+  return (
+    <NodeFrame
+      id={id}
+      icon={Tag}
+      chipClass="bg-secondary text-foreground/70"
+      title={d.mode === "tag" ? "Definir tag" : "Definir campo"}
+      selected={selected}
+      hasOut
+    >
+      <SetFieldNodeBody data={d} />
+    </NodeFrame>
+  );
+}
+
 export const sequenceNodeTypes = {
   trigger: TriggerNode,
   message: MessageNode,
@@ -349,4 +412,7 @@ export const sequenceNodeTypes = {
   delay: DelayNode,
   waitReply: WaitReplyNode,
   automation: AutomationNode,
+  collectInput: CollectInputNode,
+  condition: ConditionNode,
+  setField: SetFieldNode,
 };

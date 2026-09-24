@@ -14,7 +14,11 @@ export type SequenceNodeType =
   | "quickReplies"
   | "delay"
   | "waitReply"
-  | "automation";
+  | "automation"
+  // Dados do contato (coletar, condição, definir campo/tag)
+  | "collectInput"
+  | "condition"
+  | "setField";
 
 /** Handle de saída padrão (nós lineares: gatilho, mensagem, atraso, esperar). */
 export const OUT_HANDLE = "out";
@@ -24,6 +28,11 @@ export const buttonHandle = (i: number) => `btn-${i}`;
 export const quickReplyHandle = (i: number) => `qr-${i}`;
 /** Handle seguido quando a pessoa digita algo em vez de tocar numa resposta rápida. */
 export const QR_FALLBACK_HANDLE = "qr-fallback";
+/** Coletar dado: seguido quando a pessoa esgota as tentativas sem resposta válida. */
+export const INVALID_HANDLE = "invalid";
+/** Condição: saídas "sim" e "não". */
+export const YES_HANDLE = "yes";
+export const NO_HANDLE = "no";
 
 /**
  * Origem do gatilho. "dm" (padrão, e o que grafos antigos sem o campo
@@ -85,6 +94,50 @@ export interface AutomationNodeData {
   ruleId: string;
 }
 
+// ── Dados do contato ─────────────────────────────────────────────────────────
+
+export type CollectInputType = "text" | "email" | "phone" | "number" | "date";
+
+/**
+ * Nó "Coletar dado": pergunta, espera a resposta (run em waiting_reply neste
+ * nó), valida pelo tipo e grava em `contacts.fields[fieldKey]` e nas
+ * variáveis do run.
+ */
+export interface CollectInputNodeData {
+  question: string;
+  fieldKey: string;
+  inputType: CollectInputType;
+  /** Reenviado a cada resposta inválida, enquanto houver tentativas. */
+  errorText: string;
+  /** 1 a 5 respostas aceitas antes de seguir pela saída "invalid". */
+  maxAttempts: number;
+}
+
+export type ConditionOperator =
+  | "equals"
+  | "contains"
+  | "exists"
+  | "gt"
+  | "lt"
+  | "hasTag";
+
+export interface ConditionNodeData {
+  /** Ignorado em "hasTag" (a tag vem em `value`). */
+  fieldKey: string;
+  operator: ConditionOperator;
+  value: string;
+}
+
+export interface SetFieldNodeData {
+  mode: "field" | "tag";
+  /** Usado em mode "field". */
+  fieldKey: string;
+  /** Valor do campo (aceita {{variáveis}}) ou nome da tag. */
+  value: string;
+  /** Só em mode "tag"; ausente = "add". */
+  tagAction?: "add" | "remove";
+}
+
 export type SequenceNodeData =
   | TriggerNodeData
   | MessageNodeData
@@ -92,7 +145,10 @@ export type SequenceNodeData =
   | QuickRepliesNodeData
   | DelayNodeData
   | WaitReplyNodeData
-  | AutomationNodeData;
+  | AutomationNodeData
+  | CollectInputNodeData
+  | ConditionNodeData
+  | SetFieldNodeData;
 
 export interface SequenceGraphNode {
   id: string;
@@ -129,6 +185,13 @@ export interface Sequence {
   updated_at: string;
 }
 
+/** `sequence_runs.variables`: valores coletados + estado interno ("__"). */
+export interface RunVariables {
+  [key: string]: unknown;
+  /** Respostas inválidas já dadas em cada nó "Coletar dado" (nodeId → n). */
+  __attempts?: Record<string, number>;
+}
+
 export type SequenceRunStatus =
   | "running"
   | "waiting_reply"
@@ -152,6 +215,12 @@ export interface SequenceRun {
   last_error: string | null;
   /** Rule que iniciou este run (entrada por automação). Migration 0002. */
   entry_rule_id?: string | null;
+  /**
+   * Dados coletados neste run (fieldKey → valor) e estado interno dos nós
+   * de dados em chaves com prefixo "__" (ex.: `__attempts[nodeId]`).
+   * Migration 0004; ausente em bancos sem ela.
+   */
+  variables?: RunVariables | null;
   started_at: string;
   updated_at: string;
 }

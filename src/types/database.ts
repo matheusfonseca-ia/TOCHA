@@ -76,6 +76,22 @@ export interface Conversation {
   created_at: string;
 }
 
+/**
+ * Pessoa que interagiu com uma conta e teve algum dado gravado por um
+ * workflow (nós "Coletar dado" / "Definir campo ou tag"). Migration 0004.
+ */
+export interface Contact {
+  id: string;
+  account_id: string;
+  ig_sender_id: string;
+  ig_username: string | null;
+  /** fieldKey → valor (sempre string, já normalizado pelo tipo do campo). */
+  fields: Record<string, string>;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+}
+
 export interface Interaction {
   id: string;
   account_id: string;

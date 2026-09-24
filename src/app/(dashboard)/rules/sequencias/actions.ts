@@ -84,6 +84,37 @@ const nodeSchema = z.discriminatedUnion("type", [
     // mensagem amigável quando nenhuma automação foi escolhida.
     data: z.object({ ruleId: z.string().max(64) }),
   }),
+  // ── Dados do contato: limites finos e mensagens em validateSequenceGraph ──
+  z.object({
+    ...nodeBase,
+    type: z.literal("collectInput"),
+    data: z.object({
+      question: z.string().max(1000),
+      fieldKey: z.string().max(40),
+      inputType: z.enum(["text", "email", "phone", "number", "date"]),
+      errorText: z.string().max(640),
+      maxAttempts: z.number().int(),
+    }),
+  }),
+  z.object({
+    ...nodeBase,
+    type: z.literal("condition"),
+    data: z.object({
+      fieldKey: z.string().max(40),
+      operator: z.enum(["equals", "contains", "exists", "gt", "lt", "hasTag"]),
+      value: z.string().max(500),
+    }),
+  }),
+  z.object({
+    ...nodeBase,
+    type: z.literal("setField"),
+    data: z.object({
+      mode: z.enum(["field", "tag"]),
+      fieldKey: z.string().max(40),
+      value: z.string().max(500),
+      tagAction: z.enum(["add", "remove"]).optional(),
+    }),
+  }),
 ]);
 
 const graphSchema = z.object({
