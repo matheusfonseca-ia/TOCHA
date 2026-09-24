@@ -125,6 +125,9 @@ export interface Sequence {
    * "qual workflow continua após a rule X". Migration 0002.
    */
   entry_rule_id?: string | null;
+  /** Nulo/ausente = permanente. Migration 0003. */
+  expires_at?: string | null;
+  expire_action?: "delete" | "pause";
   created_at: string;
   updated_at: string;
 }

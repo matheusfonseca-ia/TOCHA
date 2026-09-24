@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { ExpiryField } from "@/components/expiry/expiry-field";
+import { expiryFormFrom, resolveExpiryForm } from "@/lib/expiry/expiry";
 import { cn } from "@/lib/utils";
 import {
   deriveTitleFromUrl,
@@ -130,6 +132,7 @@ export function ResponderComentarioBuilder({
   const [welcomeButtonLabel, setWelcomeButtonLabel] = useState("");
   const [message, setMessage] = useState("");
   const [links, setLinks] = useState<LinkSlot[]>([]);
+  const [expiryForm, setExpiryForm] = useState(() => expiryFormFrom(null, null));
 
   const selectedAccount =
     accounts.find((a) => a.id === accountId) ?? accounts[0];
@@ -225,6 +228,12 @@ export function ResponderComentarioBuilder({
       }
     }
 
+    const expiry = resolveExpiryForm(expiryForm);
+    if (expiry.error) {
+      toast.error(expiry.error);
+      return;
+    }
+
     const input: RuleInput = {
       account_id: accountId,
       trigger_type: "comment",
@@ -252,6 +261,10 @@ export function ResponderComentarioBuilder({
           : undefined,
       delay_seconds: 3,
       is_active: true,
+      ...(expiry.expires_at && {
+        expires_at: expiry.expires_at,
+        expire_action: expiry.expire_action,
+      }),
     };
 
     startTransition(async () => {
@@ -539,6 +552,12 @@ export function ResponderComentarioBuilder({
               <div className="border-t border-border/70 pt-4">
                 <DisabledToggleRow label="uma DM de lembrete, caso o link não tenha sido acessado" />
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <ExpiryField value={expiryForm} onChange={setExpiryForm} />
             </CardContent>
           </Card>
         </div>

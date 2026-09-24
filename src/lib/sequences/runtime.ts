@@ -7,6 +7,7 @@ import {
   sendTypingAction,
   type TemplateButton,
 } from "@/lib/meta/graph";
+import { withoutExpired } from "@/lib/expiry/expiry";
 import { getFreshToken } from "@/lib/meta/token";
 import { keywordMatches } from "@/lib/rules/engine";
 import {
@@ -138,7 +139,7 @@ export async function maybeStartSequence(
     .eq("is_active", true)
     .order("created_at");
 
-  for (const sequence of (sequences ?? []) as Sequence[]) {
+  for (const sequence of withoutExpired((sequences ?? []) as Sequence[])) {
     const trigger = findTriggerNode(sequence.graph);
     if (!trigger) continue;
     const data = trigger.data as TriggerNodeData;
@@ -181,19 +182,19 @@ export async function startSequenceFromRule(
 ): Promise<SequenceOutcome | null> {
   // Se houver mais de um workflow ativo com a mesma entrada, vale o mais
   // antigo (determinístico). Erro aqui = migration 0002 ainda não aplicada.
-  const { data: sequence, error } = await admin
+  // Sem limit(1): o mais antigo pode estar vencido (expiração) e o seguinte não.
+  const { data: candidates, error } = await admin
     .from("sequences")
     .select("*")
     .eq("account_id", account.id)
     .eq("entry_rule_id", rule.id)
     .eq("is_active", true)
-    .order("created_at")
-    .limit(1)
-    .maybeSingle<Sequence>();
+    .order("created_at");
   if (error) {
     console.warn("[falow] startSequenceFromRule: falha ao buscar workflow", error.message);
     return null;
   }
+  const sequence = withoutExpired((candidates ?? []) as Sequence[])[0];
   if (!sequence) return null;
 
   // entry_rule_id é espelho do grafo; se divergirem, o grafo manda.

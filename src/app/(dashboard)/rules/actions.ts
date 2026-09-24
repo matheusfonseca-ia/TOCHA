@@ -3,6 +3,12 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { validateExpiry } from "@/lib/expiry/expiry";
+import {
+  EXPIRED_RULE_ACTIVATION_ERROR,
+  isStoredExpired,
+} from "@/lib/expiry/guard";
+import { expiryColumns, expiryFields } from "@/lib/expiry/schema";
 import { keywordTerms } from "@/lib/rules/engine";
 import { automationRuleIdsOf } from "@/lib/sequences/graph";
 import { createClient } from "@/lib/supabase/server";
@@ -75,6 +81,7 @@ const ruleSchema = z.object({
   reply_buttons: z.array(buttonSchema).max(3).optional(),
   delay_seconds: z.coerce.number().int().min(2).max(5),
   is_active: z.boolean(),
+  ...expiryFields,
 });
 
 // z.input (não z.infer/z.output): trigger_type tem default("dm"), então
@@ -222,6 +229,9 @@ export async function saveRule(raw: RuleInput): Promise<ActionResult> {
   const ruleError = validateRule(input);
   if (ruleError) return { error: ruleError };
 
+  const expiryError = validateExpiry(input.expires_at);
+  if (expiryError) return { error: expiryError };
+
   const isComment = input.trigger_type === "comment";
 
   const row = {
@@ -252,10 +262,20 @@ export async function saveRule(raw: RuleInput): Promise<ActionResult> {
       input.reply_type === "buttons" ? input.reply_buttons : null,
     delay_seconds: input.delay_seconds,
     is_active: input.is_active,
+    ...expiryColumns(input),
     updated_at: new Date().toISOString(),
   };
 
   const supabase = createClient();
+  if (
+    input.id &&
+    input.is_active &&
+    input.expires_at === undefined &&
+    (await isStoredExpired(supabase, "rules", input.id))
+  ) {
+    return { error: EXPIRED_RULE_ACTIVATION_ERROR };
+  }
+
   // RLS garante que account_id / rule pertencem ao usuário logado.
   const { error } = input.id
     ? await supabase.from("rules").update(row).eq("id", input.id)
@@ -288,6 +308,10 @@ export async function toggleRule(
   isActive: boolean
 ): Promise<ActionResult> {
   const supabase = createClient();
+  if (isActive && (await isStoredExpired(supabase, "rules", id))) {
+    return { error: EXPIRED_RULE_ACTIVATION_ERROR };
+  }
+
   const { error } = await supabase
     .from("rules")
     .update({ is_active: isActive, updated_at: new Date().toISOString() })
@@ -360,7 +384,8 @@ const RULE_NAME_MAX = 80;
 /**
  * Duplica uma automação: copia todas as colunas (exceto id/created_at),
  * nasce pausada (`is_active = false`) para não disparar de imediato em cima
- * da original, com nome "Cópia de X".
+ * da original, com nome "Cópia de X". Não copia a expiração: a cópia nasce
+ * permanente.
  */
 export async function duplicateRule(id: string): Promise<ActionResult> {
   const supabase = createClient();

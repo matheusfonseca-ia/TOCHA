@@ -14,12 +14,16 @@ import {
   Pencil,
   Plus,
   Search,
+  Timer,
   Trash2,
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/empty-state";
+import { ExpiryBadge } from "@/components/expiry/expiry-badge";
+import { ExpiryDialog, type ExpiryTarget } from "@/components/expiry/expiry-dialog";
+import { ExpiryField } from "@/components/expiry/expiry-field";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -57,6 +61,11 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  expiryFormFrom,
+  resolveExpiryForm,
+  type ExpiryFormValue,
+} from "@/lib/expiry/expiry";
 import type {
   MatchType,
   MediaMode,
@@ -135,6 +144,9 @@ interface FormState {
   is_active: boolean;
   /** Preenchido apenas quando trigger_type === "comment". */
   comment: CommentConfig | null;
+  expiry: ExpiryFormValue;
+  /** Só envia a expiração se o usuário mexeu nela (salvar sem mexer mantém a atual). */
+  expiryTouched: boolean;
 }
 
 function emptyForm(defaultAccountId: string): FormState {
@@ -155,6 +167,8 @@ function emptyForm(defaultAccountId: string): FormState {
     delay_seconds: 3,
     is_active: true,
     comment: null,
+    expiry: expiryFormFrom(null, null),
+    expiryTouched: false,
   };
 }
 
@@ -194,6 +208,8 @@ function formFromRule(rule: RuleWithAccount): FormState {
             welcome_button_label: rule.welcome_button_label,
           }
         : null,
+    expiry: expiryFormFrom(rule.expires_at, rule.expire_action),
+    expiryTouched: false,
   };
 }
 
@@ -218,6 +234,7 @@ export function RulesManager({
   /** Workflows que usam a automação em exclusão (null = carregando). */
   const [deleteUsage, setDeleteUsage] = useState<string[] | null>(null);
   const deleteRequestRef = useRef<string | null>(null);
+  const [expiryTarget, setExpiryTarget] = useState<ExpiryTarget | null>(null);
 
   const filteredRules = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -237,6 +254,11 @@ export function RulesManager({
 
   function handleSubmit() {
     const comment = form.comment;
+    const expiry = form.expiryTouched ? resolveExpiryForm(form.expiry) : null;
+    if (expiry?.error) {
+      toast.error(expiry.error);
+      return;
+    }
     const input: RuleInput = {
       id: form.id,
       name: form.name.trim() || undefined,
@@ -261,6 +283,10 @@ export function RulesManager({
         welcome_text: comment.welcome_text ?? undefined,
         welcome_text_variants: comment.welcome_text_variants ?? undefined,
         welcome_button_label: comment.welcome_button_label ?? undefined,
+      }),
+      ...(expiry && {
+        expires_at: expiry.expires_at,
+        expire_action: expiry.expire_action,
       }),
     };
 
@@ -392,6 +418,10 @@ export function RulesManager({
                           <Badge variant={rule.is_active ? "success" : "muted"}>
                             {rule.is_active ? "Ativa" : "Pausada"}
                           </Badge>
+                          <ExpiryBadge
+                            expiresAt={rule.expires_at}
+                            expireAction={rule.expire_action}
+                          />
                           {isComment ? (
                             <MessageCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
                           ) : (
@@ -460,6 +490,21 @@ export function RulesManager({
                           >
                             <Copy />
                             Duplicar
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() =>
+                              setExpiryTarget({
+                                id: rule.id,
+                                name: title,
+                                expires_at: rule.expires_at,
+                                expire_action: rule.expire_action,
+                              })
+                            }
+                          >
+                            <Timer />
+                            {rule.expires_at
+                              ? "Estender expiração"
+                              : "Tornar temporária"}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
@@ -680,6 +725,12 @@ export function RulesManager({
                 </div>
               </div>
             </div>
+
+            <ExpiryField
+              className="rounded-md border border-input p-3"
+              value={form.expiry}
+              onChange={(expiry) => patch({ expiry, expiryTouched: true })}
+            />
           </div>
 
           <DialogFooter className="gap-2">
@@ -692,6 +743,12 @@ export function RulesManager({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ExpiryDialog
+        kind="rule"
+        target={expiryTarget}
+        onClose={() => setExpiryTarget(null)}
+      />
 
       {/* ── Confirmação de exclusão ──────────────────────────────────── */}
       <Dialog

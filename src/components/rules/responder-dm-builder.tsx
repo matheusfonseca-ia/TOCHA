@@ -19,6 +19,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ExpiryField } from "@/components/expiry/expiry-field";
+import { expiryFormFrom, resolveExpiryForm } from "@/lib/expiry/expiry";
 import { cn } from "@/lib/utils";
 import {
   deriveTitleFromUrl,
@@ -48,6 +50,7 @@ export function ResponderDmBuilder({
   const [keywordInput, setKeywordInput] = useState("");
   const [message, setMessage] = useState("");
   const [links, setLinks] = useState<LinkSlot[]>([]);
+  const [expiryForm, setExpiryForm] = useState(() => expiryFormFrom(null, null));
 
   const selectedAccount =
     accounts.find((a) => a.id === accountId) ?? accounts[0];
@@ -119,6 +122,12 @@ export function ResponderDmBuilder({
       }
     }
 
+    const expiry = resolveExpiryForm(expiryForm);
+    if (expiry.error) {
+      toast.error(expiry.error);
+      return;
+    }
+
     const input: RuleInput = {
       account_id: accountId,
       keyword: keywordTerms.join(", "),
@@ -134,6 +143,10 @@ export function ResponderDmBuilder({
           : undefined,
       delay_seconds: 3,
       is_active: true,
+      ...(expiry.expires_at && {
+        expires_at: expiry.expires_at,
+        expire_action: expiry.expire_action,
+      }),
     };
 
     startTransition(async () => {
@@ -302,6 +315,12 @@ export function ResponderDmBuilder({
                   {links.length === 0 ? "Adicionar Um Link" : "Adicionar outro link"}
                 </Button>
               )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <ExpiryField value={expiryForm} onChange={setExpiryForm} />
             </CardContent>
           </Card>
         </div>
