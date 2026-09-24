@@ -6,7 +6,7 @@ import {
   findMatchingRule,
 } from "@/lib/rules/engine";
 import { pickVariant } from "@/lib/rules/variants";
-import { classifyInboundEvent } from "@/lib/meta/triggers";
+import { classifyInboundEvent, type ClassifiedInboundEvent } from "@/lib/meta/triggers";
 import { sendRuleReply } from "@/lib/sequences/automation";
 import { isPausedAt } from "@/lib/sequences/automation-pause";
 import {
@@ -214,14 +214,18 @@ async function processMessagingEvent(
 
   // 4a. Sequência esperando esta pessoa? Continuação tem prioridade sobre
   // regras/gatilhos novos: quem está no meio de um fluxo não deve ser
-  // "sequestrado" (cobre quick replies e o nó "esperar resposta").
-  const seqReply = await handleSequenceReply(
-    admin,
-    account,
-    senderId,
-    event.message?.quick_reply?.payload,
-    classified.text
-  );
+  // "sequestrado" (cobre quick replies e o nó "esperar resposta"). Evento
+  // sem texto (menção em story, abertura por link) não é resposta: não
+  // retoma nada nem gasta tentativa do "Coletar dado".
+  const seqReply = classified.text
+    ? await handleSequenceReply(
+        admin,
+        account,
+        senderId,
+        event.message?.quick_reply?.payload,
+        classified.text
+      )
+    : null;
   if (seqReply) {
     await logSequenceInteraction(
       admin,
@@ -250,36 +254,49 @@ async function processMessagingEvent(
     return;
   }
 
-  // 4b. Matching de regras — só existe o conceito de regra pra DM (comentário
-  // é outro pipeline, story/refLink só valem pra workflows). Regras vencidas
-  // (expiração) são ignoradas mesmo antes do sweep rodar.
-  let rule: Rule | null = null;
-  let result: { status: InteractionStatus; errorDetail?: string } | null = null;
-  if (classified.kind === "dm") {
-    const { data: rules } = await admin
-      .from("rules")
-      .select("*")
-      .eq("account_id", account.id)
-      .eq("trigger_type", "dm")
-      .eq("is_active", true);
-
-    rule = findMatchingRule(
-      classified.text,
-      withoutExpired((rules ?? []) as Rule[])
-    );
-    result = rule ? await applyRule(admin, account, rule, senderId, event) : null;
+  // 4b. Gatilho específico (resposta ou menção em story, link de referência)
+  // vem antes de tudo: foi configurado exatamente para esse tipo de evento.
+  if (classified.kind !== "dm") {
+    const specific = await maybeStartSequence(admin, account, senderId, classified, deadline);
+    if (specific) {
+      await logSequenceInteraction(admin, account, senderId, classified.text, specific, startedAt);
+      return;
+    }
   }
 
-  // 4c. Nenhuma regra respondeu (não casou, ou casou mas já tinha disparado
-  // para esta pessoa: duplicate_skip) → tenta os workflows (palavra-chave em
-  // DM, resposta a story, menção em story, link de referência). Decisão do
-  // usuário: duplicate_skip da regra não bloqueia o workflow.
+  // Sem texto (menção pura, abertura por link) e sem workflow específico:
+  // nada a responder e nada útil a registrar.
+  if (!classified.text) return;
+
+  // 4c. Com texto, o evento também vale como DM comum: resposta a story com
+  // "preço" continua acionando a automação de DM "preço", como antes dos
+  // gatilhos de story existirem. Regras vencidas (expiração) são ignoradas
+  // mesmo antes do sweep rodar.
+  const asDm: ClassifiedInboundEvent = { kind: "dm", text: classified.text };
+  const { data: rules } = await admin
+    .from("rules")
+    .select("*")
+    .eq("account_id", account.id)
+    .eq("trigger_type", "dm")
+    .eq("is_active", true);
+
+  const rule: Rule | null = findMatchingRule(
+    asDm.text,
+    withoutExpired((rules ?? []) as Rule[])
+  );
+  const result: { status: InteractionStatus; errorDetail?: string } | null = rule
+    ? await applyRule(admin, account, rule, senderId, event)
+    : null;
+
+  // 4d. Nenhuma regra respondeu (não casou, ou casou mas já tinha disparado
+  // para esta pessoa: duplicate_skip) → workflows de palavra-chave na DM.
+  // Decisão do usuário: duplicate_skip da regra não bloqueia o workflow.
   if (!result || result.status === "duplicate_skip") {
     const seqStart = await maybeStartSequence(
       admin,
       account,
       senderId,
-      classified,
+      asDm,
       deadline
     );
     if (seqStart) {
@@ -636,6 +653,22 @@ async function processCommentEvent(
   if (senderId === account.ig_user_id) return;
 
   const startedAt = Date.now();
+
+  // "Pausar automações" vale para comentário também: a automação de
+  // comentário é a porta de entrada dos workflows ligados a ela.
+  const pausedUntil = await automationPausedUntil(admin, account.id, senderId);
+  if (pausedUntil) {
+    await admin.from("interactions").insert({
+      account_id: account.id,
+      ig_sender_id: senderId,
+      message_text: text.slice(0, 2000),
+      status: "no_match",
+      reply_type: null,
+      error_detail: `Automações pausadas até ${pausedUntil}`,
+      latency_ms: Date.now() - startedAt,
+    });
+    return;
+  }
 
   const { data: rules } = await admin
     .from("rules")

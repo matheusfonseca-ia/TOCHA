@@ -116,14 +116,35 @@ describe("triggerMatchesInbound", () => {
     ).toBe(false);
   });
 
-  it("refLink com keyword também filtra pelo texto, além do código", () => {
+  it("refLink ignora palavra-chave que sobrou de outro modo: o código basta", () => {
     const data = triggerData({ source: "refLink", refCode: "promo10", keyword: "quero" });
     expect(
-      triggerMatchesInbound(data, { kind: "refLink", text: "quero o desconto", ref: "promo10" })
+      triggerMatchesInbound(data, { kind: "refLink", text: "", ref: "promo10" })
     ).toBe(true);
+  });
+
+  it("storyMention ignora palavra-chave (menção não tem texto)", () => {
+    const data = triggerData({ source: "storyMention", keyword: "promo" });
+    expect(triggerMatchesInbound(data, { kind: "storyMention", text: "" })).toBe(true);
+  });
+
+  it("anyMessage que sobrou do modo 'Qualquer DM' não anula o filtro de story", () => {
+    const data = triggerData({ source: "storyReply", anyMessage: true, keyword: "top" });
+    expect(triggerMatchesInbound(data, { kind: "storyReply", text: "legal" })).toBe(false);
+    expect(triggerMatchesInbound(data, { kind: "storyReply", text: "top!" })).toBe(true);
+  });
+
+  it("gatilho ainda não definido (unset) nunca casa", () => {
+    const data = triggerData({ source: "unset", anyMessage: true });
+    expect(triggerMatchesInbound(data, { kind: "dm", text: "oi" })).toBe(false);
+  });
+});
+
+describe("classifyInboundEvent: referral dentro da mensagem", () => {
+  it("conversa nova aberta por ig.me?ref traz o ref em message.referral", () => {
     expect(
-      triggerMatchesInbound(data, { kind: "refLink", text: "oi", ref: "promo10" })
-    ).toBe(false);
+      classifyInboundEvent({ message: { text: "oi", referral: { ref: "promo10" } } })
+    ).toEqual({ kind: "refLink", text: "oi", ref: "promo10" });
   });
 });
 
