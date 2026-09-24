@@ -62,6 +62,9 @@ const NODE_TYPE_LABELS: Record<SequenceNodeType, string> = {
   delay: "Atraso",
   waitReply: "Esperar resposta",
   automation: "Automação",
+  randomizer: "Aleatório",
+  goToSequence: "Ir para workflow",
+  stopAutomation: "Pausar automações",
 };
 
 const STATUS_FILTERS: { value: SequenceRunStatus | ""; label: string }[] = [

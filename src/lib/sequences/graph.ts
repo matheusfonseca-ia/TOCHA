@@ -4,14 +4,19 @@ import {
   OUT_HANDLE,
   QR_FALLBACK_HANDLE,
   quickReplyHandle,
+  randomizerHandle,
   type AutomationNodeData,
   type ButtonsNodeData,
   type DelayNodeData,
   type DelayUnit,
+  type GoToSequenceNodeData,
   type MessageNodeData,
   type QuickRepliesNodeData,
+  type RandomizerNodeData,
+  type Sequence,
   type SequenceGraph,
   type SequenceGraphNode,
+  type StopAutomationNodeData,
   type TriggerNodeData,
   type TriggerSource,
 } from "@/types/sequence";
@@ -33,6 +38,13 @@ export const DELAY_MIN_SECONDS = 5;
 export const DELAY_MAX_SECONDS = 23 * 60 * 60;
 /** Atraso mínimo para um nó de atraso contar como espera dentro de um ciclo. */
 export const CYCLE_DELAY_MIN_SECONDS = 60 * 60;
+// Nó "Aleatório": de 2 a 5 caminhos, pesos somando exatamente 100.
+export const MIN_RANDOMIZER_BRANCHES = 2;
+export const MAX_RANDOMIZER_BRANCHES = 5;
+export const RANDOMIZER_WEIGHT_TOTAL = 100;
+// Nó "Pausar automações": de 1h a 72h (3 dias).
+export const STOP_AUTOMATION_MIN_HOURS = 1;
+export const STOP_AUTOMATION_MAX_HOURS = 72;
 
 const DELAY_UNIT_SECONDS: Record<DelayUnit, number> = {
   seconds: 1,
@@ -58,9 +70,7 @@ export function findTriggerNode(graph: SequenceGraph): SequenceGraphNode | null 
 /** Origem do gatilho; grafos anteriores ao nó Automação não têm o campo (= "dm"). */
 export function triggerSourceOf(graph: SequenceGraph): TriggerSource {
   const trigger = findTriggerNode(graph);
-  return (trigger?.data as TriggerNodeData | undefined)?.source === "automation"
-    ? "automation"
-    : "dm";
+  return (trigger?.data as TriggerNodeData | undefined)?.source ?? "dm";
 }
 
 /**
@@ -80,18 +90,37 @@ export function findEntryAutomationNode(
 /**
  * Rule que dá entrada no fluxo, ou null. É o valor que o save grava em
  * `sequences.entry_rule_id` (o webhook busca o workflow por essa coluna).
+ * A rule pode estar direto no gatilho (`ruleId`, formato atual — prioridade)
+ * ou num nó Automação ligado a ele (`findEntryAutomationNode`, formato legado).
  */
 export function entryRuleIdOf(graph: SequenceGraph): string | null {
+  const trigger = findTriggerNode(graph);
+  const triggerData = trigger?.data as TriggerNodeData | undefined;
+  if (triggerData?.source === "automation" && triggerData.ruleId?.trim()) {
+    return triggerData.ruleId;
+  }
   const entry = findEntryAutomationNode(graph);
   const ruleId = (entry?.data as AutomationNodeData | undefined)?.ruleId;
   return ruleId?.trim() ? ruleId : null;
 }
 
-/** Ids (únicos) de todas as rules referenciadas por nós Automação. */
+/** Ids (únicos) de todas as rules referenciadas (nós Automação + gatilho por automação). */
 export function automationRuleIdsOf(graph: SequenceGraph): string[] {
+  const trigger = findTriggerNode(graph);
+  const triggerRuleId = (trigger?.data as TriggerNodeData | undefined)?.ruleId;
   const ids = graph.nodes
     .filter((n) => n.type === "automation")
     .map((n) => (n.data as AutomationNodeData).ruleId)
+    .filter((id): id is string => !!id?.trim());
+  if (triggerRuleId?.trim()) ids.push(triggerRuleId);
+  return Array.from(new Set(ids));
+}
+
+/** Ids (únicos) das sequências referenciadas por nós "Ir para workflow". */
+export function goToSequenceIdsOf(graph: SequenceGraph): string[] {
+  const ids = graph.nodes
+    .filter((n) => n.type === "goToSequence")
+    .map((n) => (n.data as GoToSequenceNodeData).sequenceId)
     .filter((id): id is string => !!id?.trim());
   return Array.from(new Set(ids));
 }
@@ -223,6 +252,13 @@ export function sourceHandlesOf(node: SequenceGraphNode): string[] {
         QR_FALLBACK_HANDLE,
       ];
     }
+    case "randomizer": {
+      const data = node.data as RandomizerNodeData;
+      return data.branches.map((_, i) => randomizerHandle(i));
+    }
+    case "goToSequence":
+      // Terminal: o run atual encerra aqui e outro workflow assume a pessoa.
+      return [];
     default:
       return [OUT_HANDLE];
   }
@@ -241,10 +277,20 @@ function validateNode(node: SequenceGraphNode): string | null {
   switch (node.type) {
     case "trigger": {
       const data = node.data as TriggerNodeData;
-      // Em source "automation" quem dispara é a rule do 1º nó (validada à parte).
-      if (data.source === "automation") return null;
-      if (!data.anyMessage && !data.keyword.trim()) {
+      const source = data.source ?? "dm";
+      // Workflow novo, gatilho ainda não escolhido no editor.
+      if (source === "unset") return "Defina o gatilho do workflow.";
+      // Em source "automation" quem dispara é a rule (no próprio gatilho, via
+      // `ruleId`, ou no nó Automação ligado a ele — checado à parte).
+      if (source === "automation") return null;
+      if (source === "dm" && !data.anyMessage && !data.keyword.trim()) {
         return "Gatilho: informe a palavra-chave ou marque “qualquer mensagem”.";
+      }
+      // Fora do modo DM a palavra-chave é só um filtro opcional (o próprio
+      // tipo de evento já é o sinal): storyReply/storyMention não exigem
+      // mais nada, refLink exige o código do link.
+      if (source === "refLink" && !data.refCode?.trim()) {
+        return "Gatilho: informe o código do link de referência.";
       }
       return null;
     }
@@ -310,6 +356,44 @@ function validateNode(node: SequenceGraphNode): string | null {
       if (!data.ruleId?.trim()) return "Automação: selecione qual automação usar.";
       return null;
     }
+    case "randomizer": {
+      const data = node.data as RandomizerNodeData;
+      if (
+        data.branches.length < MIN_RANDOMIZER_BRANCHES ||
+        data.branches.length > MAX_RANDOMIZER_BRANCHES
+      ) {
+        return `Aleatório: use de ${MIN_RANDOMIZER_BRANCHES} a ${MAX_RANDOMIZER_BRANCHES} caminhos.`;
+      }
+      if (data.branches.some((b) => !b.label.trim())) {
+        return "Aleatório: todo caminho precisa de um nome.";
+      }
+      if (data.branches.some((b) => !(b.weight > 0))) {
+        return "Aleatório: cada caminho precisa de uma porcentagem maior que zero.";
+      }
+      const total = data.branches.reduce((sum, b) => sum + b.weight, 0);
+      if (total !== RANDOMIZER_WEIGHT_TOTAL) {
+        return `Aleatório: as porcentagens precisam somar ${RANDOMIZER_WEIGHT_TOTAL}.`;
+      }
+      return null;
+    }
+    case "goToSequence": {
+      const data = node.data as GoToSequenceNodeData;
+      if (!data.sequenceId?.trim()) {
+        return "Ir para workflow: escolha o workflow de destino.";
+      }
+      return null;
+    }
+    case "stopAutomation": {
+      const data = node.data as StopAutomationNodeData;
+      if (
+        !Number.isFinite(data.hours) ||
+        data.hours < STOP_AUTOMATION_MIN_HOURS ||
+        data.hours > STOP_AUTOMATION_MAX_HOURS
+      ) {
+        return `Pausar automações: escolha de ${STOP_AUTOMATION_MIN_HOURS} a ${STOP_AUTOMATION_MAX_HOURS} horas.`;
+      }
+      return null;
+    }
   }
 }
 
@@ -336,8 +420,43 @@ export type AutomationRuleRef = Pick<Rule, "id" | "trigger_type" | "account_id">
  */
 export interface GraphValidationContext {
   rulesById?: Map<string, AutomationRuleRef>;
-  /** Conta da sequência: toda rule referenciada precisa ser dela. */
+  /** Conta da sequência: toda rule/workflow referenciado precisa ser dela. */
   accountId?: string;
+  /** O que a validação do nó "Ir para workflow" precisa saber de cada workflow alvo. */
+  sequencesById?: Map<string, Pick<Sequence, "id" | "account_id">>;
+  /** Id da própria sequência sendo validada — barra apontar pra si mesma. */
+  selfSequenceId?: string;
+}
+
+/**
+ * Nó "Ir para workflow": não pode apontar pra própria sequência (loop
+ * imediato) e, quando o contexto traz os workflows da conta, o alvo precisa
+ * existir e ser da mesma conta. Sem `sequencesById` (ex.: validação rápida
+ * no editor antes de carregar a lista), só a checagem de auto-referência roda.
+ */
+function validateGoToSequenceNodes(
+  graph: SequenceGraph,
+  ctx: GraphValidationContext
+): string | null {
+  for (const node of graph.nodes) {
+    if (node.type !== "goToSequence") continue;
+    const targetId = (node.data as GoToSequenceNodeData).sequenceId?.trim();
+    if (!targetId) continue; // já reportado por validateNode
+
+    if (ctx.selfSequenceId && targetId === ctx.selfSequenceId) {
+      return "Ir para workflow: não pode apontar para o próprio workflow.";
+    }
+    if (!ctx.sequencesById) continue;
+
+    const target = ctx.sequencesById.get(targetId);
+    if (!target) {
+      return "Ir para workflow: o workflow de destino não existe mais.";
+    }
+    if (ctx.accountId && target.account_id !== ctx.accountId) {
+      return "Ir para workflow: o workflow de destino é de outra conta do Instagram.";
+    }
+  }
+  return null;
 }
 
 function validateAutomationNodes(
@@ -345,18 +464,34 @@ function validateAutomationNodes(
   trigger: SequenceGraphNode,
   ctx: GraphValidationContext
 ): string | null {
-  const source = (trigger.data as TriggerNodeData).source ?? "dm";
+  const triggerData = trigger.data as TriggerNodeData;
+  const source = triggerData.source ?? "dm";
+  const triggerRuleId = triggerData.ruleId?.trim() ?? "";
   const firstId = targetOf(graph, trigger.id, OUT_HANDLE);
   const first = firstId ? nodeById(graph, firstId) : null;
 
-  if (source === "automation" && first?.type !== "automation") {
-    return "Gatilho por automação: ligue o gatilho direto a um bloco Automação.";
+  // Duas formas válidas de dar entrada por automação: a rule direto no
+  // gatilho (`ruleId`, formato atual) ou num nó Automação ligado a ele
+  // (formato legado). Precisa de pelo menos uma.
+  if (source === "automation" && !triggerRuleId && first?.type !== "automation") {
+    return "Gatilho por automação: escolha a automação no gatilho, ou ligue o gatilho direto a um bloco Automação.";
+  }
+
+  if (source === "automation" && triggerRuleId && ctx.rulesById) {
+    const rule = ctx.rulesById.get(triggerRuleId);
+    if (!rule) {
+      return "Automação removida: escolha outra automação no gatilho.";
+    }
+    if (ctx.accountId && rule.account_id !== ctx.accountId) {
+      return "Gatilho: a automação escolhida é de outra conta do Instagram.";
+    }
   }
 
   for (const node of graph.nodes) {
     if (node.type !== "automation" || !ctx.rulesById) continue;
     const ruleId = (node.data as AutomationNodeData).ruleId;
-    const isEntry = source === "automation" && node.id === first?.id;
+    // Só conta como "entrada" quando o gatilho não já tem a rule direto nele.
+    const isEntry = source === "automation" && !triggerRuleId && node.id === first?.id;
 
     const rule = ctx.rulesById.get(ruleId);
     if (!rule) {
@@ -453,6 +588,9 @@ export function validateSequenceGraph(
   const automationError = validateAutomationNodes(graph, trigger, ctx);
   if (automationError) return automationError;
 
+  const goToSequenceError = validateGoToSequenceNodes(graph, ctx);
+  if (goToSequenceError) return goToSequenceError;
+
   // Ciclo com espera (resposta, botão, atraso) é permitido; sem espera ele
   // dispararia mensagens em laço. O editor destaca os nós com
   // findCyclesWithoutWait.
@@ -468,6 +606,18 @@ export function triggerSummary(graph: SequenceGraph): string {
   const trigger = findTriggerNode(graph);
   if (!trigger) return "Sem gatilho";
   const data = trigger.data as TriggerNodeData;
-  if (data.source === "automation") return "Quando uma automação disparar";
-  return data.anyMessage ? "Qualquer mensagem" : data.keyword;
+  switch (data.source) {
+    case "unset":
+      return "Gatilho não definido";
+    case "automation":
+      return "Quando uma automação disparar";
+    case "storyReply":
+      return data.keyword.trim() ? `Resposta a story com “${data.keyword}”` : "Resposta a qualquer story";
+    case "storyMention":
+      return "Menção em story";
+    case "refLink":
+      return data.refCode?.trim() ? `Link de referência (${data.refCode})` : "Link de referência";
+    default:
+      return data.anyMessage ? "Qualquer mensagem" : data.keyword;
+  }
 }

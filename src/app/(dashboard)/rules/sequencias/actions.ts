@@ -9,6 +9,7 @@ import {
   automationRuleIdsOf,
   entryRuleIdOf,
   findTriggerNode,
+  goToSequenceIdsOf,
   MAX_NODES,
   triggerSourceOf,
   validateSequenceGraph,
@@ -25,10 +26,17 @@ const nodeSchema = z.discriminatedUnion("type", [
     ...nodeBase,
     type: z.literal("trigger"),
     data: z.object({
-      source: z.enum(["dm", "automation"]).optional(),
+      source: z
+        .enum(["unset", "dm", "automation", "storyReply", "storyMention", "refLink"])
+        .optional(),
       anyMessage: z.boolean(),
       keyword: z.string().max(200),
       matchType: z.enum(["exact", "contains", "starts_with"]),
+      refCode: z.string().max(120).optional(),
+      // Automação escolhida direto no gatilho (source "automation"). String
+      // livre: o validateSequenceGraph devolve a mensagem amigável quando
+      // nenhuma automação foi escolhida.
+      ruleId: z.string().max(64).optional(),
     }),
   }),
   z.object({
@@ -83,6 +91,31 @@ const nodeSchema = z.discriminatedUnion("type", [
     // String livre (inclusive vazia): o validateSequenceGraph devolve a
     // mensagem amigável quando nenhuma automação foi escolhida.
     data: z.object({ ruleId: z.string().max(64) }),
+  }),
+  z.object({
+    ...nodeBase,
+    type: z.literal("randomizer"),
+    data: z.object({
+      branches: z
+        .array(
+          z.object({
+            label: z.string().max(40),
+            weight: z.number(),
+          })
+        )
+        .min(2)
+        .max(5),
+    }),
+  }),
+  z.object({
+    ...nodeBase,
+    type: z.literal("goToSequence"),
+    data: z.object({ sequenceId: z.string().max(64) }),
+  }),
+  z.object({
+    ...nodeBase,
+    type: z.literal("stopAutomation"),
+    data: z.object({ hours: z.number() }),
   }),
 ]);
 
@@ -207,9 +240,22 @@ export async function saveSequence(
         .select("id, trigger_type, account_id")
         .in("id", ruleIds)
     : { data: [] };
+
+  // Workflows referenciados por nós "Ir para workflow": id + conta, pra
+  // checar existência e que são da mesma conta.
+  const targetSequenceIds = goToSequenceIdsOf(graph);
+  const { data: sequenceRefs } = targetSequenceIds.length
+    ? await supabase
+        .from("sequences")
+        .select("id, account_id")
+        .in("id", targetSequenceIds)
+    : { data: [] };
+
   const graphError = validateSequenceGraph(graph, {
     accountId: input.account_id,
     rulesById: new Map((ruleRefs ?? []).map((r) => [r.id, r])),
+    sequencesById: new Map((sequenceRefs ?? []).map((s) => [s.id, s])),
+    selfSequenceId: input.id,
   });
   if (graphError) return { error: graphError };
 

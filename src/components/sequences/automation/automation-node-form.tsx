@@ -6,20 +6,12 @@ import { CommentPhonePreview } from "@/components/rules/comment-phone-preview";
 import { DmPhonePreview } from "@/components/rules/dm-phone-preview";
 import { Badge } from "@/components/ui/badge";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import type { Rule } from "@/types/database";
 import type { AutomationNodeData, TriggerSource } from "@/types/sequence";
 
 import { ruleDisplayName, ruleTypeLabel } from "./automation-rules-context";
+import { RuleSelect } from "./rule-select";
 
 /**
  * Formulário do inspector para o nó "Automação": escolhe uma automação da
@@ -63,7 +55,6 @@ export function AutomationNodeForm({
 }: AutomationNodeFormProps) {
   const rule = rules.find((r) => r.id === data.ruleId) ?? null;
   const removed = !!data.ruleId && !rule;
-  const dmRules = rules.filter((r) => r.trigger_type !== "comment");
   const commentRules = rules.filter((r) => r.trigger_type === "comment");
   const isEntry = isEntryPosition && triggerSource === "automation";
 
@@ -80,40 +71,12 @@ export function AutomationNodeForm({
     <div className="space-y-4">
       <div className="space-y-2">
         <Label>Automação</Label>
-        <Select value={rule ? rule.id : ""} onValueChange={selectRule}>
-          <SelectTrigger>
-            <SelectValue placeholder="Escolha uma automação" />
-          </SelectTrigger>
-          <SelectContent>
-            {rules.length === 0 && (
-              <p className="px-2 py-1.5 text-xs text-muted-foreground">
-                Nenhuma automação nesta conta ainda.
-              </p>
-            )}
-            {dmRules.length > 0 && (
-              <SelectGroup>
-                <SelectLabel>DM</SelectLabel>
-                {dmRules.map((r) => (
-                  <SelectItem key={r.id} value={r.id}>
-                    {ruleDisplayName(r)}
-                    {!r.is_active && " (pausada)"}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            )}
-            {commentRules.length > 0 && (
-              <SelectGroup>
-                <SelectLabel>Comentário</SelectLabel>
-                {commentRules.map((r) => (
-                  <SelectItem key={r.id} value={r.id} disabled={!isEntryPosition}>
-                    {ruleDisplayName(r)}
-                    {!r.is_active && " (pausada)"}
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            )}
-          </SelectContent>
-        </Select>
+        <RuleSelect
+          rules={rules}
+          value={rule ? rule.id : ""}
+          onChange={selectRule}
+          disableComment={!isEntryPosition}
+        />
         {commentRules.length > 0 && !isEntryPosition && (
           <p className="text-xs text-muted-foreground">
             Automações de comentário só podem ser o primeiro bloco, ligado

@@ -30,8 +30,10 @@ import {
   MessageSquareText,
   Minimize2,
   MousePointerClick,
+  PauseOctagon,
   Plus,
   Redo2,
+  Shuffle,
   Timer,
   Undo2,
   Workflow,
@@ -44,6 +46,7 @@ import {
   type SequenceInput,
 } from "@/app/(dashboard)/rules/sequencias/actions";
 import { AutomationRulesProvider } from "@/components/sequences/automation";
+import { GoToSequenceProvider } from "@/components/sequences/extras";
 import { findFirstInvalidNode } from "@/components/sequences/find-invalid-node";
 import { SequenceConfirmDialog } from "@/components/sequences/sequence-confirm-dialog";
 import { SequenceInspector, type InspectorNode } from "@/components/sequences/sequence-inspector";
@@ -107,6 +110,9 @@ const PALETTE: {
   { type: "delay", label: "Atraso", icon: Timer },
   { type: "waitReply", label: "Esperar resposta", icon: Hourglass },
   { type: "automation", label: "Automação", icon: Workflow },
+  { type: "randomizer", label: "Aleatório", icon: Shuffle },
+  { type: "goToSequence", label: "Ir para workflow", icon: Workflow },
+  { type: "stopAutomation", label: "Pausar automações", icon: PauseOctagon },
 ];
 
 // Largura fixa dos blocos no canvas (w-60 em sequence-nodes.tsx) e altura
@@ -124,7 +130,8 @@ const HISTORY_DEBOUNCE_MS = 400;
 function defaultDataFor(type: SequenceNodeType): SequenceNodeData {
   switch (type) {
     case "trigger":
-      return { anyMessage: false, keyword: "", matchType: "contains" };
+      // "unset": o usuário escolhe o gatilho no inspector antes de salvar.
+      return { source: "unset", anyMessage: false, keyword: "", matchType: "contains" };
     case "message":
       return { kind: "text", text: "", imageUrl: "" };
     case "buttons":
@@ -137,6 +144,17 @@ function defaultDataFor(type: SequenceNodeType): SequenceNodeData {
       return {};
     case "automation":
       return { ruleId: "" };
+    case "randomizer":
+      return {
+        branches: [
+          { label: "A", weight: 50 },
+          { label: "B", weight: 50 },
+        ],
+      };
+    case "goToSequence":
+      return { sequenceId: "" };
+    case "stopAutomation":
+      return { hours: 24 };
   }
 }
 
@@ -259,12 +277,20 @@ function findFreePosition(
   return { x: desired.x, y };
 }
 
+export interface SequenceOption {
+  id: string;
+  account_id: string;
+  name: string;
+}
+
 export function SequenceEditor(props: {
   accounts: AccountOption[];
   sequence?: Sequence;
   runs?: SequenceRun[];
-  /** Automações (rules) de todas as contas do usuário, para o nó Automação. */
+  /** Automações (rules) de todas as contas do usuário, para o nó Automação e o gatilho. */
   rules?: Rule[];
+  /** Outros workflows do usuário, para o nó "Ir para workflow". */
+  sequences?: SequenceOption[];
 }) {
   return (
     <ReactFlowProvider>
@@ -278,11 +304,13 @@ function EditorInner({
   sequence,
   runs = [],
   rules = [],
+  sequences = [],
 }: {
   accounts: AccountOption[];
   sequence?: Sequence;
   runs?: SequenceRun[];
   rules?: Rule[];
+  sequences?: SequenceOption[];
 }) {
   const router = useRouter();
   const { resolvedTheme } = useTheme();
@@ -304,7 +332,11 @@ function EditorInner({
   const [accountId, setAccountId] = useState(
     sequence?.account_id ?? accounts[0]?.id ?? ""
   );
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Workflow novo (sem `sequence`): o editor já abre com o gatilho
+  // selecionado, pra a pessoa escolher "quando começar" antes de mais nada.
+  const [selectedId, setSelectedId] = useState<string | null>(
+    () => (sequence ? null : graph.nodes.find((n) => n.type === "trigger")?.id ?? null)
+  );
 
   // ── Nó "Automação" ──────────────────────────────────────────────────────
   // Só as automações da conta escolhida; a validação barra rule de outra
@@ -313,6 +345,16 @@ function EditorInner({
     () => rules.filter((r) => r.account_id === accountId),
     [rules, accountId]
   );
+
+  // ── Nó "Ir para workflow" ────────────────────────────────────────────────
+  // Outros workflows ativos da mesma conta (nunca o próprio, pra não dar
+  // pra escolher a si mesmo já na lista).
+  const accountSequences = useMemo(
+    () =>
+      sequences.filter((s) => s.account_id === accountId && s.id !== sequence?.id),
+    [sequences, accountId, sequence?.id]
+  );
+
   const liveGraph = useMemo(() => serializeGraph(nodes, edges), [nodes, edges]);
   const entryNodeId = useMemo(() => {
     const trigger = findTriggerNode(liveGraph);
@@ -841,6 +883,7 @@ function EditorInner({
               rules={accountRules}
               entryRuleId={entryRuleIdOf(liveGraph)}
             >
+            <GoToSequenceProvider sequences={accountSequences}>
             <ReactFlow
               nodes={nodes}
               edges={edges}
@@ -882,6 +925,7 @@ function EditorInner({
                 ariaLabel="Miniatura do fluxo"
               />
             </ReactFlow>
+            </GoToSequenceProvider>
             </AutomationRulesProvider>
           </InvalidNodeContext.Provider>
         </div>
@@ -903,6 +947,7 @@ function EditorInner({
               triggerSource: triggerSourceOf(liveGraph),
               onTriggerSourceChange: handleTriggerSourceChange,
             }}
+            goToSequenceOptions={accountSequences}
           />
         </aside>
       </div>

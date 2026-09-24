@@ -4,6 +4,9 @@ import {
   automationRuleIdsOf,
   entryRuleIdOf,
   findCyclesWithoutWait,
+  goToSequenceIdsOf,
+  sourceHandlesOf,
+  triggerSourceOf,
   triggerSummary,
   validateSequenceGraph,
   type AutomationRuleRef,
@@ -12,11 +15,13 @@ import {
   buttonHandle,
   OUT_HANDLE,
   quickReplyHandle,
+  randomizerHandle,
   type SequenceGraph,
   type SequenceGraphEdge,
   type SequenceGraphNode,
   type SequenceNodeData,
   type SequenceNodeType,
+  type TriggerNodeData,
 } from "@/types/sequence";
 
 // ── Construtores de grafo ───────────────────────────────────────────────────
@@ -33,7 +38,7 @@ function edge(source: string, target: string, handle = OUT_HANDLE): SequenceGrap
   return { id: `${source}-${handle}-${target}`, source, sourceHandle: handle, target };
 }
 
-const trigger = (data: Partial<{ source: "dm" | "automation" }> = {}) =>
+const trigger = (data: Partial<TriggerNodeData> = {}) =>
   node("t", "trigger", {
     anyMessage: false,
     keyword: "preço",
@@ -57,6 +62,11 @@ const branchButtons = (id: string) =>
 const quickReplies = (id: string) =>
   node(id, "quickReplies", { text: "qual?", options: ["A"] });
 const automation = (id: string, ruleId: string) => node(id, "automation", { ruleId });
+const randomizer = (id: string, branches = [{ label: "A", weight: 50 }, { label: "B", weight: 50 }]) =>
+  node(id, "randomizer", { branches });
+const goToSequence = (id: string, sequenceId: string) =>
+  node(id, "goToSequence", { sequenceId });
+const stopAutomation = (id: string, hours = 24) => node(id, "stopAutomation", { hours });
 
 // ── Ciclos ──────────────────────────────────────────────────────────────────
 
@@ -296,5 +306,238 @@ describe("validateSequenceGraph: nó Automação", () => {
       edges: [edge("t", "x"), edge("x", "w"), edge("w", "y"), edge("y", "z")],
     };
     expect(automationRuleIdsOf(graph).sort()).toEqual(["r1", "r2"]);
+  });
+});
+
+// ── Gatilho: "unset" e automação escolhida direto nele ──────────────────────
+
+describe("validateSequenceGraph: gatilho unset / automação direto no gatilho", () => {
+  it("source unset bloqueia salvar (workflow novo, gatilho ainda não escolhido)", () => {
+    const graph: SequenceGraph = {
+      nodes: [
+        node("t", "trigger", {
+          source: "unset",
+          anyMessage: false,
+          keyword: "",
+          matchType: "contains",
+        }),
+        msg("a"),
+      ],
+      edges: [edge("t", "a")],
+    };
+    expect(validateSequenceGraph(graph)).toMatch(/Defina o gatilho/);
+  });
+
+  it("grafo legado sem o campo source nunca é unset — continua dm", () => {
+    const graph: SequenceGraph = {
+      nodes: [trigger(), msg("a")],
+      edges: [edge("t", "a")],
+    };
+    expect(triggerSourceOf(graph)).toBe("dm");
+    expect(validateSequenceGraph(graph)).toBeNull();
+  });
+
+  it("automação escolhida direto no gatilho (ruleId) é válida sem nenhum nó Automação", () => {
+    const graph: SequenceGraph = {
+      nodes: [trigger({ source: "automation", ruleId: dmRule.id }), msg("a")],
+      edges: [edge("t", "a")],
+    };
+    expect(
+      validateSequenceGraph(graph, { accountId: ACCOUNT, rulesById: rules(dmRule) })
+    ).toBeNull();
+    expect(entryRuleIdOf(graph)).toBe(dmRule.id);
+    expect(triggerSummary(graph)).toBe("Quando uma automação disparar");
+  });
+
+  it("rule escolhida direto no gatilho: removida ou de outra conta é inválida", () => {
+    const removed: SequenceGraph = {
+      nodes: [trigger({ source: "automation", ruleId: "r-sumiu" }), msg("a")],
+      edges: [edge("t", "a")],
+    };
+    expect(validateSequenceGraph(removed, { rulesById: rules() })).toMatch(
+      /Automação removida/
+    );
+
+    const otherAccount: SequenceGraph = {
+      nodes: [trigger({ source: "automation", ruleId: "r-outra" }), msg("a")],
+      edges: [edge("t", "a")],
+    };
+    expect(
+      validateSequenceGraph(otherAccount, {
+        accountId: ACCOUNT,
+        rulesById: rules({ id: "r-outra", trigger_type: "dm", account_id: "acc-2" }),
+      })
+    ).toMatch(/outra conta/);
+  });
+
+  it("automação de comentário direto no gatilho não exige nenhum nó Automação conectado", () => {
+    const graph: SequenceGraph = {
+      nodes: [trigger({ source: "automation", ruleId: commentRule.id }), msg("a")],
+      edges: [edge("t", "a")],
+    };
+    expect(
+      validateSequenceGraph(graph, { accountId: ACCOUNT, rulesById: rules(commentRule) })
+    ).toBeNull();
+    expect(entryRuleIdOf(graph)).toBe(commentRule.id);
+  });
+
+  it("formato legado (nó Automação de entrada) continua válido quando o gatilho não tem ruleId", () => {
+    // Mesmo grafo do teste "rule de comentário como entrada" acima — cobertura
+    // explícita de que o formato antigo não quebrou com o gatilho novo.
+    const graph: SequenceGraph = {
+      nodes: [trigger({ source: "automation" }), automation("x", commentRule.id), msg("a")],
+      edges: [edge("t", "x"), edge("x", "a")],
+    };
+    expect(
+      validateSequenceGraph(graph, { accountId: ACCOUNT, rulesById: rules(commentRule) })
+    ).toBeNull();
+    expect(entryRuleIdOf(graph)).toBe(commentRule.id);
+  });
+});
+
+// ── Nó Aleatório ──────────────────────────────────────────────────────────
+
+describe("validateSequenceGraph: nó Aleatório", () => {
+  it("2 caminhos 50/50 é válido, com um handle por caminho", () => {
+    const graph: SequenceGraph = {
+      nodes: [trigger(), randomizer("r"), msg("a"), msg("b")],
+      edges: [
+        edge("t", "r"),
+        edge("r", "a", randomizerHandle(0)),
+        edge("r", "b", randomizerHandle(1)),
+      ],
+    };
+    expect(validateSequenceGraph(graph)).toBeNull();
+    const node = graph.nodes.find((n) => n.id === "r")!;
+    expect(sourceHandlesOf(node)).toEqual([randomizerHandle(0), randomizerHandle(1)]);
+  });
+
+  it("menos de 2 ou mais de 5 caminhos é inválido", () => {
+    const tooFew: SequenceGraph = {
+      nodes: [trigger(), randomizer("r", [{ label: "A", weight: 100 }]), msg("a")],
+      edges: [edge("t", "r"), edge("r", "a", randomizerHandle(0))],
+    };
+    expect(validateSequenceGraph(tooFew)).toMatch(/de 2 a 5 caminhos/);
+
+    const tooMany: SequenceGraph = {
+      nodes: [
+        trigger(),
+        randomizer(
+          "r",
+          Array.from({ length: 6 }, (_, i) => ({ label: `C${i}`, weight: 100 / 6 }))
+        ),
+      ],
+      edges: [edge("t", "r")],
+    };
+    expect(validateSequenceGraph(tooMany)).toMatch(/de 2 a 5 caminhos/);
+  });
+
+  it("pesos que não somam 100 são inválidos", () => {
+    const graph: SequenceGraph = {
+      nodes: [trigger(), randomizer("r", [{ label: "A", weight: 30 }, { label: "B", weight: 30 }])],
+      edges: [edge("t", "r")],
+    };
+    expect(validateSequenceGraph(graph)).toMatch(/somar 100/);
+  });
+
+  it("caminho sem nome ou com peso zero é inválido", () => {
+    const semNome: SequenceGraph = {
+      nodes: [trigger(), randomizer("r", [{ label: "", weight: 50 }, { label: "B", weight: 50 }])],
+      edges: [edge("t", "r")],
+    };
+    expect(validateSequenceGraph(semNome)).toMatch(/precisa de um nome/);
+
+    const pesoZero: SequenceGraph = {
+      nodes: [trigger(), randomizer("r", [{ label: "A", weight: 0 }, { label: "B", weight: 100 }])],
+      edges: [edge("t", "r")],
+    };
+    expect(validateSequenceGraph(pesoZero)).toMatch(/maior que zero/);
+  });
+});
+
+// ── Nó Ir para workflow ───────────────────────────────────────────────────
+
+describe("validateSequenceGraph: nó Ir para workflow", () => {
+  it("é terminal: sourceHandlesOf devolve []", () => {
+    const n = goToSequence("g", "seq-2");
+    expect(sourceHandlesOf(n)).toEqual([]);
+  });
+
+  it("sequenceId vazio é inválido", () => {
+    const graph: SequenceGraph = {
+      nodes: [trigger(), goToSequence("g", "")],
+      edges: [edge("t", "g")],
+    };
+    expect(validateSequenceGraph(graph)).toMatch(/escolha o workflow de destino/i);
+  });
+
+  it("não pode apontar para o próprio workflow", () => {
+    const graph: SequenceGraph = {
+      nodes: [trigger(), goToSequence("g", "seq-self")],
+      edges: [edge("t", "g")],
+    };
+    expect(
+      validateSequenceGraph(graph, { selfSequenceId: "seq-self" })
+    ).toMatch(/não pode apontar para o próprio workflow/);
+  });
+
+  it("com contexto: alvo inexistente ou de outra conta é inválido", () => {
+    const graph: SequenceGraph = {
+      nodes: [trigger(), goToSequence("g", "seq-2")],
+      edges: [edge("t", "g")],
+    };
+    expect(
+      validateSequenceGraph(graph, { sequencesById: new Map(), selfSequenceId: "seq-1" })
+    ).toMatch(/não existe mais/);
+
+    expect(
+      validateSequenceGraph(graph, {
+        accountId: ACCOUNT,
+        sequencesById: new Map([["seq-2", { id: "seq-2", account_id: "acc-2" }]]),
+        selfSequenceId: "seq-1",
+      })
+    ).toMatch(/outra conta/);
+  });
+
+  it("sem sequencesById (validação rápida do editor) só checa auto-referência", () => {
+    const graph: SequenceGraph = {
+      nodes: [trigger(), goToSequence("g", "seq-2")],
+      edges: [edge("t", "g")],
+    };
+    expect(validateSequenceGraph(graph, { selfSequenceId: "seq-1" })).toBeNull();
+  });
+
+  it("goToSequenceIdsOf lista os ids referenciados sem repetir", () => {
+    const graph: SequenceGraph = {
+      nodes: [trigger(), goToSequence("g1", "seq-2"), goToSequence("g2", "seq-2")],
+      edges: [edge("t", "g1")],
+    };
+    expect(goToSequenceIdsOf(graph)).toEqual(["seq-2"]);
+  });
+});
+
+// ── Nó Pausar automações ──────────────────────────────────────────────────
+
+describe("validateSequenceGraph: nó Pausar automações", () => {
+  it("de 1 a 72 horas é válido", () => {
+    const graph: SequenceGraph = {
+      nodes: [trigger(), stopAutomation("s", 24), msg("a")],
+      edges: [edge("t", "s"), edge("s", "a")],
+    };
+    expect(validateSequenceGraph(graph)).toBeNull();
+  });
+
+  it("fora de 1 a 72 horas é inválido", () => {
+    const zero: SequenceGraph = {
+      nodes: [trigger(), stopAutomation("s", 0)],
+      edges: [edge("t", "s")],
+    };
+    expect(validateSequenceGraph(zero)).toMatch(/de 1 a 72 horas/);
+
+    const acima: SequenceGraph = {
+      nodes: [trigger(), stopAutomation("s", 73)],
+      edges: [edge("t", "s")],
+    };
+    expect(validateSequenceGraph(acima)).toMatch(/de 1 a 72 horas/);
   });
 });
