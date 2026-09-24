@@ -36,22 +36,38 @@ export function ExpiryDialog({
   kind,
   target,
   onClose,
+  loadUsage,
 }: {
   kind: ExpiryKind;
   target: ExpiryTarget | null;
   onClose: () => void;
+  /** Workflows que usam o item (só automações): aviso ao escolher "Excluir". */
+  loadUsage?: (id: string) => Promise<string[]>;
 }) {
   const [isPending, startTransition] = useTransition();
   const [value, setValue] = useState<ExpiryFormValue>(() =>
     expiryFormFrom(null, null)
   );
+  const [usage, setUsage] = useState<string[]>([]);
 
   useEffect(() => {
     if (!target) return;
     const initial = expiryFormFrom(target.expires_at, target.expire_action);
     // Sem expiração ainda: abrir o diálogo já é a intenção de torná-la temporária.
     setValue(initial.enabled ? initial : { ...initial, enabled: true });
-  }, [target]);
+
+    setUsage([]);
+    if (!loadUsage) return;
+    let stale = false;
+    loadUsage(target.id)
+      .catch(() => [] as string[])
+      .then((names) => {
+        if (!stale) setUsage(names);
+      });
+    return () => {
+      stale = true;
+    };
+  }, [target, loadUsage]);
 
   const isRule = kind === "rule";
 
@@ -73,13 +89,16 @@ export function ExpiryDialog({
         toast.error(result.error);
         return;
       }
-      toast.success(
+      const saved =
         resolved.expires_at === null
           ? "Expiração removida. Agora é permanente."
-          : result.reactivated
-            ? "Expiração estendida e reativada."
-            : "Expiração salva."
-      );
+          : "Expiração salva.";
+      const reactivated = result.reactivated
+        ? isRule
+          ? " A automação voltou a ficar ativa."
+          : " O workflow voltou a ficar ativo."
+        : "";
+      toast.success(saved + reactivated);
       onClose();
     });
   }
@@ -111,6 +130,7 @@ export function ExpiryDialog({
               ? "Se estiver pausada pela expiração, volta a ficar ativa."
               : "Se estiver pausado pela expiração, volta a ficar ativo."
           }
+          usedInWorkflows={usage}
         />
 
         <DialogFooter className="gap-2">

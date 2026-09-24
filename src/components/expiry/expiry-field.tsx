@@ -41,12 +41,15 @@ export function ExpiryField({
   label = "Automação temporária",
   description = "Ela se apaga ou pausa sozinha na data escolhida.",
   className,
+  usedInWorkflows,
 }: {
   value: ExpiryFormValue;
   onChange: (next: ExpiryFormValue) => void;
   label?: string;
   description?: string;
   className?: string;
+  /** Workflows que usam esta automação: avisa antes de escolher "Excluir". */
+  usedInWorkflows?: string[];
 }) {
   const id = useId();
   const patch = (partial: Partial<ExpiryFormValue>) =>
@@ -137,6 +140,21 @@ export function ExpiryField({
               </SelectContent>
             </Select>
           </div>
+
+          {value.action === "delete" && usedInWorkflows && usedInWorkflows.length > 0 && (
+            <div className="rounded-md border border-warning/40 bg-warning/10 p-3 text-xs">
+              <p className="font-medium text-foreground">
+                Usada em {usedInWorkflows.length}{" "}
+                {usedInWorkflows.length === 1 ? "workflow" : "workflows"}:{" "}
+                {usedInWorkflows.join(", ")}.
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                Se ela for excluída ao expirar, esses fluxos param no bloco dela.
+                Com &ldquo;Pausar&rdquo;, ela deixa de disparar sozinha, mas o
+                bloco dela continua funcionando no meio dos fluxos.
+              </p>
+            </div>
+          )}
 
           {resolved && (
             <p

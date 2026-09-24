@@ -38,6 +38,7 @@ const COMMENT_LINK_PAYLOAD_PREFIX = "falow:comment_link:";
 // O produto se chamou InstaReply até 2026-07-28. Botões já entregues em DMs
 // carregam o payload antigo para sempre, então continuamos aceitando na leitura.
 const COMMENT_LINK_PAYLOAD_PREFIX_LEGACY = "instareply:comment_link:";
+const RULE_EXPIRED_DURING_DELAY = "A automação expirou antes do envio.";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -394,6 +395,10 @@ async function applyRule(
 
   // 7. Delay humanizado (regra de negócio: 2–5s)
   await sleep(clampDelay(rule.delay_seconds) * 1000);
+  // A expiração pode ter passado durante a pausa.
+  if (isExpired(rule.expires_at)) {
+    return { status: "no_match", errorDetail: RULE_EXPIRED_DURING_DELAY };
+  }
 
   try {
     const token = await getFreshToken(admin, account);
@@ -703,6 +708,9 @@ async function applyCommentRule(
   }
 
   await sleep(clampDelay(rule.delay_seconds) * 1000);
+  if (isExpired(rule.expires_at)) {
+    return { status: "no_match", errorDetail: RULE_EXPIRED_DURING_DELAY };
+  }
 
   try {
     const token = await getFreshToken(admin, account);

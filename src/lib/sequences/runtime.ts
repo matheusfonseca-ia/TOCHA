@@ -7,7 +7,7 @@ import {
   sendTypingAction,
   type TemplateButton,
 } from "@/lib/meta/graph";
-import { withoutExpired } from "@/lib/expiry/expiry";
+import { isExpired, withoutExpired } from "@/lib/expiry/expiry";
 import { getFreshToken } from "@/lib/meta/token";
 import {
   triggerMatchesInbound,
@@ -32,6 +32,7 @@ import {
 } from "@/lib/sequences/payload";
 import { validateInput } from "@/lib/sequences/collect";
 import { FlowData } from "@/lib/sequences/flow-data";
+import { fetchAndStoreUsername } from "@/lib/contacts/profile";
 import { pickBranch } from "@/lib/sequences/randomizer";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sleep } from "@/lib/utils";
@@ -265,7 +266,7 @@ async function startSequenceFromGoTo(
     .eq("account_id", account.id)
     .eq("is_active", true)
     .maybeSingle<Sequence>();
-  if (!target) return null;
+  if (!target || !isLive(target)) return null;
 
   const trigger = findTriggerNode(target.graph);
   if (!trigger) return null;
@@ -320,7 +321,27 @@ async function insertRun(
   };
 }
 
+function flowDataFor(admin: AdminClient, account: IgAccount, run: SequenceRun): FlowData {
+  return new FlowData(admin, account.id, run, () =>
+    fetchAndStoreUsername(admin, account, run.ig_sender_id)
+  );
+}
+
 // ── Retomadas ───────────────────────────────────────────────────────────────
+
+/**
+ * Pode continuar enviando: ativo e não vencido. O sweep de expiração roda ao
+ * fim do webhook e no cron, então um workflow pode estar vencido e ainda com
+ * is_active = true; as retomadas não podem depender dele.
+ */
+function isLive(sequence: Sequence): boolean {
+  return sequence.is_active && !isExpired(sequence.expires_at);
+}
+
+function stoppedReason(sequence: Sequence | null): string {
+  if (!sequence) return "Sequência removida";
+  return sequence.is_active ? "Sequência expirada" : "Sequência pausada";
+}
 
 /**
  * Mensagem recebida de alguém que está no meio de um fluxo. Cobre dois casos:
@@ -362,7 +383,7 @@ export async function handleSequenceReply(
     .maybeSingle<RunWithSequence>();
 
   const sequence = waiting?.sequences;
-  if (!waiting || !sequence || !sequence.is_active) return null;
+  if (!waiting || !sequence || !isLive(sequence)) return null;
 
   const node = waiting.current_node_id
     ? nodeById(sequence.graph, waiting.current_node_id)
@@ -407,7 +428,7 @@ async function handleCollectReply(
   messageText: string
 ): Promise<SequenceOutcome> {
   const data = node.data as CollectInputNodeData;
-  const flow = new FlowData(admin, account.id, run);
+  const flow = flowDataFor(admin, account, run);
 
   try {
     const result = validateInput(data.inputType, messageText);
@@ -516,10 +537,10 @@ async function resumeFromHandle(
       .maybeSingle<Sequence>();
     sequence = data;
   }
-  // Sequência removida/pausada no meio do fluxo → encerra silenciosamente.
-  if (!sequence || !sequence.is_active) {
+  // Sequência removida/pausada/vencida no meio do fluxo → encerra silenciosamente.
+  if (!sequence || !isLive(sequence)) {
     await persistRun(admin, run, "completed", {
-      last_error: sequence ? "Sequência pausada" : "Sequência removida",
+      last_error: stoppedReason(sequence),
     });
     return null;
   }
@@ -583,6 +604,15 @@ export async function processDueRuns(
 
     const claimed = await claimRun(admin, row.id, "waiting_delay");
     if (!claimed) continue;
+
+    // Vencido e ainda ativo (sweep não rodou): encerra o run em vez de pular,
+    // senão ele ficaria no topo da fila ocupando o `limit` a cada tick.
+    if (isExpired(sequence.expires_at)) {
+      await persistRun(admin, claimed, "completed", {
+        last_error: stoppedReason(sequence),
+      });
+      continue;
+    }
 
     const { data: account } = await admin
       .from("ig_accounts")
@@ -746,7 +776,7 @@ async function executeFrom(
 ): Promise<SequenceOutcome> {
   const graph = sequence.graph;
   const deadline = opts.deadline ?? invocationDeadline();
-  const flow = opts.flow ?? new FlowData(admin, account.id, run);
+  const flow = opts.flow ?? flowDataFor(admin, account, run);
   let steps = run.steps_executed;
   let stepsThisExecution = 0;
   let sent = false;

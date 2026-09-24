@@ -3,15 +3,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeAdmin, type FakeSupabase } from "@/lib/sequences/__tests__/fake-supabase";
 import {
   automationNode,
+  branchButtonsNode,
+  buttonHandle,
   edge,
   makeAccount,
+  makeOpenConversation,
   makeRule,
   makeSequence,
   messageNode,
+  node,
   row,
   triggerNode,
+  waitReplyNode,
 } from "@/lib/sequences/__tests__/fixtures";
 import { processWebhookPayload } from "@/lib/meta/process";
+import { processDueRuns } from "@/lib/sequences/runtime";
+import { sleep } from "@/lib/utils";
 
 import { expireAutomations } from "./sweep";
 
@@ -109,6 +116,8 @@ describe("expireAutomations", () => {
     expect(result).toEqual({ deleted: 2, paused: 2 });
     expect(fake.tables.rules.map((r) => r.id)).toEqual([pause.id, alive.id, permanent.id]);
     expect(fake.tables.rules.find((r) => r.id === pause.id)?.is_active).toBe(false);
+    expect(fake.tables.rules.find((r) => r.id === pause.id)?.paused_by_expiry).toBe(true);
+    expect(fake.tables.rules.find((r) => r.id === alive.id)?.paused_by_expiry).toBeFalsy();
     // Pausada mantém a data: a lista mostra "Expirada".
     expect(fake.tables.rules.find((r) => r.id === pause.id)?.expires_at).toBe(pause.expires_at);
     expect(fake.tables.rules.find((r) => r.id === alive.id)?.is_active).toBe(true);
@@ -231,5 +240,166 @@ describe("matching ignora vencidas antes do sweep", () => {
     expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
     expect(sendTextMessageMock).not.toHaveBeenCalled();
     expect(fake.tables.sequence_runs).toHaveLength(0);
+  });
+
+  it("DM: rule que vence durante a pausa humanizada não envia", async () => {
+    const account = makeAccount();
+    const rule = makeRule({
+      account_id: account.id,
+      keyword: "oi",
+      expires_at: new Date(Date.now() + 40).toISOString(),
+      expire_action: "pause",
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(rule);
+    vi.mocked(sleep).mockImplementationOnce(() => new Promise((r) => setTimeout(r, 80)));
+
+    await processWebhookPayload(dmPayload(account.ig_user_id, "oi"));
+
+    expect(sendRuleReplyMock).not.toHaveBeenCalled();
+    expect(fake.tables.interactions[0].status).toBe("no_match");
+    expect(fake.tables.interactions[0].error_detail).toBe("A automação expirou antes do envio.");
+    expect(fake.tables.rule_triggers).toHaveLength(0);
+  });
+});
+
+describe("workflow vencido no meio do fluxo (antes do sweep)", () => {
+  function seedWaitingRun(
+    accountId: string,
+    sequenceId: string,
+    status: "waiting_reply" | "waiting_postback" | "waiting_delay",
+    nodeId: string
+  ) {
+    const run = row({
+      sequence_id: sequenceId,
+      account_id: accountId,
+      ig_sender_id: "sender-1",
+      status,
+      current_node_id: nodeId,
+      next_run_at: status === "waiting_delay" ? past() : null,
+      steps_executed: 1,
+      last_error: null,
+      entry_rule_id: null,
+      variables: {},
+      started_at: past(),
+      updated_at: past(),
+    });
+    fake.tables.sequence_runs.push(run);
+    return run;
+  }
+
+  it("resposta livre não continua um workflow vencido", async () => {
+    const account = makeAccount();
+    const sequence = makeSequence({
+      account_id: account.id,
+      name: "Vencido",
+      expires_at: past(),
+      expire_action: "pause",
+      graph: {
+        nodes: [triggerNode({ keyword: "zzz" }), waitReplyNode("w1"), messageNode("m1", "Depois da espera")],
+        edges: [edge("trigger", "w1"), edge("w1", "m1")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+    fake.tables.conversations.push(makeOpenConversation(account.id, "sender-1"));
+    seedWaitingRun(account.id, sequence.id, "waiting_reply", "w1");
+
+    await processWebhookPayload(dmPayload(account.ig_user_id, "qualquer coisa"));
+
+    expect(sendTextMessageMock).not.toHaveBeenCalled();
+    // O sweep do fim do webhook pausou o workflow.
+    expect(fake.tables.sequences[0].is_active).toBe(false);
+  });
+
+  it("toque em botão de um workflow vencido encerra o run sem enviar", async () => {
+    const account = makeAccount();
+    const sequence = makeSequence({
+      account_id: account.id,
+      expires_at: past(),
+      expire_action: "pause",
+      graph: {
+        nodes: [triggerNode({ keyword: "zzz" }), branchButtonsNode("b1"), messageNode("m1", "Ramo A")],
+        edges: [edge("trigger", "b1"), edge("b1", "m1", buttonHandle(0))],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+    fake.tables.conversations.push(makeOpenConversation(account.id, "sender-1"));
+    const run = seedWaitingRun(account.id, sequence.id, "waiting_postback", "b1");
+
+    await processWebhookPayload({
+      object: "instagram",
+      entry: [
+        {
+          id: account.ig_user_id,
+          messaging: [
+            {
+              sender: { id: "sender-1" },
+              recipient: { id: account.ig_user_id },
+              timestamp: Date.now(),
+              postback: { mid: "pb-1", payload: `falow:seq:${run.id}:b1:${buttonHandle(0)}` },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(sendTextMessageMock).not.toHaveBeenCalled();
+    const closed = fake.tables.sequence_runs.find((r) => r.id === run.id)!;
+    expect(closed.status).toBe("completed");
+    expect(closed.last_error).toBe("Sequência expirada");
+  });
+
+  it("tick de atrasos encerra run de workflow vencido em vez de retomar", async () => {
+    const account = makeAccount();
+    const sequence = makeSequence({
+      account_id: account.id,
+      expires_at: past(),
+      expire_action: "pause",
+      graph: {
+        nodes: [
+          triggerNode({ keyword: "zzz" }),
+          node("d1", "delay", { amount: 2, unit: "hours" }),
+          messageNode("m1", "Depois do atraso"),
+        ],
+        edges: [edge("trigger", "d1"), edge("d1", "m1")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+    fake.tables.conversations.push(makeOpenConversation(account.id, "sender-1"));
+    const run = seedWaitingRun(account.id, sequence.id, "waiting_delay", "d1");
+
+    await processDueRuns(5);
+
+    expect(sendTextMessageMock).not.toHaveBeenCalled();
+    const closed = fake.tables.sequence_runs.find((r) => r.id === run.id)!;
+    expect(closed.status).toBe("completed");
+    expect(closed.last_error).toBe("Sequência expirada");
+  });
+
+  it("tick de atrasos continua retomando workflow com expiração futura", async () => {
+    const account = makeAccount();
+    const sequence = makeSequence({
+      account_id: account.id,
+      expires_at: future(),
+      graph: {
+        nodes: [
+          triggerNode({ keyword: "zzz" }),
+          node("d1", "delay", { amount: 2, unit: "hours" }),
+          messageNode("m1", "Depois do atraso"),
+        ],
+        edges: [edge("trigger", "d1"), edge("d1", "m1")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+    fake.tables.conversations.push(makeOpenConversation(account.id, "sender-1"));
+    seedWaitingRun(account.id, sequence.id, "waiting_delay", "d1");
+
+    await processDueRuns(5);
+
+    expect(sendTextMessageMock).toHaveBeenCalledWith(expect.any(String), "sender-1", "Depois do atraso");
   });
 });

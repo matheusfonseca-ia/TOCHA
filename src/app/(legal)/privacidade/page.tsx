@@ -101,9 +101,22 @@ export default function PrivacidadePage() {
               regra prevê, iniciar uma conversa na DM.
             </li>
             <li>
+              <Term>Respostas e menções em stories e links de referência:</Term>{" "}
+              o texto de quem responde a um story da conta, o aviso de quem marca
+              a conta num story e o código do link ig.me que abriu a conversa,
+              usados apenas para iniciar o fluxo configurado.
+            </li>
+            <li>
               <Term>Estado das sequências:</Term> em que ponto de um fluxo cada
               pessoa parou, quando ele deve ser retomado e qual opção foi
               escolhida em botões e respostas rápidas.
+            </li>
+            <li>
+              <Term>Dados informados nos fluxos:</Term> respostas que a própria
+              pessoa digita quando um fluxo pede um dado (por exemplo nome,
+              e-mail, telefone ou data) e as etiquetas (tags) que o fluxo atribui
+              a ela. Ficam na lista de Contatos do painel, visível apenas para o
+              administrador, que pode exportá-la em planilha.
             </li>
             <li>
               <Term>Registro de interações (logs):</Term> data e hora, texto da
@@ -245,10 +258,16 @@ export default function PrivacidadePage() {
               <Term>Estado das sequências:</Term> é apagado junto com os demais
               registros da pessoa.
             </li>
+            <li>
+              <Term>Dados informados nos fluxos:</Term> ficam na lista de
+              Contatos enquanto forem úteis ao administrador e são apagados a
+              qualquer momento a pedido do titular.
+            </li>
           </LegalList>
           <p>
             Apagar a conta conectada no painel remove em cascata todas as
-            conversas, regras, sequências, execuções e logs vinculados a ela.
+            conversas, regras, sequências, execuções, contatos e logs vinculados
+            a ela.
           </p>
         </LegalSection>
 

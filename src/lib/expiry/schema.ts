@@ -16,14 +16,19 @@ export const expiryFields = {
   expire_action: z.enum(EXPIRE_ACTIONS).optional(),
 };
 
-/** Colunas a gravar: vazio quando `expires_at` não veio. */
+/**
+ * Colunas a gravar: vazio quando `expires_at` não veio. Editar a expiração
+ * zera `paused_by_expiry`: a partir daí o estado ativo/pausado é o que o
+ * usuário salvou.
+ */
 export function expiryColumns(input: {
   expires_at?: string | null;
   expire_action?: ExpireAction;
-}): { expires_at?: string | null; expire_action?: ExpireAction } {
+}): { expires_at?: string | null; expire_action?: ExpireAction; paused_by_expiry?: false } {
   if (input.expires_at === undefined) return {};
   return {
     expires_at: input.expires_at,
     expire_action: input.expire_action ?? "delete",
+    paused_by_expiry: false,
   };
 }

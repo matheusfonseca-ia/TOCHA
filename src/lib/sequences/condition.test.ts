@@ -21,6 +21,11 @@ const check = (
 ) => evaluateCondition({ operator, fieldKey, value }, subject);
 
 describe("evaluateCondition", () => {
+  it("campo com nome de membro de Object.prototype não existe se o contato não tem", () => {
+    expect(check("exists", "constructor")).toBe(false);
+    expect(check("contains", "constructor", "function")).toBe(false);
+  });
+
   it("equals ignora maiúsculas, acentos e espaços", () => {
     expect(check("equals", "plano", " pro ")).toBe(true);
     expect(check("equals", "plano", "basic")).toBe(false);

@@ -27,6 +27,12 @@ export const FIELD_KEY_MAX = 40;
 export const COLLECT_QUESTION_MAX = 1000;
 export const COLLECT_ERROR_MAX = 640;
 export const FIELD_VALUE_MAX = 500;
+/**
+ * Teto do valor GRAVADO no contato (resposta coletada ou "Definir campo" já
+ * renderizado). 1000 = limite de uma DM do Instagram; sem ele, um "Definir
+ * campo" que referencia o próprio campo num laço dobraria o valor a cada volta.
+ */
+export const STORED_FIELD_VALUE_MAX = 1000;
 export const TAG_MAX = 40;
 
 export function isValidFieldKey(key: string): boolean {

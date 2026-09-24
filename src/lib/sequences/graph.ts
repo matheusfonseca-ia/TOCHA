@@ -613,7 +613,7 @@ export function validateSequenceGraph(
   // dispararia mensagens em laço. O editor destaca os nós com
   // findCyclesWithoutWait.
   if (findCyclesWithoutWait(graph).length > 0) {
-    return "Há um ciclo sem nenhum bloco de espera (esperar resposta, botões com ramificação, respostas rápidas ou atraso de 1 hora ou mais). Inclua uma espera no caminho de volta.";
+    return "Há um ciclo sem nenhum bloco de espera (esperar resposta, coletar dado, botões com ramificação, respostas rápidas ou atraso de 1 hora ou mais). Inclua uma espera no caminho de volta.";
   }
 
   return null;

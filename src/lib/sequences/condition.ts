@@ -1,4 +1,5 @@
 import { parsePtBrDate, validateNumber } from "@/lib/sequences/collect";
+import { ownValue } from "@/lib/sequences/template";
 import type { ConditionNodeData } from "@/types/sequence";
 
 /**
@@ -53,7 +54,7 @@ export function evaluateCondition(
     return !!tag && subject.tags.some((t) => normalize(t) === tag);
   }
 
-  const actual = asText(subject.fields[condition.fieldKey]);
+  const actual = asText(ownValue(subject.fields, condition.fieldKey));
 
   switch (condition.operator) {
     case "exists":

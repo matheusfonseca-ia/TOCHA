@@ -263,6 +263,23 @@ export function subscribeAccountToWebhooks(igToken: string) {
   });
 }
 
+/**
+ * Perfil de quem conversa com a conta (User Profile API). A Meta só libera
+ * depois que a pessoa mandou DM ou tocou num botão da conta.
+ */
+export async function getUserProfile(
+  igToken: string,
+  igScopedId: string
+): Promise<{ username: string | null; name: string | null }> {
+  const json = await graphGet(encodeURIComponent(igScopedId), igToken, {
+    fields: "username,name",
+  });
+  return {
+    username: typeof json.username === "string" ? json.username : null,
+    name: typeof json.name === "string" ? json.name : null,
+  };
+}
+
 export interface IgMedia {
   id: string;
   caption: string | null;

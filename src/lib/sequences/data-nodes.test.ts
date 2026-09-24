@@ -36,9 +36,13 @@ vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => getAdmin(),
 }));
 
-const { sendTextMessageMock, sendTypingActionMock } = vi.hoisted(() => ({
+const { sendTextMessageMock, sendTypingActionMock, getUserProfileMock } = vi.hoisted(() => ({
   sendTextMessageMock: vi.fn(async (_token: string, _recipient: string, _text: string) => {}),
   sendTypingActionMock: vi.fn(async () => {}),
+  getUserProfileMock: vi.fn(async (_token: string, _id: string) => ({
+    username: null as string | null,
+    name: null as string | null,
+  })),
 }));
 
 vi.mock("@/lib/meta/graph", async (importOriginal) => {
@@ -50,6 +54,7 @@ vi.mock("@/lib/meta/graph", async (importOriginal) => {
     sendQuickRepliesMessage: vi.fn(async () => {}),
     sendTemplateButtonsMessage: vi.fn(async () => {}),
     sendTypingAction: sendTypingActionMock,
+    getUserProfile: getUserProfileMock,
   };
 });
 
@@ -301,6 +306,29 @@ describe("Definir campo ou tag", () => {
     expect(fake.tables.contacts[0].tags).toEqual(["vip"]);
     expect(fake.tables.contacts[0].fields).toEqual({ a: "1" });
   });
+
+  it("valor que referencia o próprio campo não cresce além do teto gravado", async () => {
+    const sequence = makeSequence({
+      account_id: "acc-set-3",
+      graph: {
+        nodes: [
+          triggerNode({ keyword: "dobra" }),
+          setFieldNode("f", { mode: "field", fieldKey: "nome", value: "{{nome}}{{nome}}" }),
+          messageNode("m", "ok"),
+        ],
+        edges: [edge("trigger", "f"), edge("f", "m")],
+      },
+    });
+    const account = setup(sequence, "s-12");
+    fake.tables.contacts.push(
+      row({ account_id: account.id, ig_sender_id: "s-12", ig_username: null, fields: { nome: "x".repeat(800) }, tags: [] })
+    );
+
+    await maybeStartSequence(admin, account, "s-12", { kind: "dm", text: "dobra" });
+
+    expect(fake.tables.contacts[0].fields.nome).toHaveLength(1000);
+    expect(fake.tables.sequence_runs[0].variables.nome).toHaveLength(1000);
+  });
 });
 
 describe("Variáveis nos textos", () => {
@@ -320,5 +348,64 @@ describe("Variáveis nos textos", () => {
     await maybeStartSequence(admin, account, "s-11", { kind: "dm", text: "oi" });
 
     expect(sentTexts()).toEqual(["Oi Bia, seu plano é pro."]);
+  });
+
+  it("{{username}} desconhecido busca o @ na Graph API uma vez e guarda na conversa", async () => {
+    const sequence = makeSequence({
+      account_id: "acc-user",
+      graph: {
+        nodes: [
+          triggerNode({ keyword: "oi" }),
+          messageNode("m1", "Oi @{{username}}!"),
+          messageNode("m2", "Tchau @{{username}}."),
+        ],
+        edges: [edge("trigger", "m1"), edge("m1", "m2")],
+      },
+    });
+    const account = setup(sequence, "s-13");
+    getUserProfileMock.mockResolvedValueOnce({ username: "bia.dev", name: "Bia" });
+
+    await maybeStartSequence(admin, account, "s-13", { kind: "dm", text: "oi" });
+
+    expect(sentTexts()).toEqual(["Oi @bia.dev!", "Tchau @bia.dev."]);
+    expect(getUserProfileMock).toHaveBeenCalledTimes(1);
+    expect(getUserProfileMock).toHaveBeenCalledWith(expect.any(String), "s-13");
+    expect(fake.tables.conversations[0].ig_sender_username).toBe("bia.dev");
+  });
+
+  it("falha ao buscar o @ não derruba o fluxo: {{username}} sai vazio", async () => {
+    const sequence = makeSequence({
+      account_id: "acc-user-2",
+      graph: {
+        nodes: [triggerNode({ keyword: "oi" }), messageNode("m1", "Oi {{username}}!")],
+        edges: [edge("trigger", "m1")],
+      },
+    });
+    const account = setup(sequence, "s-14");
+    getUserProfileMock.mockRejectedValueOnce(new Error("sem permissão"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const outcome = await maybeStartSequence(admin, account, "s-14", { kind: "dm", text: "oi" });
+
+    expect(outcome?.status).toBe("replied");
+    expect(sentTexts()).toEqual(["Oi !"]);
+    warn.mockRestore();
+  });
+
+  it("não consulta a Graph API quando a conversa já tem o @", async () => {
+    const sequence = makeSequence({
+      account_id: "acc-user-3",
+      graph: {
+        nodes: [triggerNode({ keyword: "oi" }), messageNode("m1", "Oi {{username}}!")],
+        edges: [edge("trigger", "m1")],
+      },
+    });
+    const account = setup(sequence, "s-15");
+    fake.tables.conversations[0].ig_sender_username = "ja.sabido";
+
+    await maybeStartSequence(admin, account, "s-15", { kind: "dm", text: "oi" });
+
+    expect(sentTexts()).toEqual(["Oi ja.sabido!"]);
+    expect(getUserProfileMock).not.toHaveBeenCalled();
   });
 });

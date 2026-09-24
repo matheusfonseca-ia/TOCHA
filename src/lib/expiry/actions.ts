@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { createClient } from "@/lib/supabase/server";
 
-import { EXPIRE_ACTIONS, isExpired, validateExpiry, type ExpireAction } from "./expiry";
+import { EXPIRE_ACTIONS, validateExpiry, type ExpireAction } from "./expiry";
 
 export type ExpiryKind = "rule" | "sequence";
 
@@ -34,8 +34,8 @@ export interface ExtendExpiryResult {
 
 /**
  * Define, estende ou remove (`expiresAt = null`) a expiração. Se o item
- * estava pausado PELA expiração (vencido com ação "pausar"), volta a ficar
- * ativo; pausa manual continua pausada.
+ * estava pausado PELA expiração (`paused_by_expiry`, gravado pelo sweep),
+ * volta a ficar ativo; pausa manual continua pausada.
  */
 export async function extendExpiry(
   kind: ExpiryKind,
@@ -55,23 +55,21 @@ export async function extendExpiry(
   // RLS: só encontra (e só atualiza) o que pertence ao usuário logado.
   const { data: current } = await supabase
     .from(table)
-    .select("is_active, expires_at, expire_action")
+    .select("is_active, expire_action, paused_by_expiry")
     .eq("id", parsed.data.id)
     .maybeSingle();
   if (!current) {
     return { error: "Não foi possível encontrar o item. Atualize a página e tente de novo." };
   }
 
-  const pausedByExpiry =
-    !current.is_active &&
-    current.expire_action === "pause" &&
-    isExpired(current.expires_at, now);
+  const pausedByExpiry = !current.is_active && current.paused_by_expiry === true;
 
   const { error } = await supabase
     .from(table)
     .update({
       expires_at: parsed.data.expiresAt,
       expire_action: parsed.data.expireAction ?? current.expire_action ?? "delete",
+      paused_by_expiry: false,
       ...(pausedByExpiry && { is_active: true }),
       updated_at: now.toISOString(),
     })
