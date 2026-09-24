@@ -28,7 +28,8 @@ export type TableName =
   | "rule_triggers"
   | "conversations"
   | "interactions"
-  | "processed_events";
+  | "processed_events"
+  | "contacts";
 
 export interface FakeError {
   message: string;
@@ -67,6 +68,7 @@ const UNIQUE_CONSTRAINTS: Partial<Record<TableName, string[][]>> = {
   processed_events: [["mid"]],
   sequence_runs: [["sequence_id", "ig_sender_id"]],
   rule_triggers: [["rule_id", "ig_sender_id"]],
+  contacts: [["account_id", "ig_sender_id"]],
 };
 
 const PG_UNIQUE_VIOLATION = "23505";
@@ -81,6 +83,7 @@ function defaultsFor(table: TableName): Row {
         steps_executed: 0,
         last_error: null,
         entry_rule_id: null,
+        variables: {},
         started_at: now,
         updated_at: now,
       };
@@ -88,6 +91,8 @@ function defaultsFor(table: TableName): Row {
       return { link_delivered_at: null, created_at: now };
     case "conversations":
       return { ig_sender_username: null, created_at: now };
+    case "contacts":
+      return { ig_username: null, fields: {}, tags: [], created_at: now, updated_at: now };
     case "interactions":
     case "processed_events":
       return { created_at: now };
@@ -363,6 +368,7 @@ export class FakeSupabase {
     conversations: [],
     interactions: [],
     processed_events: [],
+    contacts: [],
   };
 
   from(table: TableName): FakeQueryBuilder {

@@ -8,6 +8,9 @@ import {
   quickReplyHandle,
   type AutomationNodeData,
   type ButtonsNodeData,
+  type CollectInputNodeData,
+  type ConditionNodeData,
+  type SetFieldNodeData,
   type MessageNodeData,
   type Sequence,
   type SequenceGraph,
@@ -67,6 +70,41 @@ export const branchButtonsNode = (id: string, text = "Escolha", title = "Opção
     text,
     buttons: [{ title, kind: "branch", url: "" }],
   } satisfies ButtonsNodeData);
+
+export const collectInputNode = (
+  id: string,
+  data: Partial<CollectInputNodeData> = {}
+): SequenceGraphNode =>
+  node(id, "collectInput", {
+    question: "Qual seu e-mail?",
+    fieldKey: "email",
+    inputType: "email",
+    errorText: "E-mail inválido, tente de novo.",
+    maxAttempts: 2,
+    ...data,
+  } satisfies CollectInputNodeData);
+
+export const conditionNode = (
+  id: string,
+  data: Partial<ConditionNodeData> = {}
+): SequenceGraphNode =>
+  node(id, "condition", {
+    fieldKey: "plano",
+    operator: "equals",
+    value: "pro",
+    ...data,
+  } satisfies ConditionNodeData);
+
+export const setFieldNode = (
+  id: string,
+  data: Partial<SetFieldNodeData> = {}
+): SequenceGraphNode =>
+  node(id, "setField", {
+    mode: "field",
+    fieldKey: "plano",
+    value: "pro",
+    ...data,
+  } satisfies SetFieldNodeData);
 
 export { OUT_HANDLE, buttonHandle, quickReplyHandle };
 

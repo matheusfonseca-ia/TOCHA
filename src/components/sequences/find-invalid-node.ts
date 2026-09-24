@@ -11,6 +11,7 @@ import {
   sourceHandlesOf,
   targetOf,
 } from "@/lib/sequences/graph";
+import { dataNodeError } from "@/lib/sequences/fields";
 import {
   OUT_HANDLE,
   type AutomationNodeData,
@@ -84,6 +85,11 @@ function nodeHasContentError(node: SequenceGraphNode): boolean {
       // Sem automação escolhida. Rule removida/de outra conta depende do
       // contexto de rules, que só graph.ts recebe.
       return !(node.data as AutomationNodeData).ruleId.trim();
+    // Dados do contato: mesma regra que graph.ts usa.
+    case "collectInput":
+    case "condition":
+    case "setField":
+      return dataNodeError(node) !== null;
   }
 }
 

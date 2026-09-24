@@ -6,6 +6,12 @@ import {
   AutomationNodeForm,
   type AutomationPreviewAccount,
 } from "@/components/sequences/automation";
+import {
+  CollectInputForm,
+  ConditionForm,
+  SetFieldForm,
+  TemplateHint,
+} from "@/components/sequences/data";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,6 +44,9 @@ import type {
   SequenceNodeType,
   TriggerNodeData,
   TriggerSource,
+  CollectInputNodeData,
+  ConditionNodeData,
+  SetFieldNodeData,
 } from "@/types/sequence";
 
 /**
@@ -76,6 +85,9 @@ const TYPE_TITLES: Record<SequenceNodeType, string> = {
   delay: "Atraso",
   waitReply: "Esperar resposta",
   automation: "Automação",
+  collectInput: "Coletar dado",
+  condition: "Condição",
+  setField: "Definir campo ou tag",
 };
 
 export function SequenceInspector({ node, onChange, automation }: InspectorProps) {
@@ -176,6 +188,28 @@ function NodeForm({
           isEntryPosition={automation.entryNodeId === node.id}
           triggerSource={automation.triggerSource}
           onTriggerSourceChange={automation.onTriggerSourceChange}
+        />
+      );
+    // Dados do contato
+    case "collectInput":
+      return (
+        <CollectInputForm
+          data={node.data as CollectInputNodeData}
+          onChange={(d) => onChange(node.id, d)}
+        />
+      );
+    case "condition":
+      return (
+        <ConditionForm
+          data={node.data as ConditionNodeData}
+          onChange={(d) => onChange(node.id, d)}
+        />
+      );
+    case "setField":
+      return (
+        <SetFieldForm
+          data={node.data as SetFieldNodeData}
+          onChange={(d) => onChange(node.id, d)}
         />
       );
   }
@@ -287,6 +321,7 @@ function MessageForm({
           <p className="text-right text-xs text-muted-foreground">
             {data.text.length}/{TEXT_MAX}
           </p>
+          <TemplateHint />
         </div>
       ) : (
         <div className="space-y-2">
@@ -329,6 +364,7 @@ function ButtonsForm({
           value={data.text}
           onChange={(e) => patch({ ...data, text: e.target.value })}
         />
+        <TemplateHint />
       </div>
 
       <div className="space-y-3">
@@ -428,6 +464,7 @@ function QuickRepliesForm({
           value={data.text}
           onChange={(e) => patch({ ...data, text: e.target.value })}
         />
+        <TemplateHint />
       </div>
 
       <div className="space-y-2">

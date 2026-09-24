@@ -62,6 +62,9 @@ const NODE_TYPE_LABELS: Record<SequenceNodeType, string> = {
   delay: "Atraso",
   waitReply: "Esperar resposta",
   automation: "Automação",
+  collectInput: "Coletar dado",
+  condition: "Condição",
+  setField: "Definir campo ou tag",
 };
 
 const STATUS_FILTERS: { value: SequenceRunStatus | ""; label: string }[] = [

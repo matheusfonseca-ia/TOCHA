@@ -201,7 +201,8 @@ async function processMessagingEvent(
     admin,
     account,
     senderId,
-    message.quick_reply?.payload
+    message.quick_reply?.payload,
+    message.text
   );
   if (seqReply) {
     await logSequenceInteraction(
