@@ -2,13 +2,13 @@
 
 ## Estado atual
 Última tag: "HANDOFF-falow-20260923-170000-claude"
-Status: em andamento
-Resumo: E2E no navegador ok (7236f72); falta deploy manual (wrangler) e usuário apagar 3 itens de teste (2 workflows TESTE CLAUDE + Cópia de preço).
+Status: concluído
+Resumo: em produção (wrangler, versão 287e70c9, 23/09) com ef293f6; falta usuário apagar 3 itens de teste e teste real comentário -> botão -> workflow.
 
 ---
 
 ## [HANDOFF · falow · 2026-09-23T17:00:00-03:00 · claude]
-Status: em andamento
+Status: concluído
 Objetivo: validar e corrigir as features de duplicar + nó Automação.
 Feito:
 - Revisão adversarial (Opus): 0 crítico, 8 médios corrigidos (handoff sem rollback, ciclo com atraso < 1h bloqueado, deadline da invocação, aviso de conflito no editor e por termo, undo/redo)
@@ -21,7 +21,7 @@ Decisões/contexto: deploy do Falow não é automático por push (último via wr
 Tag: "HANDOFF-falow-20260923-170000-claude"
 
 ## [HANDOFF · falow · 2026-09-23T15:30:00-03:00 · claude]
-Status: em andamento
+Status: concluído
 Objetivo: duplicar automação/workflow + nó "Automação" no workflow + melhorias do editor.
 Feito:
 - Fases 0, 1, 2, 3 de tasks/todo.md implementadas (3 agentes + integração)
@@ -35,7 +35,7 @@ Decisões/contexto: automação usada como gatilho continua disparando pelo pró
 Tag: "HANDOFF-falow-20260923-153000-claude"
 
 ## [HANDOFF · falow · 2026-09-23T14:52:04-03:00 · claude]
-Status: em andamento
+Status: concluído
 Objetivo: planejar duplicação de automações/workflows e uso de automação (comentário) dentro do workflow de sequências.
 Feito:
 - Pesquisa com 3 agentes (Opus arquitetura, Sonnet duplicação, Sonnet UX editor)
