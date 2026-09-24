@@ -153,7 +153,7 @@ export default function ExclusaoDeDadosPage() {
           <p>
             No SQL Editor do seu projeto Supabase, apagar a linha da conta em{" "}
             <Term>ig_accounts</Term> remove em cascata tudo que depende dela —
-            regras, conversas, gatilhos, sequências, execuções e logs:
+            regras, conversas, gatilhos, sequências, execuções, contatos e logs:
           </p>
           <LegalCode>{`-- troque pelo @ da conta que você quer apagar
 delete from public.ig_accounts where ig_username = 'seu_usuario';`}</LegalCode>
@@ -165,7 +165,8 @@ delete from public.ig_accounts where ig_username = 'seu_usuario';`}</LegalCode>
 delete from public.interactions   where ig_sender_id = 'ID_DO_REMETENTE';
 delete from public.conversations  where ig_sender_id = 'ID_DO_REMETENTE';
 delete from public.rule_triggers  where ig_sender_id = 'ID_DO_REMETENTE';
-delete from public.sequence_runs  where ig_sender_id = 'ID_DO_REMETENTE';`}</LegalCode>
+delete from public.sequence_runs  where ig_sender_id = 'ID_DO_REMETENTE';
+delete from public.contacts       where ig_sender_id = 'ID_DO_REMETENTE';`}</LegalCode>
 
           <p className="pt-2 font-semibold text-foreground">
             Apagar a instalação inteira

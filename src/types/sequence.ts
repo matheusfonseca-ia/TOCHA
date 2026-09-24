@@ -242,6 +242,8 @@ export interface Sequence {
   /** Nulo/ausente = permanente. Migration 0003. */
   expires_at?: string | null;
   expire_action?: "delete" | "pause";
+  /** Pausado pelo sweep de expiração, não pelo usuário. Migration 0003. */
+  paused_by_expiry?: boolean;
   created_at: string;
   updated_at: string;
 }

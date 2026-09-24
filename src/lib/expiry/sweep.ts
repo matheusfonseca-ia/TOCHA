@@ -14,8 +14,10 @@ const TABLES = ["rules", "sequences"] as const;
  *  - delete: apaga a linha (sequence_runs caem em cascata; workflow que usava
  *    a rule como entrada fica com o nó "Automação removida", como na
  *    exclusão manual);
- *  - pause: `is_active = false`, mantendo `expires_at` para a lista mostrar
- *    "Expirada". O filtro `is_active = true` impede repausar a cada tick.
+ *  - pause: `is_active = false` + `paused_by_expiry = true` (é o que deixa
+ *    "Estender expiração" distinguir da pausa manual), mantendo `expires_at`
+ *    para a lista mostrar "Expirada". O filtro `is_active = true` impede
+ *    repausar a cada tick.
  * Lança em erro de banco (ex.: migration 0003 não aplicada): quem chama
  * decide se isso derruba ou não (ver expireAutomationsSafe).
  */
@@ -36,7 +38,7 @@ export async function expireAutomations(
 
     const { data: paused, error: pauseError } = await admin
       .from(table)
-      .update({ is_active: false, updated_at: nowIso })
+      .update({ is_active: false, paused_by_expiry: true, updated_at: nowIso })
       .lte("expires_at", nowIso)
       .eq("expire_action", "pause")
       .eq("is_active", true)

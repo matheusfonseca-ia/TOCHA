@@ -16,6 +16,11 @@ describe("renderTemplate", () => {
     expect(renderTemplate("Oi {{nome}}!", {})).toBe("Oi !");
   });
 
+  it("não lê membros herdados de Object.prototype", () => {
+    expect(renderTemplate("Oi {{constructor}}{{toString}}{{valueOf}}!", {})).toBe("Oi !");
+    expect(renderTemplate("{{constructor}}", { constructor: "campo real" })).toBe("campo real");
+  });
+
   it("tolera espaços dentro das chaves e repetição", () => {
     expect(renderTemplate("{{ nome }} e {{nome}}", { nome: "Bia" })).toBe("Bia e Bia");
   });

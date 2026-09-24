@@ -157,14 +157,16 @@ describe("expiryColumns", () => {
     expect(expiryColumns({})).toEqual({});
   });
 
-  it("grava nulo (permanente) e a ação padrão", () => {
+  it("grava nulo (permanente) e a ação padrão, zerando o marcador de pausa por expiração", () => {
     expect(expiryColumns({ expires_at: null })).toEqual({
       expires_at: null,
       expire_action: "delete",
+      paused_by_expiry: false,
     });
     expect(expiryColumns({ expires_at: plus(DAY), expire_action: "pause" })).toEqual({
       expires_at: plus(DAY),
       expire_action: "pause",
+      paused_by_expiry: false,
     });
   });
 });

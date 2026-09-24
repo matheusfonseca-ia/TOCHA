@@ -234,6 +234,8 @@ export function RulesManager({
   /** Workflows que usam a automação em exclusão (null = carregando). */
   const [deleteUsage, setDeleteUsage] = useState<string[] | null>(null);
   const deleteRequestRef = useRef<string | null>(null);
+  const [editUsage, setEditUsage] = useState<string[]>([]);
+  const editRequestRef = useRef<string | null>(null);
   const [expiryTarget, setExpiryTarget] = useState<ExpiryTarget | null>(null);
 
   const filteredRules = useMemo(() => {
@@ -250,6 +252,13 @@ export function RulesManager({
   function openEdit(rule: RuleWithAccount) {
     setForm(formFromRule(rule));
     setOpen(true);
+    setEditUsage([]);
+    editRequestRef.current = rule.id;
+    listRuleWorkflowUsage(rule.id)
+      .catch(() => [] as string[])
+      .then((usage) => {
+        if (editRequestRef.current === rule.id) setEditUsage(usage);
+      });
   }
 
   function handleSubmit() {
@@ -730,6 +739,7 @@ export function RulesManager({
               className="rounded-md border border-input p-3"
               value={form.expiry}
               onChange={(expiry) => patch({ expiry, expiryTouched: true })}
+              usedInWorkflows={form.id ? editUsage : undefined}
             />
           </div>
 
@@ -748,6 +758,7 @@ export function RulesManager({
         kind="rule"
         target={expiryTarget}
         onClose={() => setExpiryTarget(null)}
+        loadUsage={listRuleWorkflowUsage}
       />
 
       {/* ── Confirmação de exclusão ──────────────────────────────────── */}

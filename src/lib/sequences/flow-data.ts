@@ -5,6 +5,7 @@ import {
   type ContactSnapshot,
 } from "@/lib/contacts/repository";
 import { evaluateCondition } from "@/lib/sequences/condition";
+import { STORED_FIELD_VALUE_MAX } from "@/lib/sequences/fields";
 import { hasTemplate, renderTemplate } from "@/lib/sequences/template";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type {
@@ -32,7 +33,9 @@ export class FlowData {
   constructor(
     private readonly admin: AdminClient,
     private readonly accountId: string,
-    private readonly run: Pick<SequenceRun, "id" | "ig_sender_id" | "variables">
+    private readonly run: Pick<SequenceRun, "id" | "ig_sender_id" | "variables">,
+    /** Último recurso para o @ (Graph API); só roda se contato e conversa não têm. */
+    private readonly fetchUsername?: () => Promise<string | null>
   ) {
     this.variables = { ...(run.variables ?? {}) };
   }
@@ -50,11 +53,9 @@ export class FlowData {
     const contact = await this.getContact();
     if (contact.ig_username) return contact.ig_username;
     if (this.conversationUsername === undefined) {
-      this.conversationUsername = await loadConversationUsername(
-        this.admin,
-        this.accountId,
-        this.run.ig_sender_id
-      );
+      this.conversationUsername =
+        (await loadConversationUsername(this.admin, this.accountId, this.run.ig_sender_id)) ??
+        (this.fetchUsername ? await this.fetchUsername() : null);
     }
     return this.conversationUsername;
   }
@@ -96,7 +97,8 @@ export class FlowData {
   }
 
   /** Grava o campo no contato e nas variáveis do run. */
-  async setField(key: string, value: string): Promise<void> {
+  async setField(key: string, rawValue: string): Promise<void> {
+    const value = rawValue.slice(0, STORED_FIELD_VALUE_MAX);
     const contact = await this.getContact();
     const username = await this.getUsername();
     this.contact = {
