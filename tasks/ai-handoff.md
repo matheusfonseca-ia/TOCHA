@@ -1,11 +1,24 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260924-083000-claude"
+Última tag: "HANDOFF-falow-20260924-113000-claude"
 Status: concluído
-Resumo: rodada 2 em produção (67dede6, wrangler versão ab81b357, 24/09). Migrations 0003 a 0006 aplicadas e conferidas. Falta só E2E logado e teste com webhook real (comentário, story, link ig.me); pendências de baixo impacto em tasks/todo.md.
+Resumo: produção em 7842e96 (wrangler versão 93e11d74, 24/09): rodada 2 + menu de blocos no canvas (soltar a seta no vazio ou botão direito). Menu testado logado em produção. Falta teste com webhook real (comentário, story, link ig.me); pendências de baixo impacto em tasks/todo.md.
 
 ---
+
+## [HANDOFF · falow · 2026-09-24T11:30:00-03:00 · claude]
+Status: concluído
+Objetivo: menu de blocos no canvas do workflow.
+Feito:
+- src/components/sequences/block-menu/ (menu com busca) + sequence-editor.tsx (onConnectEnd, onPaneContextMenu, addNode aceita posição e seta de origem); commit 20d6f56, merge 7842e96
+- Testado logado em produção: botão direito cria bloco solto no ponto do clique; seta solta no vazio abre "Conectar novo bloco" e o bloco nasce conectado; busca + Enter ok
+- Incidente: build dentro da worktree (node_modules em junction) esvaziou o node_modules real 2x; junctions removidas, npm ci na pasta principal, lição em tasks/lessons.md
+Próximo passo:
+- Webhook real (comentário, story, ig.me?ref); remover as worktrees em .claude/worktrees (já sem junction) quando quiser
+Arquivos tocados: src/components/sequences/block-menu/*, src/components/sequences/sequence-editor.tsx
+Decisões/contexto: build/deploy só na pasta principal. Observado no teste: workflow novo não abre com o gatilho selecionado (pendência já listada).
+Tag: "HANDOFF-falow-20260924-113000-claude"
 
 ## [HANDOFF · falow · 2026-09-24T08:30:00-03:00 · claude]
 Status: concluído
