@@ -343,3 +343,105 @@ describe("processWebhookPayload — handoff rule → workflow", () => {
     expect(fake.tables.sequence_runs[0].status).toBe("completed");
   });
 });
+
+describe("processWebhookPayload: variantes de resposta em comentário", () => {
+  function commentPayload(overrides: Partial<{
+    commentId: string;
+    senderId: string;
+    text: string;
+    mediaId: string;
+  }> = {}): MetaWebhookPayload {
+    return {
+      object: "instagram",
+      entry: [
+        {
+          id: "ig-business-1",
+          time: Math.floor(Date.now() / 1000),
+          field: "comments",
+          value: {
+            id: overrides.commentId ?? "comment-1",
+            text: overrides.text ?? "preço",
+            from: { id: overrides.senderId ?? "sender-10", username: "quem_comentou" },
+            media: { id: overrides.mediaId ?? "media-1", media_product_type: "FEED" },
+          },
+        },
+      ],
+    };
+  }
+
+  it("sem variantes extras: comportamento igual ao de hoje (usa welcome_text e public_reply_text)", async () => {
+    const account = makeAccount({ ig_user_id: "ig-business-1" });
+    const rule = makeRule({
+      account_id: account.id,
+      trigger_type: "comment",
+      keyword: "preço",
+      media_mode: "any",
+      welcome_text: "Vou te mandar o link!",
+      welcome_text_variants: null,
+      welcome_button_label: "Quero o link",
+      public_reply_enabled: true,
+      public_reply_text: "Te chamei no direct!",
+      public_reply_variants: null,
+    });
+
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(rule);
+
+    await processWebhookPayload(commentPayload());
+
+    expect(sendPrivateReplyWithButtonMock).toHaveBeenCalledTimes(1);
+    expect(sendPrivateReplyWithButtonMock).toHaveBeenCalledWith(
+      expect.any(String),
+      "comment-1",
+      "Vou te mandar o link!",
+      "Quero o link",
+      expect.any(String)
+    );
+    expect(replyToCommentMock).toHaveBeenCalledTimes(1);
+    expect(replyToCommentMock).toHaveBeenCalledWith(
+      expect.any(String),
+      "comment-1",
+      "Te chamei no direct!"
+    );
+    expect(fake.tables.interactions[0].status).toBe("replied");
+  });
+
+  it("com variantes: envia sempre uma das opções cadastradas (boas-vindas e resposta pública)", async () => {
+    const account = makeAccount({ ig_user_id: "ig-business-1" });
+    const welcomeOptions = ["Boas-vindas 1", "Boas-vindas 2", "Boas-vindas 3"];
+    const publicOptions = ["Pública 1", "Pública 2"];
+    const rule = makeRule({
+      account_id: account.id,
+      trigger_type: "comment",
+      keyword: "preço",
+      media_mode: "any",
+      welcome_text: welcomeOptions[0],
+      welcome_text_variants: welcomeOptions.slice(1),
+      welcome_button_label: "Quero o link",
+      public_reply_enabled: true,
+      public_reply_text: publicOptions[0],
+      public_reply_variants: publicOptions.slice(1),
+    });
+
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(rule);
+
+    // Roda várias vezes (senders diferentes p/ não cair em duplicate_skip) e
+    // confirma que todo envio pertence ao conjunto de variantes cadastradas.
+    for (let i = 0; i < 10; i++) {
+      await processWebhookPayload(
+        commentPayload({ commentId: `comment-${i}`, senderId: `sender-${i}` })
+      );
+    }
+
+    expect(sendPrivateReplyWithButtonMock).toHaveBeenCalledTimes(10);
+    for (const call of sendPrivateReplyWithButtonMock.mock.calls as unknown[][]) {
+      expect(welcomeOptions).toContain(call[2]);
+    }
+
+    expect(replyToCommentMock).toHaveBeenCalledTimes(10);
+    for (const call of replyToCommentMock.mock.calls as unknown[][]) {
+      expect(publicOptions).toContain(call[2]);
+    }
+  });
+});
