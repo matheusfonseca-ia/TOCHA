@@ -112,7 +112,11 @@ interface CommentConfig {
   comment_any_word: boolean;
   public_reply_enabled: boolean;
   public_reply_text: string | null;
+  /** Variantes extras da resposta pública; este diálogo não edita, só preserva. */
+  public_reply_variants: string[] | null;
   welcome_text: string | null;
+  /** Variantes extras da boas-vindas; este diálogo não edita, só preserva. */
+  welcome_text_variants: string[] | null;
   welcome_button_label: string | null;
 }
 
@@ -184,7 +188,9 @@ function formFromRule(rule: RuleWithAccount): FormState {
             comment_any_word: rule.comment_any_word,
             public_reply_enabled: rule.public_reply_enabled,
             public_reply_text: rule.public_reply_text,
+            public_reply_variants: rule.public_reply_variants,
             welcome_text: rule.welcome_text,
+            welcome_text_variants: rule.welcome_text_variants,
             welcome_button_label: rule.welcome_button_label,
           }
         : null,
@@ -251,7 +257,9 @@ export function RulesManager({
         comment_any_word: comment.comment_any_word,
         public_reply_enabled: comment.public_reply_enabled,
         public_reply_text: comment.public_reply_text ?? undefined,
+        public_reply_variants: comment.public_reply_variants ?? undefined,
         welcome_text: comment.welcome_text ?? undefined,
+        welcome_text_variants: comment.welcome_text_variants ?? undefined,
         welcome_button_label: comment.welcome_button_label ?? undefined,
       }),
     };

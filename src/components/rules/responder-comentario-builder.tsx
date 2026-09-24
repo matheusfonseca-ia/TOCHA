@@ -8,6 +8,7 @@ import { toast } from "sonner";
 
 import { CommentPhonePreview } from "@/components/rules/comment-phone-preview";
 import { MediaPicker } from "@/components/rules/media-picker";
+import { VariantList } from "@/components/rules/variants/variant-list";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -32,6 +33,12 @@ import { saveRule, type RuleInput } from "@/app/(dashboard)/rules/actions";
 import type { MediaRef } from "@/types/database";
 
 const EXAMPLES = ["Preço", "Link", "Comprar"];
+
+// Mesmos limites de `ruleSchema` em app/(dashboard)/rules/actions.ts (300
+// para a resposta pública, 640 para a boas-vindas, pelo limite do botão da
+// Meta). Vale para a variante 1 e para cada variante extra.
+const PUBLIC_REPLY_MAX = 300;
+const WELCOME_TEXT_MAX = 640;
 
 interface AccountOption {
   id: string;
@@ -117,7 +124,9 @@ export function ResponderComentarioBuilder({
   const [keywordInput, setKeywordInput] = useState("");
   const [publicReplyEnabled, setPublicReplyEnabled] = useState(false);
   const [publicReplyText, setPublicReplyText] = useState("");
+  const [publicReplyVariants, setPublicReplyVariants] = useState<string[]>([]);
   const [welcomeText, setWelcomeText] = useState("");
+  const [welcomeTextVariants, setWelcomeTextVariants] = useState<string[]>([]);
   const [welcomeButtonLabel, setWelcomeButtonLabel] = useState("");
   const [message, setMessage] = useState("");
   const [links, setLinks] = useState<LinkSlot[]>([]);
@@ -226,7 +235,11 @@ export function ResponderComentarioBuilder({
       comment_any_word: commentMode === "any",
       public_reply_enabled: publicReplyEnabled,
       public_reply_text: publicReplyEnabled ? publicReplyText.trim() : undefined,
+      public_reply_variants: publicReplyEnabled
+        ? publicReplyVariants.map((v) => v.trim()).filter(Boolean)
+        : undefined,
       welcome_text: welcomeText.trim(),
+      welcome_text_variants: welcomeTextVariants.map((v) => v.trim()).filter(Boolean),
       welcome_button_label: welcomeButtonLabel.trim(),
       reply_type: activeLinks.length > 0 ? "buttons" : "text",
       reply_text: message.trim(),
@@ -375,12 +388,15 @@ export function ResponderComentarioBuilder({
                   <Label htmlFor="public-reply-text">
                     Resposta pública, visível embaixo do comentário
                   </Label>
-                  <Textarea
-                    id="public-reply-text"
-                    placeholder="Ex.: Te chamei no direct! 📩"
+                  <VariantList
+                    idPrefix="public-reply-text"
+                    primary={publicReplyText}
+                    onPrimaryChange={setPublicReplyText}
+                    extras={publicReplyVariants}
+                    onExtrasChange={setPublicReplyVariants}
+                    maxLength={PUBLIC_REPLY_MAX}
                     rows={2}
-                    value={publicReplyText}
-                    onChange={(e) => setPublicReplyText(e.target.value)}
+                    placeholder="Ex.: Te chamei no direct! 📩"
                   />
                 </div>
               )}
@@ -426,12 +442,15 @@ export function ResponderComentarioBuilder({
                   </Label>
                   <Switch checked disabled />
                 </div>
-                <Textarea
-                  id="welcome"
-                  placeholder="Olá! Muito obrigado pelo seu interesse 😊 Clique abaixo e eu te mando o link em um segundo ✨"
+                <VariantList
+                  idPrefix="welcome"
+                  primary={welcomeText}
+                  onPrimaryChange={setWelcomeText}
+                  extras={welcomeTextVariants}
+                  onExtrasChange={setWelcomeTextVariants}
+                  maxLength={WELCOME_TEXT_MAX}
                   rows={4}
-                  value={welcomeText}
-                  onChange={(e) => setWelcomeText(e.target.value)}
+                  placeholder="Olá! Muito obrigado pelo seu interesse 😊 Clique abaixo e eu te mando o link em um segundo ✨"
                 />
                 <Input
                   placeholder="Me envie o link"
@@ -536,7 +555,9 @@ export function ResponderComentarioBuilder({
             commentText={keywordTerms[0] ?? ""}
             publicReplyEnabled={publicReplyEnabled}
             publicReplyText={publicReplyText}
+            publicReplyVariants={publicReplyVariants}
             welcomeText={welcomeText}
+            welcomeTextVariants={welcomeTextVariants}
             welcomeButtonLabel={welcomeButtonLabel}
             linkMessageText={message}
             links={previewLinks}

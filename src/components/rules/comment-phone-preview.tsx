@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { allVariants } from "@/lib/rules/variants";
 import type { MediaRef } from "@/types/database";
 
 type Tab = "publicar" | "comentarios" | "dm";
@@ -39,7 +40,11 @@ interface CommentPhonePreviewProps {
   commentText: string;
   publicReplyEnabled: boolean;
   publicReplyText: string;
+  /** Variantes extras (2ª em diante) da resposta pública; ver `allVariants`. */
+  publicReplyVariants?: string[];
   welcomeText: string;
+  /** Variantes extras (2ª em diante) da mensagem de boas-vindas; ver `allVariants`. */
+  welcomeTextVariants?: string[];
   welcomeButtonLabel: string;
   linkMessageText: string;
   links: { title: string; url: string }[];
@@ -149,12 +154,16 @@ function ComentariosScreen({
   commentText,
   publicReplyEnabled,
   publicReplyText,
+  hasOtherVariant,
+  onShowOtherVariant,
 }: {
   username: string;
   avatarUrl: string | null;
   commentText: string;
   publicReplyEnabled: boolean;
   publicReplyText: string;
+  hasOtherVariant: boolean;
+  onShowOtherVariant: () => void;
 }) {
   return (
     <div className="flex flex-1 flex-col">
@@ -187,6 +196,15 @@ function ComentariosScreen({
                 )}
               </p>
               <p className="mt-0.5 text-[10px] text-white/40">agora · Autor</p>
+              {hasOtherVariant && (
+                <button
+                  type="button"
+                  onClick={onShowOtherVariant}
+                  className="mt-1 text-[10px] font-medium text-[#9DAAFF] hover:underline"
+                >
+                  Ver outra variante
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -209,6 +227,8 @@ function DmScreen({
   welcomeButtonLabel,
   linkMessageText,
   links,
+  hasOtherVariant,
+  onShowOtherVariant,
 }: {
   username: string;
   avatarUrl: string | null;
@@ -216,6 +236,8 @@ function DmScreen({
   welcomeButtonLabel: string;
   linkMessageText: string;
   links: { title: string; url: string }[];
+  hasOtherVariant: boolean;
+  onShowOtherVariant: () => void;
 }) {
   const hasButton = welcomeButtonLabel.trim().length > 0;
 
@@ -250,6 +272,15 @@ function DmScreen({
             )}
           </div>
         </div>
+        {hasOtherVariant && (
+          <button
+            type="button"
+            onClick={onShowOtherVariant}
+            className="ml-6 self-start text-[10px] font-medium text-[#9DAAFF] hover:underline"
+          >
+            Ver outra variante
+          </button>
+        )}
 
         {/* seguidor "toca" no botão */}
         {hasButton && (
@@ -315,12 +346,26 @@ export function CommentPhonePreview({
   commentText,
   publicReplyEnabled,
   publicReplyText,
+  publicReplyVariants,
   welcomeText,
+  welcomeTextVariants,
   welcomeButtonLabel,
   linkMessageText,
   links,
 }: CommentPhonePreviewProps) {
   const [tab, setTab] = useState<Tab>("dm");
+  const [welcomeVariantIndex, setWelcomeVariantIndex] = useState(0);
+  const [publicVariantIndex, setPublicVariantIndex] = useState(0);
+
+  const welcomeOptions = allVariants(welcomeText, welcomeTextVariants);
+  const publicOptions = allVariants(publicReplyText, publicReplyVariants);
+
+  const displayedWelcomeText =
+    welcomeOptions[welcomeVariantIndex % (welcomeOptions.length || 1)] ??
+    welcomeText;
+  const displayedPublicReplyText =
+    publicOptions[publicVariantIndex % (publicOptions.length || 1)] ??
+    publicReplyText;
 
   return (
     <div>
@@ -342,17 +387,25 @@ export function CommentPhonePreview({
               avatarUrl={avatarUrl}
               commentText={commentText}
               publicReplyEnabled={publicReplyEnabled}
-              publicReplyText={publicReplyText}
+              publicReplyText={displayedPublicReplyText}
+              hasOtherVariant={publicOptions.length > 1}
+              onShowOtherVariant={() =>
+                setPublicVariantIndex((i) => i + 1)
+              }
             />
           )}
           {tab === "dm" && (
             <DmScreen
               username={username}
               avatarUrl={avatarUrl}
-              welcomeText={welcomeText}
+              welcomeText={displayedWelcomeText}
               welcomeButtonLabel={welcomeButtonLabel}
               linkMessageText={linkMessageText}
               links={links}
+              hasOtherVariant={welcomeOptions.length > 1}
+              onShowOtherVariant={() =>
+                setWelcomeVariantIndex((i) => i + 1)
+              }
             />
           )}
         </div>

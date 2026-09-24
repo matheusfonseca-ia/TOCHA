@@ -29,6 +29,11 @@ const mediaRefSchema = z.object({
  */
 const WELCOME_TEXT_MAX = 640;
 
+// Variantes de resposta: até 10 opções extras (além da variante 1, que é o
+// próprio campo `public_reply_text`/`welcome_text`) dentro do mesmo limite
+// de caracteres de cada texto.
+const MAX_REPLY_VARIANTS = 10;
+
 const ruleSchema = z.object({
   id: z.string().uuid().optional(),
   account_id: z.string().uuid("Selecione uma conta."),
@@ -42,6 +47,12 @@ const ruleSchema = z.object({
   comment_any_word: z.boolean().optional(),
   public_reply_enabled: z.boolean().optional(),
   public_reply_text: z.string().trim().max(300).optional(),
+  // Variantes extras (2ª em diante) da resposta pública: sorteada junto com
+  // `public_reply_text` (variante 1) em cada disparo.
+  public_reply_variants: z
+    .array(z.string().trim().max(300))
+    .max(MAX_REPLY_VARIANTS)
+    .optional(),
   welcome_text: z
     .string()
     .trim()
@@ -49,6 +60,12 @@ const ruleSchema = z.object({
       WELCOME_TEXT_MAX,
       `Mensagem de boas-vindas: máximo de ${WELCOME_TEXT_MAX} caracteres (limite do botão da Meta).`
     )
+    .optional(),
+  // Variantes extras (2ª em diante) da mensagem de boas-vindas: sorteada
+  // junto com `welcome_text` (variante 1) em cada disparo.
+  welcome_text_variants: z
+    .array(z.string().trim().max(WELCOME_TEXT_MAX))
+    .max(MAX_REPLY_VARIANTS)
     .optional(),
   welcome_button_label: z.string().trim().max(20).optional(),
   // 2ª mensagem: resposta direta (dm) ou conteúdo liberado pelo botão (comment)
@@ -143,6 +160,16 @@ async function findConflictingRuleName(
   return `A automação "${other}" também está ativa e pode responder a mesma mensagem. Só uma delas vai responder.`;
 }
 
+/**
+ * Filtra variantes vazias e devolve `null` (não `[]`) quando não sobra
+ * nenhuma: `public_reply_variants`/`welcome_text_variants` gravam nulo em
+ * vez de array vazio, consistente com o resto das colunas opcionais de rule.
+ */
+function cleanVariants(variants: string[] | undefined): string[] | null {
+  const cleaned = (variants ?? []).map((v) => v.trim()).filter(Boolean);
+  return cleaned.length > 0 ? cleaned : null;
+}
+
 function validateReply(input: RuleInput): string | null {
   if (input.reply_type === "text" && !input.reply_text) {
     return "Informe o texto da resposta.";
@@ -209,7 +236,12 @@ export async function saveRule(raw: RuleInput): Promise<ActionResult> {
     public_reply_enabled: isComment ? !!input.public_reply_enabled : false,
     public_reply_text:
       isComment && input.public_reply_enabled ? input.public_reply_text ?? null : null,
+    public_reply_variants:
+      isComment && input.public_reply_enabled
+        ? cleanVariants(input.public_reply_variants)
+        : null,
     welcome_text: isComment ? input.welcome_text ?? null : null,
+    welcome_text_variants: isComment ? cleanVariants(input.welcome_text_variants) : null,
     welcome_button_label: isComment ? input.welcome_button_label ?? null : null,
     reply_type: input.reply_type,
     reply_text:
@@ -357,7 +389,9 @@ export async function duplicateRule(id: string): Promise<ActionResult> {
     comment_any_word: original.comment_any_word,
     public_reply_enabled: original.public_reply_enabled,
     public_reply_text: original.public_reply_text,
+    public_reply_variants: original.public_reply_variants,
     welcome_text: original.welcome_text,
+    welcome_text_variants: original.welcome_text_variants,
     welcome_button_label: original.welcome_button_label,
     reply_type: original.reply_type,
     reply_text: original.reply_text,

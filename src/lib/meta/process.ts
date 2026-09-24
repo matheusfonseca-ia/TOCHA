@@ -3,6 +3,7 @@ import {
   findMatchingCommentRule,
   findMatchingRule,
 } from "@/lib/rules/engine";
+import { pickVariant } from "@/lib/rules/variants";
 import { sendRuleReply } from "@/lib/sequences/automation";
 import {
   handleSequencePostback,
@@ -636,17 +637,26 @@ async function applyCommentRule(
   try {
     const token = await getFreshToken(admin, account);
 
+    // Sorteia uma variante a cada disparo (mesma regra pode ter mais de um
+    // texto cadastrado); com só uma variante, é ela sempre.
+    const welcomeText =
+      pickVariant(rule.welcome_text, rule.welcome_text_variants) ?? "";
+
     await sendPrivateReplyWithButton(
       token,
       commentId,
-      rule.welcome_text ?? "",
+      welcomeText,
       rule.welcome_button_label ?? "",
       `${COMMENT_LINK_PAYLOAD_PREFIX}${rule.id}`
     );
 
-    if (rule.public_reply_enabled && rule.public_reply_text) {
+    const publicReplyText = rule.public_reply_enabled
+      ? pickVariant(rule.public_reply_text, rule.public_reply_variants)
+      : null;
+
+    if (publicReplyText) {
       try {
-        await replyToComment(token, commentId, rule.public_reply_text);
+        await replyToComment(token, commentId, publicReplyText);
       } catch (err) {
         // Não derruba a automação por isso: a resposta privada (o que
         // importa) já saiu. Só fica registrado no console.

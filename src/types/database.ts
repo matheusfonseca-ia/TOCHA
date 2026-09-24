@@ -51,9 +51,14 @@ export interface Rule {
   media_refs: MediaRef[] | null;
   comment_any_word: boolean;
   public_reply_enabled: boolean;
+  /** Variante 1 da resposta pública. As demais (opcionais) ficam em `public_reply_variants`. */
   public_reply_text: string | null;
-  /** 1ª mensagem do fluxo de comentário (resposta privada + botão postback). */
+  /** Variantes extras (2ª em diante) da resposta pública; sorteadas junto com `public_reply_text`. Nulo/vazio = sem variante extra. */
+  public_reply_variants: string[] | null;
+  /** 1ª mensagem do fluxo de comentário (resposta privada + botão postback). Variante 1 do texto de boas-vindas. */
   welcome_text: string | null;
+  /** Variantes extras (2ª em diante) da mensagem de boas-vindas; sorteadas junto com `welcome_text`. Nulo/vazio = sem variante extra. */
+  welcome_text_variants: string[] | null;
   welcome_button_label: string | null;
   /** 2ª mensagem: em regras "dm" é a resposta direta; em "comment" é o que chega ao tocar no botão. */
   reply_type: ReplyType;
