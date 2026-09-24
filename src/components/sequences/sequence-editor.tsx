@@ -11,6 +11,7 @@ import {
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
+  reconnectEdge,
   useEdgesState,
   useNodesState,
   useReactFlow,
@@ -57,6 +58,7 @@ import {
   defaultSetFieldData,
 } from "@/components/sequences/data";
 import { BlockMenu } from "@/components/sequences/block-menu";
+import { DELETABLE_EDGE, sequenceEdgeTypes } from "@/components/sequences/edges";
 import { GoToSequenceProvider } from "@/components/sequences/extras";
 import { findFirstInvalidNode } from "@/components/sequences/find-invalid-node";
 import { SequenceConfirmDialog } from "@/components/sequences/sequence-confirm-dialog";
@@ -590,6 +592,29 @@ function EditorInner({
     [setEdges]
   );
 
+  // Arrastar a ponta de uma seta para outro bloco (ou outra saída) muda a
+  // conexão de lugar. Mantém a regra de uma conexão por saída: se a saída de
+  // destino já tinha seta, ela é substituída.
+  const onReconnect = useCallback(
+    (oldEdge: Edge, conn: Connection) => {
+      setEdges((eds) =>
+        reconnectEdge(
+          oldEdge,
+          conn,
+          eds.filter(
+            (e) =>
+              e.id === oldEdge.id ||
+              !(
+                e.source === conn.source &&
+                (e.sourceHandle ?? OUT_HANDLE) === (conn.sourceHandle ?? OUT_HANDLE)
+              )
+          )
+        )
+      );
+    },
+    [setEdges]
+  );
+
   // Apagar nó que tem conexão pergunta antes (Dialog); apagar aresta solta
   // (nenhum nó selecionado no lote) continua direto, sem interromper.
   const onBeforeDelete = useCallback(
@@ -1002,7 +1027,11 @@ function EditorInner({
               minZoom={0.25}
               maxZoom={1.5}
               deleteKeyCode={["Backspace", "Delete"]}
+              edgeTypes={sequenceEdgeTypes}
+              onReconnect={onReconnect}
+              reconnectRadius={16}
               defaultEdgeOptions={{
+                type: DELETABLE_EDGE,
                 markerEnd: {
                   type: MarkerType.ArrowClosed,
                   width: 20,

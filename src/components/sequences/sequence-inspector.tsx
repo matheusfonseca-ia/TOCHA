@@ -130,6 +130,14 @@ export function SequenceInspector({
           </li>
           <li>Clique num bloco para editá-lo aqui.</li>
           <li>
+            Passe o mouse numa conexão para ver a{" "}
+            <span className="text-foreground">lixeira</span> e excluí-la.
+          </li>
+          <li>
+            Arraste a <span className="text-foreground">ponta da seta</span>{" "}
+            até outro bloco para mudar a conexão de lugar.
+          </li>
+          <li>
             Selecione um bloco ou conexão e aperte{" "}
             <span className="rounded bg-secondary px-1 text-foreground">Delete</span>{" "}
             para excluir.
