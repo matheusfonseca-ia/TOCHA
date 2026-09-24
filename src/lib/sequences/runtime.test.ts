@@ -462,6 +462,33 @@ describe("startSequenceFromRule — rule direto no gatilho e formato legado", ()
     expect(second?.status).toBe("duplicate_skip");
     expect(fake.tables.sequence_runs).toHaveLength(1);
   });
+
+  it("rule no gatilho + nó Automação antigo da MESMA rule: a resposta da rule não sai de novo", async () => {
+    const account = makeAccount();
+    const rule = makeRule({ account_id: account.id, trigger_type: "dm" });
+    const sequence = makeSequence({
+      account_id: account.id,
+      entry_rule_id: rule.id,
+      graph: {
+        nodes: [
+          triggerNode({ source: "automation", ruleId: rule.id }),
+          automationNode("legacy", rule.id),
+          messageNode("m1", "Depois da automação"),
+        ],
+        edges: [edge("trigger", "legacy"), edge("legacy", "m1")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(rule);
+    fake.tables.sequences.push(sequence);
+    fake.tables.conversations.push(makeOpenConversation(account.id, "sender-24"));
+
+    const outcome = await startSequenceFromRule(admin, account, "sender-24", rule);
+
+    expect(outcome?.status).toBe("replied");
+    expect(sendRuleReplyMock).not.toHaveBeenCalled();
+    expect(sendTextMessageMock).toHaveBeenCalledWith(expect.any(String), "sender-24", "Depois da automação");
+  });
 });
 
 describe("nó Aleatório", () => {
@@ -580,6 +607,32 @@ describe("nó Ir para workflow", () => {
     expect(sendTextMessageMock).not.toHaveBeenCalledWith(expect.any(String), "sender-19", "Já visitado");
     const sourceRun = fake.tables.sequence_runs.find((r) => r.sequence_id === source.id);
     expect(sourceRun?.status).toBe("completed");
+  });
+
+  it("destino pausado: o erro fica visível em vez de 'concluído' silencioso", async () => {
+    const account = makeAccount();
+    const target = makeSequence({ account_id: account.id, is_active: false });
+    const source = makeSequence({
+      account_id: account.id,
+      graph: {
+        nodes: [
+          triggerNode({ keyword: "origem3" }),
+          messageNode("m0", "Vou te levar pro outro fluxo"),
+          node("g", "goToSequence", { sequenceId: target.id }),
+        ],
+        edges: [edge("trigger", "m0"), edge("m0", "g")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(source, target);
+    fake.tables.conversations.push(makeOpenConversation(account.id, "sender-25"));
+
+    const outcome = await maybeStartSequence(admin, account, "sender-25", { kind: "dm", text: "origem3" });
+
+    expect(outcome?.status).toBe("error");
+    const sourceRun = fake.tables.sequence_runs.find((r) => r.sequence_id === source.id);
+    expect(sourceRun?.status).toBe("error");
+    expect(sourceRun?.last_error).toMatch(/destino está pausado/);
   });
 });
 

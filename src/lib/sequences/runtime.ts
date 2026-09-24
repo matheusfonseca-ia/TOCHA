@@ -226,6 +226,12 @@ export async function startSequenceFromRule(
   let startNodeId: string | null;
   if (ruleOnTrigger) {
     startNodeId = targetOf(sequence.graph, trigger.id, OUT_HANDLE);
+    // Workflow legado migrado no editor: o nó Automação antigo da MESMA rule
+    // ainda ligado ao gatilho reenviaria a resposta que a rule acabou de mandar.
+    const first = startNodeId ? nodeById(sequence.graph, startNodeId) : null;
+    if (first?.type === "automation" && (first.data as AutomationNodeData).ruleId === rule.id) {
+      startNodeId = targetOf(sequence.graph, first.id, OUT_HANDLE);
+    }
   } else {
     const entry = findEntryAutomationNode(sequence.graph);
     if (!entry) return null;
@@ -1004,7 +1010,7 @@ async function executeFrom(
           // upsert: cria a linha de conversation se, por algum motivo, ela
           // ainda não existir (nunca deveria acontecer — chegar aqui já
           // implica uma interação anterior que a criou).
-          await admin.from("conversations").upsert(
+          const { error: pauseError } = await admin.from("conversations").upsert(
             {
               account_id: account.id,
               ig_sender_id: run.ig_sender_id,
@@ -1012,15 +1018,20 @@ async function executeFrom(
             },
             { onConflict: "account_id,ig_sender_id" }
           );
+          if (pauseError) {
+            throw new Error(
+              `Pausar automações falhou: ${pauseError.message} (aplique a migration 0006_automation_pause.sql)`
+            );
+          }
           nodeId = targetOf(graph, node.id, OUT_HANDLE);
           break;
         }
 
         case "goToSequence": {
-          // Nó terminal: encerra o run atual e a execução volta pra cima
-          // (não há sourceHandle "out" — sourceHandlesOf devolve []).
+          // Nó terminal: o run atual só é encerrado como concluído se o
+          // destino realmente começou; destino pausado, vencido ou removido
+          // vira erro visível no painel de execuções.
           const { sequenceId } = node.data as GoToSequenceNodeData;
-          await persistRun(admin, run, "completed", { steps_executed: steps });
           const handoff = await startSequenceFromGoTo(
             admin,
             account,
@@ -1028,7 +1039,13 @@ async function executeFrom(
             sequenceId,
             deadline
           );
-          return handoff ?? ok("replied");
+          if (!handoff) {
+            throw new Error(
+              "Ir para workflow: o workflow de destino está pausado, vencido ou foi removido"
+            );
+          }
+          await persistRun(admin, run, "completed", { steps_executed: steps });
+          return handoff;
         }
       }
     }

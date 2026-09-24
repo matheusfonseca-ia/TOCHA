@@ -34,6 +34,8 @@ interface InboundMessage {
   text?: string;
   reply_to?: { story?: { id?: string; url?: string } };
   attachments?: InboundAttachment[];
+  /** Conversa nova aberta por link ig.me?ref=: o ref pode vir dentro da mensagem. */
+  referral?: { ref?: string };
 }
 
 interface InboundMessagingEvent {
@@ -55,7 +57,7 @@ export function classifyInboundEvent(
 ): ClassifiedInboundEvent | null {
   const text = event.message?.text ?? "";
 
-  const ref = event.referral?.ref;
+  const ref = (event.referral?.ref ?? event.message?.referral?.ref)?.trim();
   if (ref) return { kind: "refLink", text, ref };
 
   if (event.message?.reply_to?.story) {
@@ -89,15 +91,20 @@ export function triggerMatchesInbound(
   event: ClassifiedInboundEvent
 ): boolean {
   const source = data.source ?? "dm";
-  if (source === "automation") return false;
+  if (source === "automation" || source === "unset") return false;
   if (source !== event.kind) return false;
 
+  // O código identifica o gatilho sozinho; palavra-chave que sobrou de outro
+  // modo (o campo nem aparece no editor) não pode travar o disparo.
   if (source === "refLink") {
     const code = (data.refCode ?? "").trim();
-    if (!code || event.ref !== code) return false;
+    return !!code && event.ref === code;
   }
+  // Menção em story não traz texto: filtro de palavra-chave nunca casaria.
+  if (source === "storyMention") return true;
 
-  if (data.anyMessage) return true;
+  // "Qualquer DM" só vale no modo DM; fora dele é resíduo de troca de modo.
+  if (source === "dm" && data.anyMessage) return true;
 
   const keyword = data.keyword.trim();
   if (!keyword) return source !== "dm";

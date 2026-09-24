@@ -307,21 +307,27 @@ function TriggerForm({
 }) {
   const when = triggerWhenOf(data);
 
+  // Trocar de modo limpa o que só fazia sentido no modo anterior: ruleId
+  // residual contaria como uso da automação e anyMessage/keyword residuais
+  // mudariam quando o gatilho dispara.
   function selectWhen(value: TriggerWhen) {
+    const base = { ...data, anyMessage: false, ruleId: undefined };
     switch (value) {
       case "automation":
-        patch({ ...data, source: "automation", anyMessage: false });
+        patch({ ...base, source: "automation", ruleId: data.ruleId, keyword: "" });
         break;
       case "dm-keyword":
-        patch({ ...data, source: "dm", anyMessage: false });
+        patch({ ...base, source: "dm" });
         break;
       case "dm-any":
-        patch({ ...data, source: "dm", anyMessage: true });
+        patch({ ...base, source: "dm", anyMessage: true, keyword: "" });
         break;
       case "storyReply":
+        patch({ ...base, source: value });
+        break;
       case "storyMention":
       case "refLink":
-        patch({ ...data, source: value });
+        patch({ ...base, source: value, keyword: "" });
         break;
     }
   }
@@ -389,7 +395,13 @@ function TriggerForm({
         <RefLinkFields data={data} patch={patch} accountUsername={accountUsername} />
       )}
 
-      {(when === "dm-keyword" || when === "storyReply" || when === "storyMention") && (
+      {when === "storyMention" && (
+        <p className="text-xs text-muted-foreground">
+          Dispara quando alguém marca a sua conta num story.
+        </p>
+      )}
+
+      {(when === "dm-keyword" || when === "storyReply") && (
         <>
           <div className="space-y-2">
             <Label htmlFor="seq-keyword">

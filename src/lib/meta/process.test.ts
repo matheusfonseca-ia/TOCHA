@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeAdmin, type FakeSupabase } from "@/lib/sequences/__tests__/fake-supabase";
 import {
   automationNode,
+  collectInputNode,
   edge,
   makeAccount,
+  makeOpenConversation,
   makeRule,
   makeSequence,
   messageNode,
@@ -576,6 +578,118 @@ describe("processWebhookPayload — gatilhos novos (story reply, menção em sto
     );
     expect(fake.tables.sequence_runs).toHaveLength(1);
   });
+
+  function storyReplyPayload(accountIgId: string, sender: string, text: string): MetaWebhookPayload {
+    return {
+      object: "instagram",
+      entry: [
+        {
+          id: accountIgId,
+          messaging: [
+            {
+              sender: { id: sender },
+              recipient: { id: accountIgId },
+              timestamp: Date.now(),
+              message: {
+                mid: `mid-${sender}`,
+                text,
+                is_echo: false,
+                reply_to: { story: { id: "story-1", url: "https://cdn/x.jpg" } },
+              },
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  it("resposta a story com palavra-chave continua acionando a automação de DM existente", async () => {
+    const account = makeAccount();
+    const rule = makeRule({ account_id: account.id, trigger_type: "dm", keyword: "preço" });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(rule);
+
+    await processWebhookPayload(storyReplyPayload(account.ig_user_id, "sender-30", "qual o preço?"));
+
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+    expect(fake.tables.interactions[0].status).toBe("replied");
+  });
+
+  it("workflow específico de resposta a story tem prioridade sobre a automação de DM", async () => {
+    const account = makeAccount();
+    const rule = makeRule({ account_id: account.id, trigger_type: "dm", keyword: "preço" });
+    const sequence = makeSequence({
+      account_id: account.id,
+      graph: {
+        nodes: [triggerNode({ source: "storyReply", keyword: "" }), messageNode("m1", "Resposta do story")],
+        edges: [edge("trigger", "m1")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(rule);
+    fake.tables.sequences.push(sequence);
+
+    await processWebhookPayload(storyReplyPayload(account.ig_user_id, "sender-31", "qual o preço?"));
+
+    expect(sendTextMessageMock).toHaveBeenCalledWith(expect.any(String), "sender-31", "Resposta do story");
+    expect(sendRuleReplyMock).not.toHaveBeenCalled();
+  });
+
+  it("menção em story não conta como resposta de quem está no 'Coletar dado'", async () => {
+    const account = makeAccount();
+    const sequence = makeSequence({
+      account_id: account.id,
+      graph: {
+        nodes: [
+          triggerNode({ keyword: "cadastro" }),
+          collectInputNode("c1", { fieldKey: "email", inputType: "email", maxAttempts: 1 }),
+          messageNode("ok", "Obrigado!"),
+          messageNode("fail", "Sem e-mail"),
+        ],
+        edges: [edge("trigger", "c1"), edge("c1", "ok"), edge("c1", "fail", "invalid")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+    fake.tables.conversations.push(makeOpenConversation(account.id, "sender-32"));
+    fake.tables.sequence_runs.push(
+      row({
+        sequence_id: sequence.id,
+        account_id: account.id,
+        ig_sender_id: "sender-32",
+        status: "waiting_reply",
+        current_node_id: "c1",
+        next_run_at: null,
+        steps_executed: 2,
+        last_error: null,
+        entry_rule_id: null,
+        variables: {},
+        started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+    );
+
+    await processWebhookPayload({
+      object: "instagram",
+      entry: [
+        {
+          id: account.ig_user_id,
+          messaging: [
+            {
+              sender: { id: "sender-32" },
+              recipient: { id: account.ig_user_id },
+              timestamp: Date.now(),
+              message: { mid: "mid-32", is_echo: false, attachments: [{ type: "story_mention" }] },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(sendTextMessageMock).not.toHaveBeenCalled();
+    expect(fake.tables.sequence_runs[0].status).toBe("waiting_reply");
+    expect(fake.tables.sequence_runs[0].current_node_id).toBe("c1");
+  });
 });
 
 describe("processWebhookPayload — nó Pausar automações", () => {
@@ -621,6 +735,43 @@ describe("processWebhookPayload — nó Pausar automações", () => {
     expect(sendRuleReplyMock).not.toHaveBeenCalled();
     expect(fake.tables.interactions).toHaveLength(1);
     expect(fake.tables.interactions[0].status).toBe("no_match");
+    expect(fake.tables.interactions[0].error_detail).toContain("pausadas");
+  });
+
+  it("pessoa com automações pausadas também não recebe a automação de comentário", async () => {
+    const account = makeAccount();
+    const rule = makeRule({
+      account_id: account.id,
+      trigger_type: "comment",
+      keyword: "eu quero",
+      media_mode: "any",
+      welcome_text: "Oi",
+      welcome_button_label: "Link",
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(rule);
+    fake.tables.conversations.push(
+      row({
+        account_id: account.id,
+        ig_sender_id: "fan-9",
+        last_inbound_at: new Date().toISOString(),
+        automation_paused_until: new Date(Date.now() + 3600_000).toISOString(),
+      })
+    );
+
+    await processWebhookPayload({
+      object: "instagram",
+      entry: [
+        {
+          id: account.ig_user_id,
+          time: Math.floor(Date.now() / 1000),
+          field: "comments",
+          value: { id: "c-9", text: "eu quero", from: { id: "fan-9" }, media: { id: "media-1" } },
+        },
+      ],
+    });
+
+    expect(sendPrivateReplyWithButtonMock).not.toHaveBeenCalled();
     expect(fake.tables.interactions[0].error_detail).toContain("pausadas");
   });
 });

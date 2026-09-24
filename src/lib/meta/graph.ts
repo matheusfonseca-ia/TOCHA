@@ -254,12 +254,12 @@ export function sendTypingAction(igToken: string, recipientId: string) {
 
 /**
  * Inscreve a conta profissional nos eventos necessários para o webhook:
- * mensagens, toques em botão postback (fluxos de comentário e sequências)
- * e comentários.
+ * mensagens, toques em botão postback (fluxos de comentário e sequências),
+ * comentários e aberturas por link ig.me?ref= (gatilho "Link de referência").
  */
 export function subscribeAccountToWebhooks(igToken: string) {
   return graphPost("me/subscribed_apps", igToken, {
-    subscribed_fields: "messages,messaging_postbacks,comments",
+    subscribed_fields: "messages,messaging_postbacks,messaging_referral,comments",
   });
 }
 
