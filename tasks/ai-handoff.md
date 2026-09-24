@@ -1,11 +1,97 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260923-170000-claude"
+Última tag: "HANDOFF-falow-20260924-083000-claude"
 Status: concluído
-Resumo: em produção (wrangler, versão 287e70c9, 23/09) com ef293f6; falta usuário apagar 3 itens de teste e teste real comentário -> botão -> workflow.
+Resumo: rodada 2 em produção (67dede6, wrangler versão ab81b357, 24/09). Migrations 0003 a 0006 aplicadas e conferidas. Falta só E2E logado e teste com webhook real (comentário, story, link ig.me); pendências de baixo impacto em tasks/todo.md.
 
 ---
+
+## [HANDOFF · falow · 2026-09-24T08:30:00-03:00 · claude]
+Status: concluído
+Objetivo: publicar a rodada 2.
+Feito:
+- Migrations 0003 a 0006 aplicadas pelo SQL Editor (bloco atômico) e verificadas: 20 colunas com tipos/defaults, checks de expire_action, 3 índices, RLS + 2 policies em contacts, grants com service_role, dados existentes intactos (6 rules, 21 conversas, 2 sequences pausadas)
+- Deploy: npm run build:cloudflare && npx wrangler deploy (Token DEPLOY), versão ab81b357; smoke: páginas públicas 200, rotas logadas 307 para login, /exclusao-de-dados com contacts, webhook 403 com token errado
+Próximo passo:
+- E2E logado em 375/768/1440 e webhook real (comentário -> botão -> workflow; resposta a story; link ig.me?ref)
+- Usuário: apagar os 2 workflows de teste pausados da rodada anterior
+- Pendências de baixo impacto em tasks/todo.md; worktrees .claude/worktrees/* podem ser removidas
+Arquivos tocados: nenhum código novo desde 67dede6
+Decisões/contexto: messaging_referral já estava assinado no app Meta; a inscrição da conta só inclui o campo novo depois de reconectar a conta (se referral não chegar, reconectar).
+Tag: "HANDOFF-falow-20260924-083000-claude"
+
+## [HANDOFF · falow · 2026-09-24T08:15:00-03:00 · claude]
+Status: em andamento
+Objetivo: fechar a rodada 2 (4 features) e publicar.
+Feito:
+- 2º lote de correções (gatilhos de story/link, retomadas sem texto, pausa em comentário, Ir para workflow, rule 2x) em 0f35fba, mergeado na main (67dede6)
+- Revisões multi-agente encerradas (interrompidas às 07:53, não relançadas a pedido do usuário por custo de tokens); achados colhidos dos journals
+Próximo passo:
+- Usuário: aplicar supabase/migrations 0003, 0004, 0005, 0006 (nessa ordem) no SQL Editor; no app Meta, Webhooks do Instagram, assinar o campo messaging_referral; reconectar a conta no painel (a inscrição da conta roda no OAuth)
+- E2E logado (npm run dev -- -p 3007) e deploy manual com ok: npm run build:cloudflare && npx wrangler deploy (Token DEPLOY)
+- Pendências de baixo impacto listadas em tasks/todo.md
+Arquivos tocados: git log main 8bf744f..67dede6; tasks/*.md não commitados
+Decisões/contexto: usuário quer economia de tokens (memória feedback_token_budget). Worktrees .claude/worktrees/agent-* e fix-review-r2 já mergeadas, podem ser removidas.
+Tag: "HANDOFF-falow-20260924-081500-claude"
+
+## [HANDOFF · falow · 2026-09-24T07:45:00-03:00 · claude]
+Status: em andamento
+Objetivo: fechar a rodada 2 com revisão completa, correções, migrations e E2E.
+Feito:
+- 10 achados confirmados da 1ª revisão, deduplicados em R1 a R8, corrigidos com testes na branch fix/review-r2 (d2b05cb) e mergeados na main (1b9a07d). Detalhe em tasks/todo.md, seção "Revisão adversarial"
+- Migration 0003 ganhou a coluna paused_by_expiry (ainda não aplicada em lugar nenhum, então foi editada no próprio arquivo)
+- {{username}} agora busca o @ na User Profile API (graph.instagram.com/<IGSID>?fields=username,name, permissão instagram_business_basic) e grava em conversations
+Próximo passo:
+- Esperar as duas revisões (notificação automática); itens "refutados" das dimensões que falharam por crédito não valem até a nova rodada
+- Corrigir achados novos; então pedir ao usuário para aplicar 0003, 0004, 0005, 0006 (nessa ordem) no SQL Editor
+- E2E logado (localhost:3007) em 375/768/1440; deploy manual só com ok
+Arquivos tocados: ver git log main (8bf744f..1b9a07d); tasks/*.md não commitados
+Decisões/contexto: sweep de expiração continua no fim do webhook (as retomadas checam expiração sozinhas, então não precisa adicionar latência antes da 1ª resposta). Worktrees: .claude/worktrees/agent-* (4 agentes, já mergeados) e .claude/worktrees/fix-review-r2 (mergeado); podem ser removidas no fechamento. git commit -F - não funciona no PowerShell 5.1: usar -F <arquivo>.
+Tag: "HANDOFF-falow-20260924-074500-claude"
+
+## [HANDOFF · falow · 2026-09-24T04:52:00-03:00 · claude]
+Status: em andamento
+Objetivo: fechar a rodada 2 (4 features) com revisão, correções e E2E.
+Feito:
+- Merge do Sonnet D (8bf744f) com 10 conflitos resolvidos à mão (types/sequence.ts, graph.ts, runtime.ts, process.ts, sequencias/actions.ts, find-invalid-node.ts, sequence-editor/inspector/nodes/runs-panel); data-nodes.test.ts adaptado à nova assinatura de maybeStartSequence (evento classificado)
+- tsc limpo, vitest 198/198 (17 arquivos), next build ok
+- Inventário ManyChat em tasks/manychat-features.md
+Próximo passo:
+- Ler resultados das duas revisões (journals em ~/.claude/projects/.../subagents/workflows/<runId>/journal.jsonl), corrigir os achados confirmados com testes
+- Pendências conhecidas: {{username}} vazio (webhook não grava ig_sender_username); mensagem de ciclo não cita "Coletar dado"; 32 linhas novas com travessão são todas comentários/describes de teste (nenhuma em copy de UI), conferir de novo após correções
+- Usuário aplica migrations 0003, 0004, 0005, 0006 (nessa ordem) no SQL Editor; E2E logado 375/768/1440; deploy manual só com ok
+Arquivos tocados: merges 8245be2 e 8bf744f na main; tasks/todo.md, tasks/lessons.md, tasks/ai-handoff.md (não commitados)
+Decisões/contexto: resolução do merge: handleSequenceReply recebe (payload, classified.text); rules só casam em kind "dm" e com withoutExpired; startSequenceFromRule = withoutExpired(candidatos)[0] + rule no gatilho ou formato legado. Worktrees dos 4 agentes ainda existem em .claude/worktrees (branches worktree-agent-*), podem ser removidas depois do fechamento.
+Tag: "HANDOFF-falow-20260924-045200-claude"
+
+## [HANDOFF · falow · 2026-09-23T23:55:00-03:00 · claude]
+Status: em andamento
+Objetivo: integrar as 4 features da rodada 2 e revisar antes de migrations/E2E/deploy.
+Feito:
+- Merges na main: variantes (Sonnet C), temporárias (Opus A), fluxos complexos (Opus B); sem conflitos; tsc, vitest 140/140 e next build ok
+- Sonnet D caiu por limite de uso da API antes de commitar; worktree preservada com 17 arquivos modificados + 10 novos (src/lib/meta/triggers.ts, src/lib/sequences/{randomizer,automation-pause}.ts, src/components/sequences/extras/, automation/rule-select.tsx, migration 0006, tasks/manychat-features.md); agente retomado para verificar, commitar e reportar
+- Revisão adversarial multi-agente (8 dimensões x 3 céticos) rodando sobre o diff 793eafc..HEAD
+Próximo passo:
+- Merge da branch worktree-agent-a7efc998494774b88 na main (conflitos esperados nos 7 arquivos de registro de nó e em process.ts/runtime.ts)
+- Aplicar os achados confirmados da revisão; segunda revisão focada em gatilho <-> automações existentes
+- Usuário aplica migrations 0003 a 0006; E2E logado; deploy só com ok
+Arquivos tocados: ver git log main (merges 8245be2 e anteriores), tasks/todo.md
+Decisões/contexto: pendências conhecidas do Opus B: {{username}} sai vazio (webhook não grava ig_sender_username), mensagem de ciclo não cita "Coletar dado". Se a worktree do D for perdida, o trabalho dele precisa ser refeito a partir da seção "Agente Sonnet D" + adendo em tasks/todo.md.
+Tag: "HANDOFF-falow-20260923-235500-claude"
+
+## [HANDOFF · falow · 2026-09-23T21:15:00-03:00 · claude]
+Status: em andamento
+Objetivo: rodada 2 de features (4 agentes em paralelo), plano em tasks/todo.md.
+Feito:
+- Plano escrito e 4 decisões de formato confirmadas com o usuário (ver "Decisões do usuário" em todo.md)
+- Disparados: Opus A (temporárias, migration 0003), Opus B (coleta de dados/condição/variáveis/Contatos, 0004), Sonnet C (variantes comentário, 0005), Sonnet D (gatilhos story/menção/ref + randomizer/goToSequence/stopAutomation, 0006), cada um em worktree/branch própria
+Próximo passo:
+- Receber relatórios, merge das branches na main na ordem A, C, D, B, resolver conflitos nos 7 arquivos de registro de nó
+- tsc + vitest + build; usuário aplica migrations 0003 a 0006 no Supabase; E2E logado; deploy só com ok
+Arquivos tocados: tasks/todo.md, tasks/ai-handoff.md (as branches dos agentes ainda não estão na main)
+Decisões/contexto: expiração com escolha excluir/pausar por item e vale para rules e sequences; variantes só em comentário (pública + boas-vindas); dados coletados em tabela contacts com página Contatos + CSV. Deploy do Falow continua manual via wrangler.
+Tag: "HANDOFF-falow-20260923-211500-claude"
 
 ## [HANDOFF · falow · 2026-09-23T17:00:00-03:00 · claude]
 Status: em andamento
