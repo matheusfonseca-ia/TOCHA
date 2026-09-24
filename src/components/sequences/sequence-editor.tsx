@@ -19,6 +19,7 @@ import {
   type Edge,
   type Node,
   type NodeChange,
+  type OnConnectEnd,
   type OnSelectionChangeParams,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -55,6 +56,7 @@ import {
   defaultConditionData,
   defaultSetFieldData,
 } from "@/components/sequences/data";
+import { BlockMenu } from "@/components/sequences/block-menu";
 import { GoToSequenceProvider } from "@/components/sequences/extras";
 import { findFirstInvalidNode } from "@/components/sequences/find-invalid-node";
 import { SequenceConfirmDialog } from "@/components/sequences/sequence-confirm-dialog";
@@ -337,7 +339,7 @@ function EditorInner({
   const { resolvedTheme } = useTheme();
   const [isPending, startTransition] = useTransition();
   const updateNodeInternals = useUpdateNodeInternals();
-  const { fitView, getInternalNode, getViewport, setCenter } = useReactFlow();
+  const { fitView, getInternalNode, getViewport, setCenter, screenToFlowPosition } = useReactFlow();
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const graph = useMemo(() => initialGraph(sequence), [sequence]);
@@ -637,14 +639,22 @@ function EditorInner({
   // altura do gatilho) — nos dois casos, empurra pra baixo se colidir com
   // um nó já existente.
   const addNode = useCallback(
-    (type: SequenceNodeType) => {
+    (
+      type: SequenceNodeType,
+      /** Menu do canvas: bloco na posição do clique, ligado à seta solta (se houver). */
+      opts?: { at: { x: number; y: number }; from?: { source: string; sourceHandle: string } }
+    ) => {
       const id = newNodeId(type);
       const selected = selectedId ? nodes.find((n) => n.id === selectedId) ?? null : null;
 
       let position: { x: number; y: number } | null = null;
       let connectFrom: { source: string; sourceHandle: string } | null = null;
 
-      if (selected) {
+      if (opts) {
+        // A entrada do bloco (lado esquerdo) fica onde a seta foi solta.
+        position = { x: opts.at.x, y: opts.at.y - FALLBACK_NODE_HEIGHT / 2 };
+        connectFrom = opts.from ?? null;
+      } else if (selected) {
         const handle = freeSourceHandle(selected, edges);
         if (handle) {
           const internal = getInternalNode(selected.id);
@@ -693,15 +703,79 @@ function EditorInner({
       setSelectedId(id);
 
       // Traz o bloco novo para a área visível (sem mudar o zoom): antes ele
-      // podia nascer fora do canvas e parecer que nada aconteceu.
-      const { zoom } = getViewport();
-      setCenter(
-        finalPosition.x + NODE_WIDTH / 2,
-        finalPosition.y + FALLBACK_NODE_HEIGHT / 2,
-        { zoom, duration: 300 }
-      );
+      // podia nascer fora do canvas e parecer que nada aconteceu. Pelo menu do
+      // canvas ele já nasce onde a pessoa clicou, então a tela não se mexe.
+      if (!opts) {
+        const { zoom } = getViewport();
+        setCenter(
+          finalPosition.x + NODE_WIDTH / 2,
+          finalPosition.y + FALLBACK_NODE_HEIGHT / 2,
+          { zoom, duration: 300 }
+        );
+      }
     },
     [selectedId, nodes, edges, setNodes, setEdges, getInternalNode, getViewport, setCenter]
+  );
+
+  // ── Menu de blocos no canvas (soltar a seta no vazio / botão direito) ────
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [blockMenu, setBlockMenu] = useState<{
+    left: number;
+    top: number;
+    width: number;
+    height: number;
+    flow: { x: number; y: number };
+    from?: { source: string; sourceHandle: string };
+  } | null>(null);
+
+  const openBlockMenu = useCallback(
+    (clientX: number, clientY: number, from?: { source: string; sourceHandle: string }) => {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setBlockMenu({
+        left: clientX - rect.left,
+        top: clientY - rect.top,
+        width: rect.width,
+        height: rect.height,
+        flow: screenToFlowPosition({ x: clientX, y: clientY }),
+        from,
+      });
+    },
+    [screenToFlowPosition]
+  );
+
+  const closeBlockMenu = useCallback(() => setBlockMenu(null), []);
+
+  // Seta puxada de uma saída e solta no vazio: oferece o bloco que vem a seguir.
+  const onConnectEnd: OnConnectEnd = useCallback(
+    (event, state) => {
+      if (state.isValid || !state.fromNode || state.fromHandle?.type !== "source") return;
+      const target = event.target as Element | null;
+      if (!target?.closest(".react-flow__pane")) return;
+      const point = "changedTouches" in event ? event.changedTouches[0] : event;
+      openBlockMenu(point.clientX, point.clientY, {
+        source: state.fromNode.id,
+        sourceHandle: state.fromHandle.id ?? OUT_HANDLE,
+      });
+    },
+    [openBlockMenu]
+  );
+
+  const onPaneContextMenu = useCallback(
+    (event: MouseEvent | React.MouseEvent) => {
+      event.preventDefault();
+      openBlockMenu(event.clientX, event.clientY);
+    },
+    [openBlockMenu]
+  );
+
+  const pickFromBlockMenu = useCallback(
+    (type: SequenceNodeType) => {
+      if (!blockMenu) return;
+      addNode(type, { at: blockMenu.flow, from: blockMenu.from });
+      setBlockMenu(null);
+    },
+    [blockMenu, addNode]
   );
 
   const handleSave = useCallback(() => {
@@ -895,8 +969,9 @@ function EditorInner({
         )}
       >
         <div
+          ref={canvasRef}
           className={cn(
-            "min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-card",
+            "relative min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-card",
             isFullscreen
               ? "min-h-0 flex-1 lg:h-full"
               : "h-[420px] sm:h-[480px] lg:h-[calc(100vh-330px)] lg:min-h-[460px]"
@@ -914,6 +989,10 @@ function EditorInner({
               onNodesChange={onNodesChange}
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
+              onConnectEnd={onConnectEnd}
+              onPaneContextMenu={onPaneContextMenu}
+              onPaneClick={closeBlockMenu}
+              onMoveStart={closeBlockMenu}
               onBeforeDelete={onBeforeDelete}
               onSelectionChange={onSelectionChange}
               nodeTypes={sequenceNodeTypes}
@@ -952,6 +1031,18 @@ function EditorInner({
             </GoToSequenceProvider>
             </AutomationRulesProvider>
           </InvalidNodeContext.Provider>
+          {blockMenu && (
+            <BlockMenu
+              items={PALETTE}
+              left={blockMenu.left}
+              top={blockMenu.top}
+              containerWidth={blockMenu.width}
+              containerHeight={blockMenu.height}
+              connecting={!!blockMenu.from}
+              onPick={pickFromBlockMenu}
+              onClose={closeBlockMenu}
+            />
+          )}
         </div>
         <aside
           className={cn(
