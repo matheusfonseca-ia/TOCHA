@@ -1,11 +1,26 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260925-130413-claude"
-Status: em andamento
-Resumo: portão "Seguir para liberar" implementado e commitado (71966e8; tsc ok, vitest 259/259, build:cloudflare ok). Bloqueado no usuário aplicar supabase/migrations/0007_follow_gate.sql no SQL Editor; NÃO fazer deploy antes (saves das telas falhariam sem as colunas). Conferir com o script de leitura REST (select follow_gate_enabled em rules e follow_gate_sent_at em rule_triggers), depois `npx wrangler deploy` (Token DEPLOY) e E2E. Produção ainda em a22ff89. Push para `tocha` o usuário roda com `!`.
+Última tag: "HANDOFF-falow-20260925-142000-claude"
+Status: concluído
+Resumo: portão "Seguir para liberar" em produção (wrangler 92d6f684; commits 71966e8, bc00cb5, 64e1221 + wrangler.toml keep_names). QA com 3 agentes: 7 bugs corrigidos com regressão, vitest 342/342. Portão só liga depois de o usuário aplicar supabase/migrations/0007_follow_gate.sql (até lá a tela avisa e o resto funciona). Falta E2E com webhook real. Push para `tocha` o usuário roda com `!`.
 
 ---
+
+## [HANDOFF · falow · 2026-09-25T14:20:00-03:00 · claude]
+Status: concluído
+Objetivo: QA em paralelo do portão "Seguir para liberar" e deploy.
+Feito:
+- 3 agentes de QA (backend, tela/salvamento, banco); achados corrigidos: trava de entrega devolvida em falha de envio, 190 na consulta, nó Automação com portão (espera "Já segui" no próprio run), pausa no "Já segui", corrida de DM, política de privacidade, NOT VALID na migration
+- Teste logado em produção: aviso da migration com portão ligado, salvar com portão desligado, prévias; achou e corrigiu conflito falso ao criar automação ativa e "__name is not defined" (keep_names = false)
+- Automações "TESTE CLAUDE" criadas no teste já apagadas
+Próximo passo:
+- Usuário: aplicar 0007 no SQL Editor; conferir com leitura REST (follow_gate_enabled em rules)
+- E2E real: conta que não segue comenta, toca, recebe o portão, segue, "Já segui", recebe o link
+- Push: git -C "D:/Projetos-vibeocding/eu/falow-instalacaonamaquina" push tocha main:main
+Arquivos tocados: src/lib/follow-gate/*, src/lib/meta/process.ts, src/lib/sequences/runtime.ts, src/app/(dashboard)/rules/actions.ts, src/app/(legal)/privacidade/page.tsx, src/components/legal/legal-chrome.tsx, src/components/rules/follow-gate/follow-gate-field.tsx, supabase/migrations/0007_follow_gate.sql, wrangler.toml, testes QA
+Decisões/contexto: keep_names = false no wrangler (next-themes serializa função em script inline). Portão no nó Automação usa handle "follow-check" no payload de sequência.
+Tag: "HANDOFF-falow-20260925-142000-claude"
 
 ## [HANDOFF · falow · 2026-09-25T13:04:13-03:00 · claude]
 Status: em andamento

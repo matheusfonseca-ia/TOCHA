@@ -1,6 +1,6 @@
 # Falow: "Seguir para liberar" (portão de seguidor)
 
-Planejado em 2026-09-25. Status: **implementado** (tsc ok, vitest 259/259); falta aplicar a migration 0007, deploy e E2E real. Decisões D1 a D4 aprovadas como propostas em 25/09.
+Planejado em 2026-09-25. Status: **em produção** (wrangler 92d6f684, 25/09; tsc ok, vitest 342/342). O portão só liga depois que a migration 0007 for aplicada (antes disso a tela avisa). Falta o E2E com webhook real. Decisões D1 a D4 aprovadas como propostas em 25/09.
 
 ## O que muda para quem usa
 
@@ -77,10 +77,10 @@ Na automação (comentário ou DM) aparece o interruptor **"Só entregar para qu
 - [x] `process.test.ts`: comentário seguidor = link; não seguidor = portão sem trava e sem workflow; "Já segui" seguidor = link + workflow 1x; 2 toques simultâneos = 1 entrega; `unknown` conforme D2; DM pendente + palavra-chave de novo = re-checa; portão desligado = comportamento de hoje (regressão); rule vencida no "Já segui" = silêncio
 - [x] `npx tsc --noEmit`, `npm test`, `npm run build`, `grep -r "—" src` limpo
 - [ ] Usuário aplica a migration 0007 no SQL Editor
-- [ ] Builders em 375 / 768 / 1440
+- [x] Builders: desktop conferido logado em produção; 375 revisado no código pelo QA (o Chrome não aceitou redimensionar a janela)
 - [ ] E2E real com a conta de teste: comentário e DM, não seguidor -> portão -> segue -> "Já segui" -> link -> workflow
-- [ ] Commit + deploy (`npm run build:cloudflare && npx wrangler deploy`, token DEPLOY, na pasta principal); push para `tocha` o usuário roda com `!`
-- [ ] Handoff em `tasks/ai-handoff.md`
+- [x] Commit + deploy (71966e8, bc00cb5, 64e1221, wrangler.toml); push para `tocha` o usuário roda com `!`
+- [x] Handoff em `tasks/ai-handoff.md`
 
 ## Fase 4 (opcional, só se aprovada): workflow
 
@@ -92,6 +92,14 @@ Na automação (comentário ou DM) aparece o interruptor **"Só entregar para qu
 - `select("*")` em `rule_triggers` no lugar de colunas nomeadas: o código novo roda antes da migration sem tratar todo mundo como "nunca disparou".
 - Portão no nó "Automação" no meio de um workflow não se aplica (o fluxo já está rodando); vale só para o gatilho da própria automação.
 - Testes: 13 de integração em `process.test.ts` (comentário, "Já segui", 2ª conferência, `unknown`, portão desligado, vencida, DM retida + palavra-chave de novo, workflow de palavra-chave não rouba o pedido retido) e 19 unitários em `src/lib/follow-gate/follow-gate.test.ts`.
+
+## QA com 3 agentes em paralelo (25/09)
+
+- Banco/compatibilidade: política de privacidade não declarava a consulta de "segue a conta" (corrigido, data legal 25/09); check de `interactions` com NOT VALID + VALIDATE.
+- Backend (39 testes em `src/lib/meta/follow-gate-qa.test.ts`): trava de entrega não voltava quando o envio falhava (conteúdo perdido; valia também para o botão do comentário, antes do portão); 190 na consulta virava "entrega mesmo assim" e travava; nó Automação de workflow ignorava o portão (agora manda o portão e espera o "Já segui" no próprio run, payload `falow:seq:<run>:<nó>:follow-check`); "Já segui" ignorava "Pausar automações"; corrida de 2 DMs deixava conteúdo entregue como retido. Todos corrigidos com regressão.
+- Tela/salvamento (41 testes em `src/lib/follow-gate/ui-qa.test.ts`): sem bug; contador de caracteres adicionado.
+- Achados no teste logado em produção: aviso de conflito falso ao criar qualquer automação ativa (vinha de e5cff59; corrigido em 64e1221) e `ReferenceError: __name is not defined` em todas as páginas (script do next-themes + keep_names do wrangler; corrigido com `keep_names = false`, recomendação do OpenNext).
+- Deploy sem depender da 0007: `saveRule` regrava sem as colunas do portão quando o banco não as tem (portão ligado avisa para aplicar a migration). Confirmado logado: portão ligado mostra o aviso, desligado salva.
 
 ## Riscos
 

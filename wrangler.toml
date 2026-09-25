@@ -2,6 +2,11 @@ name = "falow"
 main = ".open-next/worker.js"
 compatibility_date = "2026-09-14"
 compatibility_flags = ["nodejs_compat"]
+# O esbuild do wrangler injeta __name() nas funções; o script inline do
+# next-themes (tema claro/escuro) é gerado por toString() de uma função e
+# quebrava no navegador com "__name is not defined". Recomendação do OpenNext:
+# https://opennext.js.org/cloudflare/howtos/keep_names
+keep_names = false
 
 routes = [
   { pattern = "falow.methodgrowthhub.com.br", custom_domain = true }
