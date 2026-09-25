@@ -1,6 +1,6 @@
 # Falow: "Seguir para liberar" (portão de seguidor)
 
-Planejado em 2026-09-25. Status: **em produção** (wrangler 92d6f684, 25/09; tsc ok, vitest 342/342). O portão só liga depois que a migration 0007 for aplicada (antes disso a tela avisa). Falta o E2E com webhook real. Decisões D1 a D4 aprovadas como propostas em 25/09.
+Planejado em 2026-09-25. Status: **em produção e ativo** (wrangler 92d6f684, 25/09; tsc ok, vitest 342/342; migration 0007 aplicada e verificada em 25/09). Falta o E2E com webhook real. Decisões D1 a D4 aprovadas como propostas em 25/09.
 
 ## O que muda para quem usa
 
@@ -76,7 +76,7 @@ Na automação (comentário ou DM) aparece o interruptor **"Só entregar para qu
 
 - [x] `process.test.ts`: comentário seguidor = link; não seguidor = portão sem trava e sem workflow; "Já segui" seguidor = link + workflow 1x; 2 toques simultâneos = 1 entrega; `unknown` conforme D2; DM pendente + palavra-chave de novo = re-checa; portão desligado = comportamento de hoje (regressão); rule vencida no "Já segui" = silêncio
 - [x] `npx tsc --noEmit`, `npm test`, `npm run build`, `grep -r "—" src` limpo
-- [ ] Usuário aplica a migration 0007 no SQL Editor
+- [x] Migration 0007 aplicada pelo Claude no SQL Editor (25/09, a pedido do usuário): check validado nas 633 linhas de interactions, 6 colunas criadas, 8 automações intactas; automação de teste com portão salva e apagada
 - [x] Builders: desktop conferido logado em produção; 375 revisado no código pelo QA (o Chrome não aceitou redimensionar a janela)
 - [ ] E2E real com a conta de teste: comentário e DM, não seguidor -> portão -> segue -> "Já segui" -> link -> workflow
 - [x] Commit + deploy (71966e8, bc00cb5, 64e1221, wrangler.toml); push para `tocha` o usuário roda com `!`

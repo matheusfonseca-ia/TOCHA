@@ -1,11 +1,25 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260925-142000-claude"
+Última tag: "HANDOFF-falow-20260925-191000-claude"
 Status: concluído
-Resumo: portão "Seguir para liberar" em produção (wrangler 92d6f684; commits 71966e8, bc00cb5, 64e1221 + wrangler.toml keep_names). QA com 3 agentes: 7 bugs corrigidos com regressão, vitest 342/342. Portão só liga depois de o usuário aplicar supabase/migrations/0007_follow_gate.sql (até lá a tela avisa e o resto funciona). Falta E2E com webhook real. Push para `tocha` o usuário roda com `!`.
+Resumo: portão "Seguir para liberar" em produção e ativo (wrangler 92d6f684, main com migration 0007 aplicada e verificada em 25/09). vitest 342/342. Falta só o E2E com webhook real (conta que não segue comenta, toca, segue, "Já segui"). Push para `tocha` o usuário roda com `!`.
 
 ---
+
+## [HANDOFF · falow · 2026-09-25T19:10:00-03:00 · claude]
+Status: concluído
+Objetivo: aplicar a migration 0007 em produção.
+Feito:
+- Aplicada pelo SQL Editor do Supabase (Chrome logado, a pedido do usuário); conteúdo idêntico ao arquivo; "Success"
+- Verificado: interactions_status_check com awaiting_follow e validado (633 linhas), 6 colunas follow_gate_*, 8 automações intactas
+- E2E da tela: automação com portão ligado salva com selo "Só seguidores", colunas certas no banco, apagada depois
+Próximo passo:
+- E2E real com webhook (comentário e DM de uma conta que não segue)
+- Push: git -C "D:/Projetos-vibeocding/eu/falow-instalacaonamaquina" push tocha main:main
+Arquivos tocados: tasks/todo.md, tasks/ai-handoff.md
+Decisões/contexto: nenhuma nova.
+Tag: "HANDOFF-falow-20260925-191000-claude"
 
 ## [HANDOFF · falow · 2026-09-25T14:20:00-03:00 · claude]
 Status: concluído
