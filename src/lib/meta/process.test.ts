@@ -13,7 +13,10 @@ import {
   row,
   triggerNode,
 } from "@/lib/sequences/__tests__/fixtures";
+import { FOLLOW_GATE_DEFAULTS } from "@/lib/follow-gate/copy";
+import { GraphApiError } from "@/lib/meta/graph";
 import { processWebhookPayload, type MetaWebhookPayload } from "@/lib/meta/process";
+import type { IgAccount, Rule } from "@/types/database";
 
 /**
  * Testes de integração do pipeline de webhooks (`processWebhookPayload`):
@@ -49,6 +52,7 @@ const {
   sendQuickRepliesMessageMock,
   sendTemplateButtonsMessageMock,
   sendTypingActionMock,
+  getFollowsBusinessMock,
 } = vi.hoisted(() => ({
   sendRuleReplyMock: vi.fn(async (_token: string, _recipientId: string, _rule: { id: string; reply_text: string | null }) => {}),
   sendTextMessageMock: vi.fn(async () => {}),
@@ -59,6 +63,7 @@ const {
   sendQuickRepliesMessageMock: vi.fn(async () => {}),
   sendTemplateButtonsMessageMock: vi.fn(async () => {}),
   sendTypingActionMock: vi.fn(async () => {}),
+  getFollowsBusinessMock: vi.fn(async (_token: string, _id: string) => true),
 }));
 
 vi.mock("@/lib/sequences/automation", async (importOriginal) => {
@@ -78,6 +83,7 @@ vi.mock("@/lib/meta/graph", async (importOriginal) => {
     sendQuickRepliesMessage: sendQuickRepliesMessageMock,
     sendTemplateButtonsMessage: sendTemplateButtonsMessageMock,
     sendTypingAction: sendTypingActionMock,
+    getFollowsBusiness: getFollowsBusinessMock,
   };
 });
 
@@ -875,5 +881,325 @@ describe("processWebhookPayload: variantes de resposta em comentário", () => {
     for (const call of replyToCommentMock.mock.calls as unknown[][]) {
       expect(publicOptions).toContain(call[2]);
     }
+  });
+});
+
+describe("processWebhookPayload: portão Seguir para liberar", () => {
+  beforeEach(() => {
+    getFollowsBusinessMock.mockImplementation(async () => true);
+  });
+
+  function postback(account: IgAccount, senderId: string, mid: string, payload: string): MetaWebhookPayload {
+    return {
+      object: "instagram",
+      entry: [
+        {
+          id: account.ig_user_id,
+          messaging: [
+            {
+              sender: { id: senderId },
+              recipient: { id: account.ig_user_id },
+              timestamp: Date.now(),
+              postback: { mid, title: "botão", payload },
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  function dm(account: IgAccount, senderId: string, mid: string, text: string): MetaWebhookPayload {
+    return {
+      object: "instagram",
+      entry: [
+        {
+          id: account.ig_user_id,
+          messaging: [
+            {
+              sender: { id: senderId },
+              recipient: { id: account.ig_user_id },
+              timestamp: Date.now(),
+              message: { mid, text, is_echo: false },
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  /** Automação de comentário com a resposta privada já enviada para `senderId`. */
+  function seedCommentRule(
+    senderId: string,
+    overrides: Partial<Rule> = {},
+    trigger: Record<string, unknown> = {}
+  ) {
+    const account = makeAccount();
+    const rule = makeRule({
+      account_id: account.id,
+      trigger_type: "comment",
+      keyword: "preço",
+      welcome_text: "Vou te mandar o link!",
+      welcome_button_label: "Quero o link",
+      reply_text: "Aqui está: https://exemplo.com",
+      follow_gate_enabled: true,
+      ...overrides,
+    });
+    const sequence = makeSequence({
+      account_id: account.id,
+      entry_rule_id: rule.id,
+      is_active: true,
+      graph: {
+        nodes: [triggerNode({ source: "automation", ruleId: rule.id }), messageNode("m2", "Continuação do fluxo")],
+        edges: [edge("trigger", "m2")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(rule);
+    fake.tables.sequences.push(sequence);
+    fake.tables.rule_triggers.push(
+      row({
+        rule_id: rule.id,
+        account_id: account.id,
+        ig_sender_id: senderId,
+        link_delivered_at: null,
+        follow_gate_sent_at: null,
+        ...trigger,
+      })
+    );
+    return { account, rule, sequence };
+  }
+
+  const sentAt = () => ({ follow_gate_sent_at: new Date().toISOString() });
+
+  it("comentário, toque no botão, não segue: manda o portão no lugar do link e não inicia o workflow", async () => {
+    const { account, rule } = seedCommentRule("s-1");
+    getFollowsBusinessMock.mockImplementation(async () => false);
+
+    await processWebhookPayload(postback(account, "s-1", "pb-1", `falow:comment_link:${rule.id}`));
+
+    expect(getFollowsBusinessMock).toHaveBeenCalledTimes(1);
+    expect(sendTemplateButtonsMessageMock).toHaveBeenCalledTimes(1);
+    expect(sendTemplateButtonsMessageMock).toHaveBeenCalledWith(
+      expect.any(String),
+      "s-1",
+      FOLLOW_GATE_DEFAULTS.text,
+      [
+        { type: "web_url", title: FOLLOW_GATE_DEFAULTS.followLabel, url: "https://www.instagram.com/conta_teste/" },
+        { type: "postback", title: FOLLOW_GATE_DEFAULTS.confirmLabel, payload: `falow:follow_check:${rule.id}` },
+      ]
+    );
+    expect(sendRuleReplyMock).not.toHaveBeenCalled();
+    expect(fake.tables.rule_triggers[0].link_delivered_at).toBeNull();
+    expect(fake.tables.rule_triggers[0].follow_gate_sent_at).not.toBeNull();
+    expect(fake.tables.sequence_runs).toHaveLength(0);
+    expect(fake.tables.interactions).toHaveLength(1);
+    expect(fake.tables.interactions[0].status).toBe("awaiting_follow");
+  });
+
+  it("comentário, toque no botão, já segue: entrega o link direto, sem portão", async () => {
+    const { account, rule } = seedCommentRule("s-2");
+
+    await processWebhookPayload(postback(account, "s-2", "pb-1", `falow:comment_link:${rule.id}`));
+
+    expect(sendTemplateButtonsMessageMock).not.toHaveBeenCalled();
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+    expect(fake.tables.rule_triggers[0].link_delivered_at).not.toBeNull();
+    expect(fake.tables.sequence_runs).toHaveLength(1);
+  });
+
+  it("textos próprios da automação substituem os padrões no portão", async () => {
+    const { account, rule } = seedCommentRule("s-3", {
+      follow_gate_text: "Me segue que eu libero",
+      follow_gate_follow_label: "Bora seguir",
+      follow_gate_confirm_label: "Pronto",
+    });
+    getFollowsBusinessMock.mockImplementation(async () => false);
+
+    await processWebhookPayload(postback(account, "s-3", "pb-1", `falow:comment_link:${rule.id}`));
+
+    const call = sendTemplateButtonsMessageMock.mock.calls[0] as unknown as [
+      string,
+      string,
+      string,
+      { title: string }[],
+    ];
+    expect(call[2]).toBe("Me segue que eu libero");
+    expect(call[3].map((b) => b.title)).toEqual(["Bora seguir", "Pronto"]);
+  });
+
+  it("Já segui depois de seguir: entrega o link 1x e inicia o workflow; 2º toque não repete nem consulta a Meta", async () => {
+    const { account, rule } = seedCommentRule("s-4", {}, sentAt());
+
+    await processWebhookPayload(postback(account, "s-4", "pb-1", `falow:follow_check:${rule.id}`));
+    await processWebhookPayload(postback(account, "s-4", "pb-2", `falow:follow_check:${rule.id}`));
+
+    expect(getFollowsBusinessMock).toHaveBeenCalledTimes(1);
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+    expect(sendTextMessageMock).toHaveBeenCalledWith(expect.any(String), "s-4", "Continuação do fluxo");
+    expect(fake.tables.sequence_runs).toHaveLength(1);
+    expect(fake.tables.interactions[0].status).toBe("replied");
+    expect(fake.tables.interactions[0].message_text).toBe("[conteúdo entregue após seguir a conta]");
+  });
+
+  it("Já segui sem seguir: confere 2x (atraso da Meta) e responde com o texto de ainda não", async () => {
+    const { account, rule } = seedCommentRule("s-5", {}, sentAt());
+    getFollowsBusinessMock.mockImplementation(async () => false);
+
+    await processWebhookPayload(postback(account, "s-5", "pb-1", `falow:follow_check:${rule.id}`));
+
+    expect(getFollowsBusinessMock).toHaveBeenCalledTimes(2);
+    expect(sendTemplateButtonsMessageMock).toHaveBeenCalledWith(
+      expect.any(String),
+      "s-5",
+      FOLLOW_GATE_DEFAULTS.retryText,
+      expect.any(Array)
+    );
+    expect(sendRuleReplyMock).not.toHaveBeenCalled();
+    expect(fake.tables.interactions[0].status).toBe("awaiting_follow");
+  });
+
+  it("Já segui: seguiu nos segundos da 2ª conferência, entrega", async () => {
+    const { account, rule } = seedCommentRule("s-6", {}, sentAt());
+    getFollowsBusinessMock
+      .mockImplementationOnce(async () => false)
+      .mockImplementationOnce(async () => true);
+
+    await processWebhookPayload(postback(account, "s-6", "pb-1", `falow:follow_check:${rule.id}`));
+
+    expect(getFollowsBusinessMock).toHaveBeenCalledTimes(2);
+    expect(sendTemplateButtonsMessageMock).not.toHaveBeenCalled();
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("não deu para conferir (sem consentimento): entrega mesmo assim e registra no log", async () => {
+    const { account, rule } = seedCommentRule("s-7");
+    getFollowsBusinessMock.mockImplementation(async () => {
+      throw new GraphApiError("User consent is required to access user profile", 230);
+    });
+
+    await processWebhookPayload(postback(account, "s-7", "pb-1", `falow:comment_link:${rule.id}`));
+
+    expect(sendTemplateButtonsMessageMock).not.toHaveBeenCalled();
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+    expect(fake.tables.interactions[0].status).toBe("replied");
+    expect(fake.tables.interactions[0].error_detail).toContain("Não deu para conferir");
+  });
+
+  it("portão desligado: fluxo do comentário igual ao de hoje, sem consultar o perfil", async () => {
+    const { account, rule } = seedCommentRule("s-8", { follow_gate_enabled: false });
+
+    await processWebhookPayload(postback(account, "s-8", "pb-1", `falow:comment_link:${rule.id}`));
+
+    expect(getFollowsBusinessMock).not.toHaveBeenCalled();
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+    expect(fake.tables.interactions[0].message_text).toBe(
+      "[link do comentário entregue após toque no botão]"
+    );
+  });
+
+  it("portão desligado depois de enviado: Já segui entrega direto", async () => {
+    const { account, rule } = seedCommentRule("s-9", { follow_gate_enabled: false }, sentAt());
+
+    await processWebhookPayload(postback(account, "s-9", "pb-1", `falow:follow_check:${rule.id}`));
+
+    expect(getFollowsBusinessMock).not.toHaveBeenCalled();
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("automação vencida: Já segui não entrega nada", async () => {
+    const { account, rule } = seedCommentRule(
+      "s-10",
+      { expires_at: new Date(Date.now() - 60_000).toISOString() },
+      sentAt()
+    );
+
+    await processWebhookPayload(postback(account, "s-10", "pb-1", `falow:follow_check:${rule.id}`));
+
+    expect(sendRuleReplyMock).not.toHaveBeenCalled();
+    expect(sendTemplateButtonsMessageMock).not.toHaveBeenCalled();
+  });
+
+  it("DM: não segue recebe o portão (sem workflow de palavra-chave); pedir de novo depois de seguir entrega e inicia o workflow; 3ª vez é duplicada", async () => {
+    const account = makeAccount();
+    const rule = makeRule({
+      account_id: account.id,
+      trigger_type: "dm",
+      keyword: "oi",
+      reply_text: "Resposta liberada",
+      follow_gate_enabled: true,
+    });
+    const entrySequence = makeSequence({
+      account_id: account.id,
+      entry_rule_id: rule.id,
+      is_active: true,
+      graph: {
+        nodes: [triggerNode({ source: "automation", ruleId: rule.id }), messageNode("m2", "Continuação do fluxo")],
+        edges: [edge("trigger", "m2")],
+      },
+    });
+    // Workflow de palavra-chave "oi": não pode roubar o pedido retido no portão.
+    const keywordSequence = makeSequence({
+      account_id: account.id,
+      is_active: true,
+      graph: {
+        nodes: [triggerNode({ source: "dm", keyword: "oi" }), messageNode("k1", "Fluxo por palavra-chave")],
+        edges: [edge("trigger", "k1")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(rule);
+    fake.tables.sequences.push(entrySequence, keywordSequence);
+
+    getFollowsBusinessMock.mockImplementation(async () => false);
+    await processWebhookPayload(dm(account, "s-20", "m-1", "oi"));
+
+    expect(sendTemplateButtonsMessageMock).toHaveBeenCalledTimes(1);
+    expect(sendRuleReplyMock).not.toHaveBeenCalled();
+    expect(fake.tables.rule_triggers).toHaveLength(1);
+    expect(fake.tables.rule_triggers[0].follow_gate_sent_at).not.toBeNull();
+    expect(fake.tables.sequence_runs).toHaveLength(0);
+    expect(fake.tables.interactions.at(-1)?.status).toBe("awaiting_follow");
+
+    getFollowsBusinessMock.mockImplementation(async () => true);
+    await processWebhookPayload(dm(account, "s-20", "m-2", "oi"));
+
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+    expect(fake.tables.rule_triggers[0].link_delivered_at).not.toBeNull();
+    expect(fake.tables.sequence_runs).toHaveLength(1);
+    expect(fake.tables.sequence_runs[0].sequence_id).toBe(entrySequence.id);
+
+    getFollowsBusinessMock.mockClear();
+    await processWebhookPayload(dm(account, "s-20", "m-3", "oi"));
+
+    expect(getFollowsBusinessMock).not.toHaveBeenCalled();
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("DM: Já segui entrega a resposta da automação de DM", async () => {
+    const account = makeAccount();
+    const rule = makeRule({ account_id: account.id, trigger_type: "dm", keyword: "oi", follow_gate_enabled: true });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(rule);
+    fake.tables.rule_triggers.push(
+      row({ rule_id: rule.id, account_id: account.id, ig_sender_id: "s-21", link_delivered_at: null, ...sentAt() })
+    );
+
+    await processWebhookPayload(postback(account, "s-21", "pb-1", `falow:follow_check:${rule.id}`));
+
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+    expect(sendRuleReplyMock.mock.calls[0][2].id).toBe(rule.id);
+  });
+
+  it("DM com portão, já segue na 1ª mensagem: responde direto", async () => {
+    const account = makeAccount();
+    const rule = makeRule({ account_id: account.id, trigger_type: "dm", keyword: "oi", follow_gate_enabled: true });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(rule);
+
+    await processWebhookPayload(dm(account, "s-22", "m-1", "oi"));
+
+    expect(sendTemplateButtonsMessageMock).not.toHaveBeenCalled();
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+    expect(fake.tables.interactions[0].status).toBe("replied");
   });
 });

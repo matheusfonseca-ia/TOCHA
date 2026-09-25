@@ -7,6 +7,7 @@ import { ArrowLeft, Link2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { DmPhonePreview } from "@/components/rules/dm-phone-preview";
+import { FollowGateField } from "@/components/rules/follow-gate/follow-gate-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,6 +22,11 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { ExpiryField } from "@/components/expiry/expiry-field";
 import { expiryFormFrom, resolveExpiryForm } from "@/lib/expiry/expiry";
+import {
+  followGateFieldsForSave,
+  followGateFormFrom,
+  followGatePreviewCopy,
+} from "@/lib/follow-gate/form";
 import { cn } from "@/lib/utils";
 import {
   deriveTitleFromUrl,
@@ -58,6 +64,7 @@ export function ResponderDmBuilder({
   const [expiryForm, setExpiryForm] = useState(() =>
     expiryFormFrom(rule?.expires_at ?? null, rule?.expire_action ?? null)
   );
+  const [followGate, setFollowGate] = useState(() => followGateFormFrom(rule));
 
   const selectedAccount =
     accounts.find((a) => a.id === accountId) ?? accounts[0];
@@ -150,6 +157,7 @@ export function ResponderDmBuilder({
           : undefined,
       delay_seconds: 3,
       is_active: true,
+      ...followGateFieldsForSave(followGate),
       ...(rule && preservedFields(rule)),
       ...expiryFieldsForSave(expiry, rule),
     };
@@ -261,6 +269,18 @@ export function ResponderDmBuilder({
           </Card>
 
           <Card>
+            <CardContent className="p-6">
+              <FollowGateField
+                value={followGate}
+                onChange={setFollowGate}
+                username={selectedAccount.ig_username}
+                label="Só responder para quem segue seu perfil"
+                contentName="a resposta"
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
             <CardContent className="space-y-4 p-6">
               <h2 className="font-display text-[15px] font-semibold tracking-tight">
                 {links.length > 0
@@ -344,6 +364,7 @@ export function ResponderDmBuilder({
             incomingText={keywordTerms[0] ?? ""}
             replyText={message}
             links={previewLinks}
+            followGate={followGatePreviewCopy(followGate)}
           />
         </div>
       </div>

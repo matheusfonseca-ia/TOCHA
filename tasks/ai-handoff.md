@@ -1,11 +1,24 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260924-113000-claude"
-Status: concluído
-Resumo: produção em a22ff89 (wrangler versão a6b8d583, 24/09): rodada 2 + menu de blocos no canvas + lixeira/reconexão nas conexões + editar automação na tela completa (/rules/[id]/editar). Tudo testado logado em produção. Repositório de entrega: remoto `tocha` = github.com/matheusfonseca-ia/TOCHA, main em acb67bf (push feito pelo usuário em 24/09; o auto mode bloqueia push para esse remoto, pedir ao usuário rodar com `!`). O `origin` (scheibe-369/falow) está desatualizado. Falta teste com webhook real; pendências de baixo impacto em tasks/todo.md.
+Última tag: "HANDOFF-falow-20260925-130413-claude"
+Status: em andamento
+Resumo: plano da feature "Seguir para liberar" (portão de seguidor em automações de comentário e DM) escrito no topo de tasks/todo.md, aguardando aprovação das decisões D1 a D4. Nada implementado; produção segue em a22ff89 (wrangler a6b8d583). Repositório de entrega: remoto `tocha` (push o usuário roda com `!`).
 
 ---
+
+## [HANDOFF · falow · 2026-09-25T13:04:13-03:00 · claude]
+Status: em andamento
+Objetivo: planejar o portão "Seguir para liberar": quem não segue a conta recebe na DM um botão para seguir antes de receber o conteúdo da automação.
+Feito:
+- Plano completo no topo de tasks/todo.md (Fases 0 a 4, decisões D1 a D4, riscos)
+- Verificado na doc da Meta: campo `is_user_follow_business` na User Profile API; consentimento documentado só para DM/icebreaker/menu
+Próximo passo:
+- Usuário aprova D1 a D4
+- Fase 0 (spike com conta real): confirmar se o toque no postback da resposta privada libera a User Profile API; se não, Plano B (resposta rápida) descrito no todo
+Arquivos tocados: tasks/todo.md, tasks/ai-handoff.md
+Decisões/contexto: checagem do comentário só pode acontecer no toque do botão (resposta privada é 1 por comentário). Entrega pós-toque vai ser extraída para `deliverRuleAfterTap` em process.ts e reaproveitada pelo "Já segui".
+Tag: "HANDOFF-falow-20260925-130413-claude"
 
 ## [HANDOFF · falow · 2026-09-24T11:30:00-03:00 · claude]
 Status: concluído

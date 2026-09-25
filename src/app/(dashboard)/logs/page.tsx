@@ -25,6 +25,7 @@ const FILTERS: { value: string; label: string }[] = [
   { value: "no_match", label: "Sem match" },
   { value: "duplicate_skip", label: "Duplicadas" },
   { value: "window_expired", label: "Janela 24h" },
+  { value: "awaiting_follow", label: "Aguardando seguir" },
   { value: "error", label: "Erros" },
 ];
 

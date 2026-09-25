@@ -434,6 +434,9 @@ export function RulesManager({
                             expiresAt={rule.expires_at}
                             expireAction={rule.expire_action}
                           />
+                          {rule.follow_gate_enabled && (
+                            <Badge variant="outline">Só seguidores</Badge>
+                          )}
                           {isComment ? (
                             <MessageCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
                           ) : (

@@ -1,5 +1,8 @@
 import { isExpired, withoutExpired } from "@/lib/expiry/expiry";
 import { expireAutomationsSafe } from "@/lib/expiry/sweep";
+import { isFollowGateOn } from "@/lib/follow-gate/copy";
+import { holdUnlessFollowing, isHeldByFollowGate } from "@/lib/follow-gate/gate";
+import { parseFollowCheckPayload } from "@/lib/follow-gate/payload";
 import {
   clampDelay,
   findMatchingCommentRule,
@@ -41,6 +44,12 @@ const COMMENT_LINK_PAYLOAD_PREFIX_LEGACY = "instareply:comment_link:";
 const RULE_EXPIRED_DURING_DELAY = "A automação expirou antes do envio.";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
+
+/** Linha de rule_triggers; follow_gate_sent_at só existe depois da migration 0007. */
+interface RuleTriggerRow {
+  link_delivered_at: string | null;
+  follow_gate_sent_at?: string | null;
+}
 
 interface MessagingEvent {
   sender?: { id?: string };
@@ -396,14 +405,18 @@ async function applyRule(
   senderId: string,
   event: MessagingEvent
 ): Promise<{ status: InteractionStatus; errorDetail?: string }> {
-  // 5. Anti-duplicidade: mesma regra nunca dispara 2x para o mesmo usuário
-  const { data: alreadyTriggered } = await admin
+  // 5. Anti-duplicidade: mesma regra nunca dispara 2x para o mesmo usuário,
+  // exceto conteúdo retido no portão de seguidor: pedir de novo confere de
+  // novo se a pessoa já segue. `select("*")` funciona antes e depois da
+  // migration 0007 (coluna follow_gate_sent_at).
+  const { data: trigger } = await admin
     .from("rule_triggers")
-    .select("rule_id")
+    .select("*")
     .eq("rule_id", rule.id)
     .eq("ig_sender_id", senderId)
-    .maybeSingle();
-  if (alreadyTriggered) return { status: "duplicate_skip" };
+    .maybeSingle<RuleTriggerRow>();
+  const heldByGate = isHeldByFollowGate(trigger);
+  if (trigger && !heldByGate) return { status: "duplicate_skip" };
 
   // 6. Janela de 24h: se o evento chegou atrasado (retry do Meta), não responde
   if (event.timestamp && Date.now() - event.timestamp > WINDOW_24H_MS) {
@@ -417,17 +430,28 @@ async function applyRule(
     return { status: "no_match", errorDetail: RULE_EXPIRED_DURING_DELAY };
   }
 
+  let gateDetail: string | undefined;
   try {
     const token = await getFreshToken(admin, account);
+
+    // 7b. Portão "Seguir para liberar": a DM já deu consentimento para a
+    // User Profile API, então dá para conferir antes do conteúdo.
+    if (isFollowGateOn(rule)) {
+      const gate = await holdUnlessFollowing(admin, account, rule, senderId, token, {
+        again: heldByGate,
+      });
+      if (gate.held) return { status: "awaiting_follow" };
+      gateDetail = gate.detail;
+    }
+    // Conteúdo que estava retido: mesma trava atômica do toque em "Já segui".
+    if (heldByGate && !(await lockDelivery(admin, rule.id, senderId))) {
+      return { status: "duplicate_skip" };
+    }
+
     await sendRuleReply(token, senderId, rule);
   } catch (err) {
     // Token inválido/expirado → marca a conta para reconexão
-    if (err instanceof GraphApiError && err.code === 190) {
-      await admin
-        .from("ig_accounts")
-        .update({ status: "expired" })
-        .eq("id", account.id);
-    }
+    await markExpiredOnInvalidToken(admin, account, err);
     return {
       status: "error",
       errorDetail: err instanceof Error ? err.message : String(err),
@@ -440,13 +464,48 @@ async function applyRule(
     { onConflict: "rule_id,ig_sender_id", ignoreDuplicates: true }
   );
 
-  return { status: "replied" };
+  return { status: "replied", errorDetail: gateDetail };
+}
+
+/** Token inválido/expirado (código 190) → marca a conta para reconexão. */
+async function markExpiredOnInvalidToken(
+  admin: AdminClient,
+  account: IgAccount,
+  err: unknown
+): Promise<void> {
+  if (err instanceof GraphApiError && err.code === 190) {
+    await admin.from("ig_accounts").update({ status: "expired" }).eq("id", account.id);
+  }
 }
 
 /**
- * Toque no botão da mensagem de boas-vindas do fluxo de comentário.
- * A resposta privada já abriu a janela de mensagens com o usuário, então
- * esta 2ª mensagem (o link) sai como DM normal (recipient.id).
+ * Trava a entrega do conteúdo a 1x por pessoa por regra: UPDATE atômico
+ * condicionado a link_delivered_at IS NULL. Cobre 2º toque no botão,
+ * reentrega do webhook sem "mid" e toques simultâneos.
+ */
+async function lockDelivery(
+  admin: AdminClient,
+  ruleId: string,
+  senderId: string
+): Promise<boolean> {
+  const { data: locked } = await admin
+    .from("rule_triggers")
+    .update({ link_delivered_at: new Date().toISOString() })
+    .eq("rule_id", ruleId)
+    .eq("ig_sender_id", senderId)
+    .is("link_delivered_at", null)
+    .select("rule_id")
+    .maybeSingle();
+  return !!locked;
+}
+
+/**
+ * Toque num botão de automação:
+ *  - botão da mensagem de boas-vindas do fluxo de comentário: a resposta
+ *    privada já abriu a janela de mensagens, então a 2ª mensagem (o link)
+ *    sai como DM normal (recipient.id);
+ *  - "Já segui" do portão de seguidor (automação de comentário ou de DM).
+ * Com o portão ligado, quem não segue recebe o portão no lugar do conteúdo.
  */
 async function processPostbackEvent(
   igBusinessId: string,
@@ -470,11 +529,18 @@ async function processPostbackEvent(
     return;
   }
 
-  const commentLinkPrefix = [
-    COMMENT_LINK_PAYLOAD_PREFIX,
-    COMMENT_LINK_PAYLOAD_PREFIX_LEGACY,
-  ].find((p) => payload.startsWith(p));
-  if (!commentLinkPrefix) return;
+  // "Já segui" vale para automação de comentário e de DM; o botão de
+  // boas-vindas só existe na de comentário.
+  const followCheckRuleId = parseFollowCheckPayload(payload);
+  const commentLinkPrefix = followCheckRuleId
+    ? undefined
+    : [COMMENT_LINK_PAYLOAD_PREFIX, COMMENT_LINK_PAYLOAD_PREFIX_LEGACY].find((p) =>
+        payload.startsWith(p)
+      );
+  const ruleId =
+    followCheckRuleId ??
+    (commentLinkPrefix ? payload.slice(commentLinkPrefix.length) : null);
+  if (!ruleId) return;
 
   const admin = createAdminClient();
 
@@ -485,8 +551,14 @@ async function processPostbackEvent(
     if (dedupError) return;
   }
 
-  const ruleId = payload.slice(commentLinkPrefix.length);
   const recipientId = igBusinessId || event.recipient?.id || "";
+
+  let ruleQuery = admin
+    .from("rules")
+    .select("*")
+    .eq("id", ruleId)
+    .eq("is_active", true);
+  if (!followCheckRuleId) ruleQuery = ruleQuery.eq("trigger_type", "comment");
 
   const [{ data: account }, { data: rule }] = await Promise.all([
     admin
@@ -495,13 +567,7 @@ async function processPostbackEvent(
       .eq("ig_user_id", recipientId)
       .eq("status", "active")
       .maybeSingle<IgAccount>(),
-    admin
-      .from("rules")
-      .select("*")
-      .eq("id", ruleId)
-      .eq("trigger_type", "comment")
-      .eq("is_active", true)
-      .maybeSingle<Rule>(),
+    ruleQuery.maybeSingle<Rule>(),
   ]);
   // rule.account_id !== account.id nunca deveria acontecer (o payload só é
   // gerado por nós, pra uma regra da própria conta), mas checar explicita é
@@ -514,22 +580,66 @@ async function processPostbackEvent(
   // (a conversa nem existia, só houve o comentário).
   await touchConversation(admin, account.id, senderId, event.timestamp);
 
-  // Trava a entrega do link a 1x por pessoa por regra — via UPDATE atômico
-  // condicionado a link_delivered_at IS NULL, cobre tanto um 2º toque no
-  // botão quanto uma reentrega do webhook sem "mid" para dedupe acima.
-  const { data: locked } = await admin
+  // Já entregue (2º toque, reentrega do webhook): não confere nem manda o
+  // portão de novo. A trava de verdade é o UPDATE atômico de lockDelivery.
+  const { data: trigger } = await admin
     .from("rule_triggers")
-    .update({ link_delivered_at: new Date().toISOString() })
+    .select("*")
     .eq("rule_id", rule.id)
     .eq("ig_sender_id", senderId)
-    .is("link_delivered_at", null)
-    .select("rule_id")
-    .maybeSingle();
-  if (!locked) return;
+    .maybeSingle<RuleTriggerRow>();
+  if (!trigger || trigger.link_delivered_at) return;
 
   const startedAt = Date.now();
+  const logTap = (status: InteractionStatus, messageText: string, errorDetail: string | null) =>
+    admin.from("interactions").insert({
+      account_id: account.id,
+      ig_sender_id: senderId,
+      message_text: messageText,
+      matched_rule_id: rule.id,
+      matched_keyword: rule.keyword,
+      status,
+      reply_type: rule.reply_type,
+      error_detail: errorDetail,
+      latency_ms: Date.now() - startedAt,
+    });
+
+  // Portão "Seguir para liberar": o toque no botão já deu consentimento
+  // para a User Profile API (confirmado em produção em 25/09/2026).
+  let gateDetail: string | null = null;
+  if (isFollowGateOn(rule)) {
+    try {
+      const token = await getFreshToken(admin, account);
+      const gate = await holdUnlessFollowing(admin, account, rule, senderId, token, {
+        again: !!followCheckRuleId,
+        delayMs: clampDelay(rule.delay_seconds) * 1000,
+      });
+      if (gate.held) {
+        await logTap(
+          "awaiting_follow",
+          followCheckRuleId
+            ? "[tocou em Já segui, mas ainda não segue a conta]"
+            : "[pediu o link sem seguir a conta: portão enviado]",
+          null
+        );
+        return;
+      }
+      gateDetail = gate.detail ?? null;
+    } catch (err) {
+      await markExpiredOnInvalidToken(admin, account, err);
+      await logTap(
+        "error",
+        "[falha ao enviar o portão de seguidor]",
+        err instanceof Error ? err.message : String(err)
+      );
+      return;
+    }
+  }
+
+  if (!(await lockDelivery(admin, rule.id, senderId))) return;
+
   let status: InteractionStatus = "replied";
-  let errorDetail: string | null = null;
+  let errorDetail: string | null = gateDetail;
 
   try {
     const token = await getFreshToken(admin, account);
@@ -538,28 +648,19 @@ async function processPostbackEvent(
   } catch (err) {
     status = "error";
     errorDetail = err instanceof Error ? err.message : String(err);
-    if (err instanceof GraphApiError && err.code === 190) {
-      await admin
-        .from("ig_accounts")
-        .update({ status: "expired" })
-        .eq("id", account.id);
-    }
+    await markExpiredOnInvalidToken(admin, account, err);
   }
 
-  await admin.from("interactions").insert({
-    account_id: account.id,
-    ig_sender_id: senderId,
-    message_text: "[link do comentário entregue após toque no botão]",
-    matched_rule_id: rule.id,
-    matched_keyword: rule.keyword,
+  await logTap(
     status,
-    reply_type: rule.reply_type,
-    error_detail: errorDetail,
-    latency_ms: Date.now() - startedAt,
-  });
+    followCheckRuleId
+      ? "[conteúdo entregue após seguir a conta]"
+      : "[link do comentário entregue após toque no botão]",
+    errorDetail
+  );
 
-  // Link entregue → continua o workflow que usa esta automação como entrada
-  // (workflow pausado ou inexistente: a regra respondeu sozinha).
+  // Conteúdo entregue → continua o workflow que usa esta automação como
+  // entrada (workflow pausado ou inexistente: a regra respondeu sozinha).
   if (status !== "replied") return;
   const handoffStartedAt = Date.now();
   const handoff = await startSequenceFromRule(
@@ -570,7 +671,9 @@ async function processPostbackEvent(
       admin,
       account,
       senderId,
-      "[sequência: iniciada pela automação de comentário]",
+      rule.trigger_type === "comment"
+        ? "[sequência: iniciada pela automação de comentário]"
+        : "[sequência: iniciada pela automação]",
       handoff,
       handoffStartedAt
     );

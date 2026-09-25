@@ -7,6 +7,7 @@ import { ArrowLeft, Link2, Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { CommentPhonePreview } from "@/components/rules/comment-phone-preview";
+import { FollowGateField } from "@/components/rules/follow-gate/follow-gate-field";
 import { MediaPicker } from "@/components/rules/media-picker";
 import { VariantList } from "@/components/rules/variants/variant-list";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,11 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ExpiryField } from "@/components/expiry/expiry-field";
 import { expiryFormFrom, resolveExpiryForm } from "@/lib/expiry/expiry";
+import {
+  followGateFieldsForSave,
+  followGateFormFrom,
+  followGatePreviewCopy,
+} from "@/lib/follow-gate/form";
 import { cn } from "@/lib/utils";
 import {
   deriveTitleFromUrl,
@@ -150,6 +156,7 @@ export function ResponderComentarioBuilder({
   const [expiryForm, setExpiryForm] = useState(() =>
     expiryFormFrom(rule?.expires_at ?? null, rule?.expire_action ?? null)
   );
+  const [followGate, setFollowGate] = useState(() => followGateFormFrom(rule));
 
   const selectedAccount =
     accounts.find((a) => a.id === accountId) ?? accounts[0];
@@ -281,6 +288,7 @@ export function ResponderComentarioBuilder({
           : undefined,
       delay_seconds: 3,
       is_active: true,
+      ...followGateFieldsForSave(followGate),
       ...(rule && preservedFields(rule)),
       ...expiryFieldsForSave(expiry, rule),
     };
@@ -501,7 +509,13 @@ export function ResponderComentarioBuilder({
               </div>
 
               <div className="space-y-3 border-t border-border/70 pt-4">
-                <DisabledToggleRow label="uma DM solicitando que sigam seu perfil antes de receberem o link" />
+                <FollowGateField
+                  value={followGate}
+                  onChange={setFollowGate}
+                  username={selectedAccount.ig_username}
+                  label="uma DM solicitando que sigam seu perfil antes de receberem o link"
+                  contentName="o link"
+                />
                 <DisabledToggleRow label="uma DM solicitando o endereço de e-mail" />
               </div>
             </CardContent>
@@ -603,6 +617,7 @@ export function ResponderComentarioBuilder({
             welcomeButtonLabel={welcomeButtonLabel}
             linkMessageText={message}
             links={previewLinks}
+            followGate={followGatePreviewCopy(followGate)}
           />
         </div>
       </div>

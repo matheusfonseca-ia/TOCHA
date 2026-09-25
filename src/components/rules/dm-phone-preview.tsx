@@ -12,6 +12,7 @@ import {
   Wifi,
 } from "lucide-react";
 
+import { FollowGatePreview } from "@/components/rules/follow-gate/follow-gate-preview";
 import { cn } from "@/lib/utils";
 
 interface DmPhonePreviewProps {
@@ -20,6 +21,8 @@ interface DmPhonePreviewProps {
   incomingText: string;
   replyText: string;
   links: { title: string; url: string }[];
+  /** Portão "Seguir para liberar" ligado: mostra o caminho de quem não segue. */
+  followGate?: { text: string; followLabel: string; confirmLabel: string } | null;
 }
 
 export function DmPhonePreview({
@@ -28,6 +31,7 @@ export function DmPhonePreview({
   incomingText,
   replyText,
   links,
+  followGate,
 }: DmPhonePreviewProps) {
   return (
     <div>
@@ -72,6 +76,15 @@ export function DmPhonePreview({
                 {incomingText || <span className="text-white/40">preço</span>}
               </div>
             </div>
+
+            {followGate && (
+              <FollowGatePreview
+                text={followGate.text}
+                followLabel={followGate.followLabel}
+                confirmLabel={followGate.confirmLabel}
+                perspective="owner"
+              />
+            )}
 
             <div className="flex justify-end">
               <div className="max-w-[210px] overflow-hidden rounded-2xl rounded-br-sm bg-gradient-to-br from-[#7C5CFC] to-[#C13584] shadow-sm">

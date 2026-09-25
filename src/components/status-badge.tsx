@@ -7,6 +7,7 @@ const STATUS_MAP: Record<InteractionStatus, { label: string; dot: string }> = {
   duplicate_skip: { label: "Duplicada", dot: "bg-warning" },
   window_expired: { label: "Janela 24h", dot: "bg-warning" },
   error: { label: "Erro", dot: "bg-destructive" },
+  awaiting_follow: { label: "Aguardando seguir", dot: "bg-warning" },
 };
 
 export function StatusBadge({ status }: { status: InteractionStatus }) {

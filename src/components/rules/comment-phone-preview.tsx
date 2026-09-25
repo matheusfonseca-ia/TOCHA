@@ -20,6 +20,7 @@ import {
   Wifi,
 } from "lucide-react";
 
+import { FollowGatePreview } from "@/components/rules/follow-gate/follow-gate-preview";
 import { cn } from "@/lib/utils";
 import { allVariants } from "@/lib/rules/variants";
 import type { MediaRef } from "@/types/database";
@@ -48,7 +49,11 @@ interface CommentPhonePreviewProps {
   welcomeButtonLabel: string;
   linkMessageText: string;
   links: { title: string; url: string }[];
+  /** Portão "Seguir para liberar" ligado: mostra o caminho de quem não segue. */
+  followGate?: FollowGateBubble | null;
 }
+
+type FollowGateBubble = { text: string; followLabel: string; confirmLabel: string };
 
 function Avatar({
   avatarUrl,
@@ -227,6 +232,7 @@ function DmScreen({
   welcomeButtonLabel,
   linkMessageText,
   links,
+  followGate,
   hasOtherVariant,
   onShowOtherVariant,
 }: {
@@ -236,6 +242,7 @@ function DmScreen({
   welcomeButtonLabel: string;
   linkMessageText: string;
   links: { title: string; url: string }[];
+  followGate?: FollowGateBubble | null;
   hasOtherVariant: boolean;
   onShowOtherVariant: () => void;
 }) {
@@ -289,6 +296,16 @@ function DmScreen({
               {welcomeButtonLabel}
             </div>
           </div>
+        )}
+
+        {/* portão: quem não segue recebe isto antes do link */}
+        {followGate && (
+          <FollowGatePreview
+            text={followGate.text}
+            followLabel={followGate.followLabel}
+            confirmLabel={followGate.confirmLabel}
+            perspective="follower"
+          />
         )}
 
         {/* bot: mensagem com o link, liberada pelo toque */}
@@ -352,6 +369,7 @@ export function CommentPhonePreview({
   welcomeButtonLabel,
   linkMessageText,
   links,
+  followGate,
 }: CommentPhonePreviewProps) {
   const [tab, setTab] = useState<Tab>("dm");
   const [welcomeVariantIndex, setWelcomeVariantIndex] = useState(0);
@@ -402,6 +420,7 @@ export function CommentPhonePreview({
               welcomeButtonLabel={welcomeButtonLabel}
               linkMessageText={linkMessageText}
               links={links}
+              followGate={followGate}
               hasOtherVariant={welcomeOptions.length > 1}
               onShowOtherVariant={() =>
                 setWelcomeVariantIndex((i) => i + 1)

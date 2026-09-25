@@ -88,7 +88,7 @@ function defaultsFor(table: TableName): Row {
         updated_at: now,
       };
     case "rule_triggers":
-      return { link_delivered_at: null, created_at: now };
+      return { link_delivered_at: null, follow_gate_sent_at: null, created_at: now };
     case "conversations":
       return { ig_sender_username: null, created_at: now };
     case "contacts":

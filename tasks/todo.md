@@ -1,3 +1,106 @@
+# Falow: "Seguir para liberar" (portão de seguidor)
+
+Planejado em 2026-09-25. Status: **implementado** (tsc ok, vitest 259/259); falta aplicar a migration 0007, deploy e E2E real. Decisões D1 a D4 aprovadas como propostas em 25/09.
+
+## O que muda para quem usa
+
+Na automação (comentário ou DM) aparece o interruptor **"Só entregar para quem me segue"**. Ligado:
+
+- **Comentário**: a pessoa comenta e recebe a resposta privada com o botão (igual hoje). Ao tocar no botão, o Falow confere se ela segue a conta.
+  - Segue: recebe o link na hora (igual hoje) e o workflow ligado continua.
+  - Não segue: recebe a mensagem do portão com 2 botões: **[Seguir perfil]** (abre instagram.com/<conta>) e **[Já segui]**.
+  - Tocou em "Já segui": confere de novo. Segue: entrega o link + workflow. Ainda não: mensagem "ainda não apareceu" com os mesmos 2 botões.
+- **DM**: a pessoa manda a palavra-chave, o Falow confere na hora. Não segue: mensagem do portão. Mandar a palavra-chave de novo com o portão pendente confere de novo (não vira "Duplicada").
+
+## Base técnica (verificada na doc da Meta em 25/09)
+
+- User Profile API (`graph.instagram.com/<IGSID>`) tem o campo `is_user_follow_business` (boolean). Permissões `instagram_business_basic` + `instagram_business_manage_messages`, que o Falow já usa (o `getUserProfile` do `{{username}}` chama esse mesmo endpoint).
+- Consentimento: a doc só cita "mandou mensagem" e "tocou em icebreaker/menu persistente". **Toque em botão postback da resposta privada não está escrito na doc**, por isso a Fase 0. Sem consentimento a API devolve "User consent is required to access user profile."
+- Não existe botão nativo "Seguir" na API de mensagens: o botão é `web_url` para `https://www.instagram.com/<ig_username>/` (abre o perfil dentro do app) e o "Já segui" é `postback`. Os dois cabem num button template (`sendTemplateButtonsMessage` já existe e aceita a mistura).
+- Resposta privada = 1 por comentário, então a checagem do comentário só pode acontecer no toque do botão (é quando a conversa existe). O 1º passo do fluxo de comentário não muda.
+
+## Decisões em aberto (default proposto, confirmar antes de codar)
+
+- [x] **D1 Escopo**: automações de comentário e de DM, interruptor por automação, desligado por padrão. Nó "segue a conta" no workflow fica para depois (Fase 4, opcional).
+- [x] **D2 Não deu para verificar** (sem consentimento, erro da Meta, rede): entrega mesmo assim e registra no log (não perde lead por instabilidade da Meta). Alternativa: tratar como "não segue".
+- [x] **D3 "Já segui" sem seguir**: responde a cada toque, sem limite (o Falow só fala quando a pessoa toca). Alternativa: parar depois de 3 tentativas.
+- [x] **D4 Copy padrão** (editável na automação, zero travessão):
+  - Portão: "Pra liberar, é só me seguir aqui embaixo. Depois toca em Já segui 👇"
+  - Botões: "Seguir perfil" / "Já segui" (limite da Meta: 20 caracteres)
+  - Ainda não: "Ainda não apareceu que você me segue. Segue o perfil e toca em Já segui de novo."
+
+## Fase 0: spike com conta real (antes de qualquer código)
+
+- [x] Conta de teste que **não** segue comenta num post da conta conectada e toca no botão da resposta privada
+- [x] Script `tsx` no scratchpad (token da conta via banco, permissão durável) chama `/<IGSID>?fields=username,is_user_follow_business` logo depois do toque: confirma se o postback dá consentimento e se o campo vem `false`
+- [ ] A conta de teste segue e o script roda de novo: medir quanto tempo o campo leva para virar `true`
+- [ ] Repetir pelo caminho de DM (mensagem com palavra-chave)
+- **Resultado (25/09, dados reais de produção, só leitura)**: 6 de 6 pessoas que só comentaram e tocaram no botão (sem nunca mandar DM) devolveram `is_user_follow_business`; quem só comentou sem tocar deu erro 230 ("User consent is required"). O toque no postback dá consentimento: plano A. A conta de teste e a medição do atraso depois de seguir ficam para o E2E real.
+- Resultado define o fluxo do comentário:
+  - Postback dá consentimento: plano segue como está.
+  - Não dá: **Plano B**, depois do toque o Falow manda uma resposta rápida ("Quero receber"). Tocar numa resposta rápida vira mensagem da pessoa (= consentimento) e a checagem acontece ali. Custa 1 toque a mais para todo mundo; reavaliar com o usuário antes.
+
+## Fase 1: backend
+
+- [x] `supabase/migrations/0007_follow_gate.sql` (idempotente):
+  - `rules`: `follow_gate_enabled boolean not null default false`, `follow_gate_text`, `follow_gate_follow_label`, `follow_gate_confirm_label`, `follow_gate_retry_text` (text, nulos = copy padrão)
+  - `rule_triggers`: `follow_gate_sent_at timestamptz`, `follow_gate_checks int not null default 0`
+  - `interactions.status`: recria o check com `awaiting_follow` (drop constraint if exists + add)
+- [x] `src/types/database.ts`: campos novos opcionais (funciona antes da migration, mesmo padrão de `expires_at`) e `InteractionStatus` ganha `awaiting_follow`
+- [x] `src/lib/meta/graph.ts`: `getFollowsBusiness(token, igsid): Promise<boolean>` (só `fields=is_user_follow_business`); nenhuma função de envio nova, o portão usa `sendTemplateButtonsMessage`
+- [x] Módulo novo `src/lib/follow-gate/` (modular-arch):
+  - `payload.ts`: `followCheckPayload(ruleId)` / `parseFollowCheckPayload` (prefixo `falow:follow_check:`), `profileUrl(username)`
+  - `copy.ts`: textos padrão + `gateCopy(rule)` (coluna vazia = padrão)
+  - `check.ts`: `checkFollow(admin, account, senderId)` devolve `"follows" | "not_following" | "unknown"`; se vier `false`, espera 3s e tenta 1x (atraso da Meta logo depois de seguir); erro 190 marca a conta como expirada (mesmo tratamento de hoje)
+  - `gate.ts`: `sendFollowGate(...)` (portão ou "ainda não", conforme `follow_gate_checks`) + grava `follow_gate_sent_at` e incrementa `follow_gate_checks` em `rule_triggers`
+  - testes vitest de payload, copy e check (Graph mockado)
+- [x] `src/lib/meta/process.ts`:
+  - Extrair a entrega pós-toque de `processPostbackEvent` para `deliverRuleAfterTap(...)` (trava `link_delivered_at`, `sendRuleReply`, log, `startSequenceFromRule`), reaproveitada pelo toque do comentário e pelo "Já segui"
+  - Toque no botão do comentário: com portão ligado, checa **antes** da trava. `not_following` = manda portão, loga `awaiting_follow`, **não** trava nem inicia workflow
+  - Novo ramo de postback `falow:follow_check:<ruleId>`: dedupe por `mid`, conta + rule (comment ou dm, ativa, não vencida), `touchConversation`, checa; segue = `deliverRuleAfterTap`, não = "ainda não"
+  - `applyRule` (DM): linha em `rule_triggers` com `follow_gate_sent_at` e sem `link_delivered_at` = portão pendente, re-checa em vez de `duplicate_skip`. Com portão ligado, a entrega de DM passa a gravar `link_delivered_at` (mesma trava do comentário)
+  - `awaiting_follow` não dispara workflow de palavra-chave (o passo 4d só roda com `no_match`/`duplicate_skip`, conferir com teste)
+  - Portão desligado depois de enviado: "Já segui" entrega direto
+- [x] Integração rules -> workflow (regra das lições): workflow ligado a uma automação com portão só começa **depois** da entrega, uma única vez
+
+## Fase 2: UI
+
+- [x] Pasta nova `src/components/rules/follow-gate/`: `follow-gate-card.tsx` (Switch + texto do portão + 2 rótulos com contador de 20 + texto "ainda não", já preenchidos com a copy padrão; dica "O botão Seguir abre o perfil @conta")
+- [x] `responder-comentario-builder.tsx`: card entre "Eles receberão" e "E então, eles vão receber uma DM"
+- [x] `responder-dm-builder.tsx`: card antes de "Uma DM será enviada"
+- [x] Previews (`comment-phone-preview.tsx`, `dm-phone-preview.tsx`): balão do portão quando ligado, com alternância "ver como não seguidor"
+- [x] `rules/actions.ts`: zod + validação (texto obrigatório com portão ligado, rótulos até 20), `duplicateRule` copia os campos; `rules-manager.tsx` faz round-trip dos campos (lição das variantes: sem isso, editar pelo diálogo apaga o portão)
+- [x] Lista de automações: badge "Só seguidores"; Logs: `status-badge.tsx` + filtro "Aguardando seguir"
+
+## Fase 3: testes e entrega
+
+- [x] `process.test.ts`: comentário seguidor = link; não seguidor = portão sem trava e sem workflow; "Já segui" seguidor = link + workflow 1x; 2 toques simultâneos = 1 entrega; `unknown` conforme D2; DM pendente + palavra-chave de novo = re-checa; portão desligado = comportamento de hoje (regressão); rule vencida no "Já segui" = silêncio
+- [x] `npx tsc --noEmit`, `npm test`, `npm run build`, `grep -r "—" src` limpo
+- [ ] Usuário aplica a migration 0007 no SQL Editor
+- [ ] Builders em 375 / 768 / 1440
+- [ ] E2E real com a conta de teste: comentário e DM, não seguidor -> portão -> segue -> "Já segui" -> link -> workflow
+- [ ] Commit + deploy (`npm run build:cloudflare && npx wrangler deploy`, token DEPLOY, na pasta principal); push para `tocha` o usuário roda com `!`
+- [ ] Handoff em `tasks/ai-handoff.md`
+
+## Fase 4 (opcional, só se aprovada): workflow
+
+- [ ] Nó Condição ganha a opção "Segue a conta" (usa `checkFollow`), para montar portão dentro de workflows que começam por gatilho próprio (palavra-chave de DM, story, link de referência)
+
+## Revisão (25/09)
+
+- Implementado conforme o plano, com 3 ajustes: `follow_gate_checks` saiu (o log de `interactions` já conta cada toque em "Já segui"); texto vazio não bloqueia o save, usa o padrão (os campos já vêm preenchidos); o diálogo genérico da lista não precisa de round-trip porque `follow_gate_enabled` ausente no save não mexe no salvo (mesmo padrão da expiração).
+- `select("*")` em `rule_triggers` no lugar de colunas nomeadas: o código novo roda antes da migration sem tratar todo mundo como "nunca disparou".
+- Portão no nó "Automação" no meio de um workflow não se aplica (o fluxo já está rodando); vale só para o gatilho da própria automação.
+- Testes: 13 de integração em `process.test.ts` (comentário, "Já segui", 2ª conferência, `unknown`, portão desligado, vencida, DM retida + palavra-chave de novo, workflow de palavra-chave não rouba o pedido retido) e 19 unitários em `src/lib/follow-gate/follow-gate.test.ts`.
+
+## Riscos
+
+- Consentimento no toque do postback (Fase 0 resolve, Plano B pronto)
+- `is_user_follow_business` demorar a atualizar depois de seguir: retry de 3s + mensagem "ainda não" com o mesmo botão
+- Cada toque custa 1 chamada de perfil + 1 mensagem; sem cache nesta versão
+
+---
+
 # Falow: rodada 2 de features (4 agentes em paralelo)
 
 Planejado em 2026-09-23. Rodada anterior (duplicar + nó Automação + UX do editor) está concluída e commitada (ef293f6); ver histórico do git e `tasks/ai-handoff.md`.

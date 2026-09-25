@@ -8,7 +8,9 @@ export type InteractionStatus =
   | "no_match"
   | "duplicate_skip"
   | "window_expired"
-  | "error";
+  | "error"
+  /** Pediu a automação sem seguir a conta e recebeu o portão "Seguir para liberar". Migration 0007. */
+  | "awaiting_follow";
 
 export interface ReplyButton {
   title: string;
@@ -73,6 +75,13 @@ export interface Rule {
   expire_action?: "delete" | "pause";
   /** Pausada pelo sweep de expiração, não pelo usuário. Migration 0003. */
   paused_by_expiry?: boolean;
+  /** Portão "Seguir para liberar": só entrega para quem segue a conta. Migration 0007. */
+  follow_gate_enabled?: boolean;
+  /** Textos do portão; nulo/vazio = padrão de `src/lib/follow-gate/copy.ts`. */
+  follow_gate_text?: string | null;
+  follow_gate_follow_label?: string | null;
+  follow_gate_confirm_label?: string | null;
+  follow_gate_retry_text?: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -280,6 +280,24 @@ export async function getUserProfile(
   };
 }
 
+/**
+ * A pessoa segue a conta? (User Profile API, campo `is_user_follow_business`).
+ * Mesma regra de consentimento do perfil: sem DM nem toque em botão da conta,
+ * a Meta devolve erro 230 ("User consent is required").
+ */
+export async function getFollowsBusiness(
+  igToken: string,
+  igScopedId: string
+): Promise<boolean> {
+  const json = await graphGet(encodeURIComponent(igScopedId), igToken, {
+    fields: "is_user_follow_business",
+  });
+  if (typeof json.is_user_follow_business !== "boolean") {
+    throw new GraphApiError("Resposta sem is_user_follow_business");
+  }
+  return json.is_user_follow_business;
+}
+
 export interface IgMedia {
   id: string;
   caption: string | null;

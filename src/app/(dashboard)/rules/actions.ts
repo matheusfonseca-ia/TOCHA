@@ -9,6 +9,11 @@ import {
   isStoredExpired,
 } from "@/lib/expiry/guard";
 import { expiryColumns, expiryFields } from "@/lib/expiry/schema";
+import {
+  copyFollowGateColumns,
+  followGateColumns,
+  followGateFields,
+} from "@/lib/follow-gate/schema";
 import { keywordTerms } from "@/lib/rules/engine";
 import { automationRuleIdsOf } from "@/lib/sequences/graph";
 import { createClient } from "@/lib/supabase/server";
@@ -82,6 +87,8 @@ const ruleSchema = z.object({
   delay_seconds: z.coerce.number().int().min(2).max(5),
   is_active: z.boolean(),
   ...expiryFields,
+  // Portão "Seguir para liberar" (automações de DM e de comentário)
+  ...followGateFields,
 });
 
 // z.input (não z.infer/z.output): trigger_type tem default("dm"), então
@@ -263,6 +270,7 @@ export async function saveRule(raw: RuleInput): Promise<ActionResult> {
     delay_seconds: input.delay_seconds,
     is_active: input.is_active,
     ...expiryColumns(input),
+    ...followGateColumns(input),
     updated_at: new Date().toISOString(),
   };
 
@@ -424,6 +432,7 @@ export async function duplicateRule(id: string): Promise<ActionResult> {
     reply_buttons: original.reply_buttons,
     delay_seconds: original.delay_seconds,
     priority: original.priority,
+    ...copyFollowGateColumns(original),
     is_active: false,
     updated_at: new Date().toISOString(),
   };
