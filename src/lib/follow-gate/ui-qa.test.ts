@@ -258,6 +258,16 @@ describe("isMissingFollowGateColumn / withoutFollowGateColumns", () => {
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("saveRule: round-trip com o banco", () => {
+  it("criar automação ativa não avisa conflito com ela mesma; outra ativa com a mesma palavra avisa", async () => {
+    const first = await saveRule(baseInput({ keyword: "unica", is_active: true }));
+    expect(first.error).toBeUndefined();
+    expect(first.warning).toBeUndefined();
+
+    const second = await saveRule(baseInput({ keyword: "unica", name: "Segunda", is_active: true }));
+    expect(second.warning).toMatch(/também está ativa/);
+    expect(fake.tables.rules).toHaveLength(2);
+  });
+
   it("cria automação de DM com o portão ligado: colunas gravadas certas", async () => {
     const result = await saveRule(
       baseInput({
@@ -420,6 +430,13 @@ function createMigrationLessClient() {
   function builder(op: "insert" | "update", payload: FakeRow) {
     const self = {
       eq(_col: string, _val: unknown) {
+        return self;
+      },
+      // insert(...).select("id").maybeSingle(): saveRule lê o id da automação nova.
+      select(_cols?: string) {
+        return self;
+      },
+      maybeSingle() {
         return self;
       },
       then(

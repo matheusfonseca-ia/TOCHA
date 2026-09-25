@@ -288,20 +288,30 @@ export async function saveRule(raw: RuleInput): Promise<ActionResult> {
   }
 
   // RLS garante que account_id / rule pertencem ao usuário logado.
-  const write = (values: typeof row) =>
-    input.id
-      ? supabase.from("rules").update(values).eq("id", input.id)
-      : supabase.from("rules").insert(values);
-  let { error } = await write(row);
+  // Criando: devolve o id da automação nova, senão a checagem de conflito
+  // abaixo acharia a própria automação como "outra ativa".
+  const write = async (values: typeof row) => {
+    if (input.id) {
+      const { error } = await supabase.from("rules").update(values).eq("id", input.id);
+      return { id: input.id, error };
+    }
+    const { data, error } = await supabase
+      .from("rules")
+      .insert(values)
+      .select("id")
+      .maybeSingle();
+    return { id: (data?.id as string | undefined) ?? undefined, error };
+  };
+  let saved = await write(row);
 
   // Banco ainda sem a migration 0007: salva sem o portão enquanto ele está
   // desligado; ligado, avisa o que falta em vez de um erro genérico.
-  if (error && isMissingFollowGateColumn(error)) {
+  if (saved.error && isMissingFollowGateColumn(saved.error)) {
     if (row.follow_gate_enabled) return { error: FOLLOW_GATE_MIGRATION_ERROR };
-    ({ error } = await write(withoutFollowGateColumns(row)));
+    saved = await write(withoutFollowGateColumns(row));
   }
 
-  if (error) {
+  if (saved.error) {
     return { error: "Não foi possível salvar a regra. Tente novamente." };
   }
 
@@ -310,7 +320,7 @@ export async function saveRule(raw: RuleInput): Promise<ActionResult> {
 
   const warning = input.is_active
     ? ((await findConflictingRuleName(supabase, {
-        id: input.id,
+        id: saved.id,
         account_id: input.account_id,
         trigger_type: input.trigger_type,
         keyword: row.keyword,
