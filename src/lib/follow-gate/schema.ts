@@ -61,6 +61,24 @@ export function followGateColumns(input: FollowGateInput): FollowGateColumns {
   };
 }
 
+export const FOLLOW_GATE_MIGRATION_ERROR =
+  "Para usar o Seguir para liberar, aplique a migration 0007_follow_gate.sql no Supabase.";
+
+/** Banco sem a migration 0007: o PostgREST recusa a coluna desconhecida. */
+export function isMissingFollowGateColumn(
+  error: { message?: string } | null | undefined
+): boolean {
+  const message = error?.message ?? "";
+  return /follow_gate_/.test(message) && /does not exist|schema cache|column/i.test(message);
+}
+
+/** Mesma linha sem as colunas do portão, para salvar num banco sem a migration 0007. */
+export function withoutFollowGateColumns<T extends Record<string, unknown>>(row: T): T {
+  return Object.fromEntries(
+    Object.entries(row).filter(([key]) => !key.startsWith("follow_gate_"))
+  ) as T;
+}
+
 /** Cópia do portão ao duplicar; regra lida antes da migration 0007 não tem as colunas. */
 export function copyFollowGateColumns(original: FollowGateColumns): FollowGateColumns {
   if (original.follow_gate_enabled === undefined) return {};

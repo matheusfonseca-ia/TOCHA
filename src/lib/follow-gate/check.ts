@@ -1,4 +1,4 @@
-import { getFollowsBusiness } from "@/lib/meta/graph";
+import { GraphApiError, getFollowsBusiness } from "@/lib/meta/graph";
 import { sleep } from "@/lib/utils";
 
 export type FollowStatus = "follows" | "not_following" | "unknown";
@@ -16,7 +16,11 @@ export interface FollowCheck {
  */
 export const FOLLOW_RECHECK_DELAY_MS = 3_000;
 
-/** Nunca lança: falha na consulta vira `unknown` (decisão D2: entrega mesmo assim). */
+/**
+ * Falha na consulta vira `unknown` (decisão D2: entrega mesmo assim). Só
+ * token inválido (190) lança: com ele nada sai, e quem chama marca a conta
+ * para reconexão em vez de travar a entrega.
+ */
 export async function checkFollow(
   token: string,
   senderId: string,
@@ -30,6 +34,7 @@ export async function checkFollow(
       status: (await getFollowsBusiness(token, senderId)) ? "follows" : "not_following",
     };
   } catch (err) {
+    if (err instanceof GraphApiError && err.code === 190) throw err;
     return {
       status: "unknown",
       detail: err instanceof Error ? err.message : String(err),

@@ -11,8 +11,11 @@ import {
 import { expiryColumns, expiryFields } from "@/lib/expiry/schema";
 import {
   copyFollowGateColumns,
+  FOLLOW_GATE_MIGRATION_ERROR,
   followGateColumns,
   followGateFields,
+  isMissingFollowGateColumn,
+  withoutFollowGateColumns,
 } from "@/lib/follow-gate/schema";
 import { keywordTerms } from "@/lib/rules/engine";
 import { automationRuleIdsOf } from "@/lib/sequences/graph";
@@ -285,9 +288,18 @@ export async function saveRule(raw: RuleInput): Promise<ActionResult> {
   }
 
   // RLS garante que account_id / rule pertencem ao usuário logado.
-  const { error } = input.id
-    ? await supabase.from("rules").update(row).eq("id", input.id)
-    : await supabase.from("rules").insert(row);
+  const write = (values: typeof row) =>
+    input.id
+      ? supabase.from("rules").update(values).eq("id", input.id)
+      : supabase.from("rules").insert(values);
+  let { error } = await write(row);
+
+  // Banco ainda sem a migration 0007: salva sem o portão enquanto ele está
+  // desligado; ligado, avisa o que falta em vez de um erro genérico.
+  if (error && isMissingFollowGateColumn(error)) {
+    if (row.follow_gate_enabled) return { error: FOLLOW_GATE_MIGRATION_ERROR };
+    ({ error } = await write(withoutFollowGateColumns(row)));
+  }
 
   if (error) {
     return { error: "Não foi possível salvar a regra. Tente novamente." };

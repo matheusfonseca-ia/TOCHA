@@ -431,6 +431,7 @@ async function applyRule(
   }
 
   let gateDetail: string | undefined;
+  let locked = false;
   try {
     const token = await getFreshToken(admin, account);
 
@@ -444,12 +445,15 @@ async function applyRule(
       gateDetail = gate.detail;
     }
     // Conteúdo que estava retido: mesma trava atômica do toque em "Já segui".
-    if (heldByGate && !(await lockDelivery(admin, rule.id, senderId))) {
-      return { status: "duplicate_skip" };
+    if (heldByGate) {
+      locked = await lockDelivery(admin, rule.id, senderId);
+      if (!locked) return { status: "duplicate_skip" };
     }
 
     await sendRuleReply(token, senderId, rule);
   } catch (err) {
+    // Envio falhou: devolve a trava, senão o próximo pedido viraria duplicado.
+    if (locked) await releaseDelivery(admin, rule.id, senderId);
     // Token inválido/expirado → marca a conta para reconexão
     await markExpiredOnInvalidToken(admin, account, err);
     return {
@@ -463,6 +467,16 @@ async function applyRule(
     { rule_id: rule.id, account_id: account.id, ig_sender_id: senderId },
     { onConflict: "rule_id,ig_sender_id", ignoreDuplicates: true }
   );
+  // Com portão, a entrega também fica marcada: um portão enviado em paralelo
+  // (outra DM do mesmo pedido) não deixa o conteúdo já entregue como retido.
+  if (isFollowGateOn(rule) && !locked) {
+    await admin
+      .from("rule_triggers")
+      .update({ link_delivered_at: new Date().toISOString() })
+      .eq("rule_id", rule.id)
+      .eq("ig_sender_id", senderId)
+      .is("link_delivered_at", null);
+  }
 
   return { status: "replied", errorDetail: gateDetail };
 }
@@ -497,6 +511,19 @@ async function lockDelivery(
     .select("rule_id")
     .maybeSingle();
   return !!locked;
+}
+
+/** Desfaz a trava quando o envio falhou: a pessoa pode pedir (ou tocar) de novo. */
+async function releaseDelivery(
+  admin: AdminClient,
+  ruleId: string,
+  senderId: string
+): Promise<void> {
+  await admin
+    .from("rule_triggers")
+    .update({ link_delivered_at: null })
+    .eq("rule_id", ruleId)
+    .eq("ig_sender_id", senderId);
 }
 
 /**
@@ -604,6 +631,18 @@ async function processPostbackEvent(
       latency_ms: Date.now() - startedAt,
     });
 
+  // "Pausar automações" vale para os toques também, como na DM e no
+  // comentário: nada é entregue e o conteúdo continua esperando.
+  const pausedUntil = await automationPausedUntil(admin, account.id, senderId);
+  if (pausedUntil) {
+    await logTap(
+      "no_match",
+      "[toque em botão da automação]",
+      `Automações pausadas até ${pausedUntil}`
+    );
+    return;
+  }
+
   // Portão "Seguir para liberar": o toque no botão já deu consentimento
   // para a User Profile API (confirmado em produção em 25/09/2026).
   let gateDetail: string | null = null;
@@ -648,6 +687,8 @@ async function processPostbackEvent(
   } catch (err) {
     status = "error";
     errorDetail = err instanceof Error ? err.message : String(err);
+    // Devolve a trava: um novo toque tenta de novo (antes o link se perdia).
+    await releaseDelivery(admin, rule.id, senderId);
     await markExpiredOnInvalidToken(admin, account, err);
   }
 

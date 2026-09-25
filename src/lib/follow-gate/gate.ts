@@ -27,7 +27,8 @@ export type FollowGateResult =
  * o texto de "ainda não apareceu". `delayMs` = delay humanizado antes do
  * portão, para quem ainda não esperou por ele.
  *
- * Lança só se o envio da mensagem falhar (quem chama trata como erro).
+ * Lança se o envio da mensagem falhar ou o token for inválido (quem chama
+ * trata como erro).
  */
 export async function holdUnlessFollowing(
   admin: AdminClient,
@@ -46,11 +47,10 @@ export async function holdUnlessFollowing(
 
   // Delay humanizado da automação, também antes do portão.
   if (delayMs > 0) await sleep(delayMs);
-  const copy = followGateCopy(rule);
-  await sendTemplateButtonsMessage(token, senderId, again ? copy.retryText : copy.text, [
-    { type: "web_url", title: copy.followLabel, url: profileUrl(account.ig_username) },
-    { type: "postback", title: copy.confirmLabel, payload: followCheckPayload(rule.id) },
-  ]);
+  await sendFollowGateMessage(token, account, rule, senderId, {
+    again,
+    confirmPayload: followCheckPayload(rule.id),
+  });
 
   // Marca o conteúdo como retido: a linha de rule_triggers com o portão
   // enviado e sem link_delivered_at é o que libera o "Já segui" e faz a
@@ -66,6 +66,26 @@ export async function holdUnlessFollowing(
     .eq("ig_sender_id", senderId);
 
   return { held: true };
+}
+
+/**
+ * Mensagem do portão: texto (ou o "ainda não", com `again`) + botão que abre
+ * o perfil + "Já segui" com `confirmPayload`. Automação usa
+ * `falow:follow_check:<rule>`; o nó Automação de um workflow usa um payload
+ * de sequência, que retoma o próprio run.
+ */
+export async function sendFollowGateMessage(
+  token: string,
+  account: Pick<IgAccount, "ig_username">,
+  rule: Rule,
+  senderId: string,
+  { again, confirmPayload }: { again: boolean; confirmPayload: string }
+): Promise<void> {
+  const copy = followGateCopy(rule);
+  await sendTemplateButtonsMessage(token, senderId, again ? copy.retryText : copy.text, [
+    { type: "web_url", title: copy.followLabel, url: profileUrl(account.ig_username) },
+    { type: "postback", title: copy.confirmLabel, payload: confirmPayload },
+  ]);
 }
 
 /** Conteúdo retido no portão, esperando a pessoa seguir. */

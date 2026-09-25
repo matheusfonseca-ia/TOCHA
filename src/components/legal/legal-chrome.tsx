@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
  */
 
 /** Data de vigência mostrada nas páginas. */
-export const LEGAL_UPDATED_AT = "18 de agosto de 2026";
+export const LEGAL_UPDATED_AT = "25 de setembro de 2026";
 
 /** Rotas legais — usadas no cabeçalho das próprias páginas e no rodapé da landing. */
 export const LEGAL_PAGES = [

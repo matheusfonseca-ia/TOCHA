@@ -8,6 +8,9 @@ import {
   type TemplateButton,
 } from "@/lib/meta/graph";
 import { isExpired, withoutExpired } from "@/lib/expiry/expiry";
+import { checkFollow } from "@/lib/follow-gate/check";
+import { isFollowGateOn } from "@/lib/follow-gate/copy";
+import { sendFollowGateMessage } from "@/lib/follow-gate/gate";
 import { getFreshToken } from "@/lib/meta/token";
 import {
   triggerMatchesInbound,
@@ -111,6 +114,9 @@ const PG_UNIQUE_VIOLATION = "23505";
 export { isSequencePayload, parseSequencePayload } from "@/lib/sequences/payload";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
+
+/** Handle do botão "Já segui" enviado por um nó Automação com portão. */
+const FOLLOW_CHECK_HANDLE = "follow-check";
 
 /**
  * Instante em que a invocação precisa devolver o controle. Quem chama a
@@ -566,6 +572,14 @@ async function resumeFromHandle(
     };
   }
 
+  // "Já segui" do portão num nó Automação: executa o próprio nó de novo,
+  // que confere se a pessoa já segue antes de mandar a resposta.
+  if (handle === FOLLOW_CHECK_HANDLE && node.type === "automation") {
+    return executeFrom(admin, account, sequence, run, node.id, {
+      followRecheckAt: node.id,
+    });
+  }
+
   const nextNodeId = targetOf(sequence.graph, node.id, handle);
   return executeFrom(admin, account, sequence, run, nextNodeId);
 }
@@ -778,6 +792,8 @@ async function executeFrom(
     flow?: FlowData;
     /** Nó "Coletar dado" que deve mandar o texto de erro em vez da pergunta. */
     resendCollectErrorAt?: string;
+    /** Nó Automação retomado pelo "Já segui" do portão: confere de novo. */
+    followRecheckAt?: string;
   } = {}
 ): Promise<SequenceOutcome> {
   const graph = sequence.graph;
@@ -950,6 +966,28 @@ async function executeFrom(
 
           token ??= await getFreshToken(admin, account);
           await ensureWindowOpen(admin, account, run.ig_sender_id);
+
+          // Portão "Seguir para liberar" da automação vale aqui também: quem
+          // não segue recebe o portão e o fluxo espera o "Já segui" neste nó
+          // (o botão retoma o próprio run, que confere de novo).
+          if (isFollowGateOn(rule)) {
+            const again = opts.followRecheckAt === node.id;
+            const follow = await checkFollow(token, run.ig_sender_id, { recheck: again });
+            if (follow.status === "not_following") {
+              await humanPause(token, run.ig_sender_id);
+              await sendFollowGateMessage(token, account, rule, run.ig_sender_id, {
+                again,
+                confirmPayload: buildSequencePayload(run.id, node.id, FOLLOW_CHECK_HANDLE),
+              });
+              sent = true;
+              await persistRun(admin, run, "waiting_postback", {
+                current_node_id: node.id,
+                steps_executed: steps,
+              });
+              return ok("awaiting_follow");
+            }
+          }
+
           await humanPause(token, run.ig_sender_id);
           await sendRuleReply(token, run.ig_sender_id, rule);
           sent = true;

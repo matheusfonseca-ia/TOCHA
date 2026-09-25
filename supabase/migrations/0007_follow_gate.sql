@@ -54,8 +54,12 @@ begin
   end loop;
 end $$;
 
+-- NOT VALID + VALIDATE: a validação das linhas existentes não bloqueia os
+-- inserts do webhook em `interactions` (tabela de log, escrita a todo evento).
 alter table public.interactions
   add constraint interactions_status_check
-  check (status in ('replied', 'no_match', 'duplicate_skip', 'window_expired', 'error', 'awaiting_follow'));
+  check (status in ('replied', 'no_match', 'duplicate_skip', 'window_expired', 'error', 'awaiting_follow'))
+  not valid;
+alter table public.interactions validate constraint interactions_status_check;
 
 -- Nada muda em RLS: as políticas da 0001 cobrem as colunas novas.

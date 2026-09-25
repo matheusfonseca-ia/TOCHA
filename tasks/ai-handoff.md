@@ -3,7 +3,7 @@
 ## Estado atual
 Última tag: "HANDOFF-falow-20260925-130413-claude"
 Status: em andamento
-Resumo: plano da feature "Seguir para liberar" (portão de seguidor em automações de comentário e DM) escrito no topo de tasks/todo.md, aguardando aprovação das decisões D1 a D4. Nada implementado; produção segue em a22ff89 (wrangler a6b8d583). Repositório de entrega: remoto `tocha` (push o usuário roda com `!`).
+Resumo: portão "Seguir para liberar" implementado e commitado (71966e8; tsc ok, vitest 259/259, build:cloudflare ok). Bloqueado no usuário aplicar supabase/migrations/0007_follow_gate.sql no SQL Editor; NÃO fazer deploy antes (saves das telas falhariam sem as colunas). Conferir com o script de leitura REST (select follow_gate_enabled em rules e follow_gate_sent_at em rule_triggers), depois `npx wrangler deploy` (Token DEPLOY) e E2E. Produção ainda em a22ff89. Push para `tocha` o usuário roda com `!`.
 
 ---
 

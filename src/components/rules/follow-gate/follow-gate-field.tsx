@@ -56,6 +56,7 @@ export function FollowGateField({
               value={value.text}
               onChange={(e) => set({ text: e.target.value })}
             />
+            <CharCount value={value.text} />
           </div>
 
           <div className="grid gap-2 sm:grid-cols-2">
@@ -97,6 +98,7 @@ export function FollowGateField({
               value={value.retryText}
               onChange={(e) => set({ retryText: e.target.value })}
             />
+            <CharCount value={value.retryText} />
           </div>
 
           <p className="text-xs text-muted-foreground">
@@ -107,5 +109,13 @@ export function FollowGateField({
         </div>
       )}
     </div>
+  );
+}
+
+function CharCount({ value }: { value: string }) {
+  return (
+    <p className="text-right text-xs text-muted-foreground">
+      {value.length}/{FOLLOW_GATE_LIMITS.text}
+    </p>
   );
 }

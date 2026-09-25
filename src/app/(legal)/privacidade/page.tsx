@@ -112,6 +112,14 @@ export default function PrivacidadePage() {
               escolhida em botões e respostas rápidas.
             </li>
             <li>
+              <Term>Se a pessoa segue a conta:</Term> quando uma automação usa a
+              opção &ldquo;Seguir para liberar&rdquo;, o Falow pergunta à Meta se
+              quem pediu o conteúdo segue a conta conectada. A resposta serve só
+              para decidir, naquele momento, se o conteúdo é entregue, e não fica
+              gravada. Fica registrado apenas o horário em que o pedido para
+              seguir foi enviado.
+            </li>
+            <li>
               <Term>Dados informados nos fluxos:</Term> respostas que a própria
               pessoa digita quando um fluxo pede um dado (por exemplo nome,
               e-mail, telefone ou data) e as etiquetas (tags) que o fluxo atribui
@@ -131,7 +139,8 @@ export default function PrivacidadePage() {
             </li>
           </LegalList>
           <p>
-            O Falow <Term>não</Term> acessa sua lista de seguidores, seu feed,
+            Fora a consulta descrita acima, sobre quem pediu o conteúdo, o
+            Falow <Term>não</Term> acessa sua lista de seguidores, seu feed,
             suas mensagens antigas, seus contatos, sua localização, seus dados de
             pagamento nem qualquer conversa que não tenha sido enviada para a
             conta conectada depois da instalação.

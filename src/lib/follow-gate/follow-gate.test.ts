@@ -5,7 +5,12 @@ import { FOLLOW_GATE_DEFAULTS, followGateCopy, isFollowGateOn } from "./copy";
 import { followGateFieldsForSave, followGateFormFrom, followGatePreviewCopy } from "./form";
 import { isHeldByFollowGate } from "./gate";
 import { followCheckPayload, parseFollowCheckPayload, profileUrl } from "./payload";
-import { copyFollowGateColumns, followGateColumns } from "./schema";
+import {
+  copyFollowGateColumns,
+  followGateColumns,
+  isMissingFollowGateColumn,
+  withoutFollowGateColumns,
+} from "./schema";
 
 const { getFollowsBusinessMock, sleepMock } = vi.hoisted(() => ({
   getFollowsBusinessMock: vi.fn(async (_token: string, _id: string) => true),
@@ -112,6 +117,31 @@ describe("colunas no save e no duplicar", () => {
     expect(
       copyFollowGateColumns({ follow_gate_enabled: true, follow_gate_text: "Me segue" })
     ).toMatchObject({ follow_gate_enabled: true, follow_gate_text: "Me segue" });
+  });
+});
+
+describe("banco sem a migration 0007", () => {
+  it("reconhece o erro real do PostgREST para coluna do portão", () => {
+    expect(
+      isMissingFollowGateColumn({
+        message: "Could not find the 'follow_gate_enabled' column of 'rules' in the schema cache",
+      })
+    ).toBe(true);
+    expect(isMissingFollowGateColumn({ message: "column rules.follow_gate_text does not exist" })).toBe(true);
+  });
+
+  it("outros erros não disparam o fallback", () => {
+    expect(isMissingFollowGateColumn(null)).toBe(false);
+    expect(isMissingFollowGateColumn({ message: "duplicate key value violates unique constraint" })).toBe(false);
+    expect(
+      isMissingFollowGateColumn({ message: "Could not find the 'expires_at' column of 'rules' in the schema cache" })
+    ).toBe(false);
+  });
+
+  it("tira só as colunas do portão da linha", () => {
+    expect(
+      withoutFollowGateColumns({ keyword: "oi", follow_gate_enabled: false, follow_gate_text: null })
+    ).toEqual({ keyword: "oi" });
   });
 });
 
