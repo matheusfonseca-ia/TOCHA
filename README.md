@@ -16,7 +16,7 @@ Cada instalação é **sua**: seu banco (Supabase, grátis), seu app Meta, sua h
 
 | # | Passo | Onde |
 |---|---|---|
-| 1 | Criar projeto no **Supabase** e rodar `supabase/migrations/0001_init.sql` (arquivo único) no SQL Editor | [supabase.com/dashboard](https://supabase.com/dashboard) |
+| 1 | Criar projeto no **Supabase** e rodar os arquivos de `supabase/migrations/` na ordem numérica no SQL Editor | [supabase.com/dashboard](https://supabase.com/dashboard) |
 | 2 | Criar **app Meta** (tipo Business), adicionar o produto **Instagram** (Login do Instagram para empresas), configurar o webhook, cadastrar sua conta como testadora e colocar o app em modo **Live** | [developers.facebook.com/apps](https://developers.facebook.com/apps) |
 | 3 | Preencher as **variáveis de ambiente** (`.env.local` ou painel da Vercel) | veja tabela abaixo |
 | 4 | **Rodar** — local (`npm run dev` + ngrok) ou deploy na Vercel | — |
@@ -28,6 +28,12 @@ Cada instalação é **sua**: seu banco (Supabase, grátis), seu app Meta, sua h
 
 O botão clona o repositório para a sua conta do GitHub e já pede as variáveis de ambiente na tela.
 *(Mantenedor: troque `SEU-USUARIO` pela URL real do repositório.)*
+
+Se o mesmo repositório for publicado na Vercel e na Cloudflare com projetos Supabase
+diferentes, aplique cada migração nos dois bancos antes de publicar o código que a
+usa. O build da Vercel verifica as colunas necessárias e para se o banco ainda
+estiver desatualizado. O `vercel.json` também mantém o cron diário das sequências
+na instalação da Vercel; a instalação da Cloudflare precisa de um agendador externo.
 
 ### Rodando localmente
 
