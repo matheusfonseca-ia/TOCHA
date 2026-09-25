@@ -3,7 +3,7 @@
 ## Estado atual
 Última tag: "HANDOFF-falow-20260925-191000-claude"
 Status: concluído
-Resumo: portão "Seguir para liberar" em produção e ativo (wrangler 92d6f684, main com migration 0007 aplicada e verificada em 25/09). vitest 342/342. Falta só o E2E com webhook real (conta que não segue comenta, toca, segue, "Já segui"). Push para `tocha` o usuário roda com `!`.
+Resumo: portão "Seguir para liberar" em produção e ativo (wrangler 92d6f684, main com migration 0007 aplicada e verificada em 25/09). vitest 342/342. Falta só o E2E com webhook real (conta que não segue comenta, toca, segue, "Já segui"). Push para `tocha` o usuário roda com `!`. ATENÇÃO: o TOCHA também publica na Vercel com OUTRO projeto Supabase (commit cbfb979 do dono do repo, mergeado em c4a4449); o build da Vercel roda scripts/check-db-schema.mjs. A 0007 NÃO está no script de propósito (o código funciona sem ela); o banco da Vercel precisa da 0007 para o portão ligar lá.
 
 ---
 
