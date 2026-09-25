@@ -29,6 +29,8 @@ import {
   type LinkSlot,
 } from "@/lib/rules/links";
 import { saveRule, type RuleInput } from "@/app/(dashboard)/rules/actions";
+import { expiryFieldsForSave, linksFromRule, preservedFields } from "@/lib/rules/edit-rule";
+import type { Rule } from "@/types/database";
 
 const EXAMPLES = ["Preço", "Link", "Comprar"];
 
@@ -40,17 +42,22 @@ interface AccountOption {
 
 export function ResponderDmBuilder({
   accounts,
+  rule,
 }: {
   accounts: AccountOption[];
+  /** Presente = editando esta automação (mesma tela, já preenchida). */
+  rule?: Rule;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const [accountId, setAccountId] = useState(accounts[0].id);
-  const [keywordInput, setKeywordInput] = useState("");
-  const [message, setMessage] = useState("");
-  const [links, setLinks] = useState<LinkSlot[]>([]);
-  const [expiryForm, setExpiryForm] = useState(() => expiryFormFrom(null, null));
+  const [accountId, setAccountId] = useState(rule?.account_id ?? accounts[0].id);
+  const [keywordInput, setKeywordInput] = useState(rule?.keyword ?? "");
+  const [message, setMessage] = useState(rule?.reply_text ?? "");
+  const [links, setLinks] = useState<LinkSlot[]>(() => (rule ? linksFromRule(rule) : []));
+  const [expiryForm, setExpiryForm] = useState(() =>
+    expiryFormFrom(rule?.expires_at ?? null, rule?.expire_action ?? null)
+  );
 
   const selectedAccount =
     accounts.find((a) => a.id === accountId) ?? accounts[0];
@@ -143,10 +150,8 @@ export function ResponderDmBuilder({
           : undefined,
       delay_seconds: 3,
       is_active: true,
-      ...(expiry.expires_at && {
-        expires_at: expiry.expires_at,
-        expire_action: expiry.expire_action,
-      }),
+      ...(rule && preservedFields(rule)),
+      ...expiryFieldsForSave(expiry, rule),
     };
 
     startTransition(async () => {
@@ -155,8 +160,10 @@ export function ResponderDmBuilder({
         toast.error(result.error);
         return;
       }
-      toast.success("Automação ativada. Já está respondendo DMs.");
+      toast.success(rule ? "Automação atualizada." : "Automação ativada. Já está respondendo DMs.");
+      if (result.warning) toast.warning(result.warning);
       router.push("/rules");
+      router.refresh();
     });
   }
 
@@ -173,13 +180,15 @@ export function ResponderDmBuilder({
           size="sm"
           className="-ml-2.5 text-muted-foreground"
         >
-          <Link href="/rules/nova">
+          <Link href={rule ? "/rules" : "/rules/nova"}>
             <ArrowLeft className="h-4 w-4" />
-            Novo gatilho
+            {rule ? "Automações" : "Novo gatilho"}
           </Link>
         </Button>
         <Button onClick={handleActivate} disabled={isPending} size="lg">
-          {isPending ? "Ativando..." : "Ativar"}
+          {rule
+            ? isPending ? "Salvando..." : "Salvar alterações"
+            : isPending ? "Ativando..." : "Ativar"}
         </Button>
       </div>
 
@@ -234,7 +243,7 @@ export function ResponderDmBuilder({
               {accounts.length > 1 && (
                 <div className="space-y-2 border-t border-border/70 pt-4">
                   <Label>Conta do Instagram</Label>
-                  <Select value={accountId} onValueChange={setAccountId}>
+                  <Select value={accountId} onValueChange={setAccountId} disabled={!!rule}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>

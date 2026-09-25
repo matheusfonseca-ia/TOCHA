@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
@@ -24,6 +25,7 @@ import { EmptyState } from "@/components/empty-state";
 import { ExpiryBadge } from "@/components/expiry/expiry-badge";
 import { ExpiryDialog, type ExpiryTarget } from "@/components/expiry/expiry-dialog";
 import { ExpiryField } from "@/components/expiry/expiry-field";
+import { canEditInBuilder } from "@/lib/rules/edit-rule";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -222,6 +224,7 @@ export function RulesManager({
   accounts: AccountOption[];
   executionCounts: Record<string, number>;
 }) {
+  const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -489,7 +492,13 @@ export function RulesManager({
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEdit(rule)}>
+                          <DropdownMenuItem
+                            onClick={() =>
+                              canEditInBuilder(rule)
+                                ? router.push(`/rules/${rule.id}/editar`)
+                                : openEdit(rule)
+                            }
+                          >
                             <Pencil />
                             Editar
                           </DropdownMenuItem>

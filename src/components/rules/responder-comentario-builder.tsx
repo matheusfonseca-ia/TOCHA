@@ -32,7 +32,13 @@ import {
   type LinkSlot,
 } from "@/lib/rules/links";
 import { saveRule, type RuleInput } from "@/app/(dashboard)/rules/actions";
-import type { MediaRef } from "@/types/database";
+import {
+  expiryFieldsForSave,
+  linksFromRule,
+  mergeSelectedMedia,
+  preservedFields,
+} from "@/lib/rules/edit-rule";
+import type { MediaRef, Rule } from "@/types/database";
 
 const EXAMPLES = ["Preço", "Link", "Comprar"];
 
@@ -113,29 +119,43 @@ function DisabledToggleRow({ label }: { label: string }) {
 
 export function ResponderComentarioBuilder({
   accounts,
+  rule,
 }: {
   accounts: AccountOption[];
+  /** Presente = editando esta automação (mesma tela, já preenchida). */
+  rule?: Rule;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const [accountId, setAccountId] = useState(accounts[0].id);
-  const [mediaMode, setMediaMode] = useState<"specific" | "any">("specific");
-  const [selectedMedia, setSelectedMedia] = useState<MediaRef[]>([]);
-  const [commentMode, setCommentMode] = useState<"keyword" | "any">("keyword");
-  const [keywordInput, setKeywordInput] = useState("");
-  const [publicReplyEnabled, setPublicReplyEnabled] = useState(false);
-  const [publicReplyText, setPublicReplyText] = useState("");
-  const [publicReplyVariants, setPublicReplyVariants] = useState<string[]>([]);
-  const [welcomeText, setWelcomeText] = useState("");
-  const [welcomeTextVariants, setWelcomeTextVariants] = useState<string[]>([]);
-  const [welcomeButtonLabel, setWelcomeButtonLabel] = useState("");
-  const [message, setMessage] = useState("");
-  const [links, setLinks] = useState<LinkSlot[]>([]);
-  const [expiryForm, setExpiryForm] = useState(() => expiryFormFrom(null, null));
+  const [accountId, setAccountId] = useState(rule?.account_id ?? accounts[0].id);
+  const [mediaMode, setMediaMode] = useState<"specific" | "any">(rule?.media_mode ?? "specific");
+  const [selectedMedia, setSelectedMedia] = useState<MediaRef[]>(rule?.media_refs ?? []);
+  const [commentMode, setCommentMode] = useState<"keyword" | "any">(
+    rule?.comment_any_word ? "any" : "keyword"
+  );
+  const [keywordInput, setKeywordInput] = useState(rule?.keyword ?? "");
+  const [publicReplyEnabled, setPublicReplyEnabled] = useState(rule?.public_reply_enabled ?? false);
+  const [publicReplyText, setPublicReplyText] = useState(rule?.public_reply_text ?? "");
+  const [publicReplyVariants, setPublicReplyVariants] = useState<string[]>(
+    rule?.public_reply_variants ?? []
+  );
+  const [welcomeText, setWelcomeText] = useState(rule?.welcome_text ?? "");
+  const [welcomeTextVariants, setWelcomeTextVariants] = useState<string[]>(
+    rule?.welcome_text_variants ?? []
+  );
+  const [welcomeButtonLabel, setWelcomeButtonLabel] = useState(rule?.welcome_button_label ?? "");
+  const [message, setMessage] = useState(rule?.reply_text ?? "");
+  const [links, setLinks] = useState<LinkSlot[]>(() => (rule ? linksFromRule(rule) : []));
+  const [expiryForm, setExpiryForm] = useState(() =>
+    expiryFormFrom(rule?.expires_at ?? null, rule?.expire_action ?? null)
+  );
 
   const selectedAccount =
     accounts.find((a) => a.id === accountId) ?? accounts[0];
+  const pickerMedia = rule
+    ? mergeSelectedMedia(selectedAccount.media, rule.media_refs)
+    : selectedAccount.media;
 
   const keywordTerms = useMemo(
     () =>
@@ -261,10 +281,8 @@ export function ResponderComentarioBuilder({
           : undefined,
       delay_seconds: 3,
       is_active: true,
-      ...(expiry.expires_at && {
-        expires_at: expiry.expires_at,
-        expire_action: expiry.expire_action,
-      }),
+      ...(rule && preservedFields(rule)),
+      ...expiryFieldsForSave(expiry, rule),
     };
 
     startTransition(async () => {
@@ -273,8 +291,10 @@ export function ResponderComentarioBuilder({
         toast.error(result.error);
         return;
       }
-      toast.success("Automação ativada. Já está respondendo comentários.");
+      toast.success(rule ? "Automação atualizada." : "Automação ativada. Já está respondendo comentários.");
+      if (result.warning) toast.warning(result.warning);
       router.push("/rules");
+      router.refresh();
     });
   }
 
@@ -291,13 +311,15 @@ export function ResponderComentarioBuilder({
           size="sm"
           className="-ml-2.5 text-muted-foreground"
         >
-          <Link href="/rules/nova">
+          <Link href={rule ? "/rules" : "/rules/nova"}>
             <ArrowLeft className="h-4 w-4" />
-            Novo gatilho
+            {rule ? "Automações" : "Novo gatilho"}
           </Link>
         </Button>
         <Button onClick={handleActivate} disabled={isPending} size="lg">
-          {isPending ? "Ativando..." : "Ativar"}
+          {rule
+            ? isPending ? "Salvando..." : "Salvar alterações"
+            : isPending ? "Ativando..." : "Ativar"}
         </Button>
       </div>
 
@@ -316,7 +338,7 @@ export function ResponderComentarioBuilder({
                   onSelect={() => setMediaMode("specific")}
                 >
                   <MediaPicker
-                    media={selectedAccount.media}
+                    media={pickerMedia}
                     selectedIds={selectedMedia.map((m) => m.id)}
                     onToggle={toggleMedia}
                   />
@@ -419,6 +441,7 @@ export function ResponderComentarioBuilder({
                   <Label>Conta do Instagram</Label>
                   <Select
                     value={accountId}
+                    disabled={!!rule}
                     onValueChange={(v) => {
                       setAccountId(v);
                       setSelectedMedia([]);
