@@ -3,7 +3,7 @@
 ## Estado atual
 Última tag: "HANDOFF-falow-20260924-113000-claude"
 Status: concluído
-Resumo: produção em 7842e96 (wrangler versão 93e11d74, 24/09): rodada 2 + menu de blocos no canvas. main local em acb67bf (+ lixeira nas conexões e reconexão da seta), ainda NÃO publicada. Repositório de entrega: remoto `tocha` = github.com/matheusfonseca-ia/TOCHA, main em acb67bf (push feito pelo usuário em 24/09; o auto mode bloqueia push para esse remoto, pedir ao usuário rodar com `!`). O `origin` (scheibe-369/falow) está desatualizado. Falta teste com webhook real; pendências de baixo impacto em tasks/todo.md.
+Resumo: produção em a22ff89 (wrangler versão a6b8d583, 24/09): rodada 2 + menu de blocos no canvas + lixeira/reconexão nas conexões + editar automação na tela completa (/rules/[id]/editar). Tudo testado logado em produção. Repositório de entrega: remoto `tocha` = github.com/matheusfonseca-ia/TOCHA, main em acb67bf (push feito pelo usuário em 24/09; o auto mode bloqueia push para esse remoto, pedir ao usuário rodar com `!`). O `origin` (scheibe-369/falow) está desatualizado. Falta teste com webhook real; pendências de baixo impacto em tasks/todo.md.
 
 ---
 
