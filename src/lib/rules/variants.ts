@@ -32,6 +32,35 @@ export function allVariants(
 }
 
 /**
+ * Cadastra `text` como mais uma variante (usado pelas respostas prontas):
+ * preenche a variante 1 se ela estiver vazia, senão a primeira extra em
+ * branco, senão entra no fim das extras. Texto já cadastrado, vazio ou que
+ * passaria de `max` variantes no total devolve as listas sem mudança.
+ */
+export function addVariant(
+  primary: string,
+  extras: string[],
+  text: string,
+  max: number
+): { primary: string; extras: string[] } {
+  const trimmed = text.trim();
+  if (!trimmed || allVariants(primary, extras).includes(trimmed)) {
+    return { primary, extras };
+  }
+  if (!primary.trim()) return { primary: trimmed, extras };
+
+  const blankIndex = extras.findIndex((extra) => !extra.trim());
+  if (blankIndex >= 0) {
+    return {
+      primary,
+      extras: extras.map((extra, i) => (i === blankIndex ? trimmed : extra)),
+    };
+  }
+  if (extras.length + 1 >= max) return { primary, extras };
+  return { primary, extras: [...extras, trimmed] };
+}
+
+/**
  * Sorteia uma variante entre a primária e as extras. `random` é injetável
  * para deixar o teste determinístico (default: `Math.random`). Sem nenhuma
  * variante válida, devolve `null`; com só uma, devolve ela sem sortear.

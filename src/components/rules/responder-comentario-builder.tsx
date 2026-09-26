@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { CommentPhonePreview } from "@/components/rules/comment-phone-preview";
 import { FollowGateField } from "@/components/rules/follow-gate/follow-gate-field";
 import { MediaPicker } from "@/components/rules/media-picker";
+import { PUBLIC_REPLY_PRESETS } from "@/components/rules/variants/public-reply-presets";
 import { VariantList } from "@/components/rules/variants/variant-list";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -440,6 +441,7 @@ export function ResponderComentarioBuilder({
                     maxLength={PUBLIC_REPLY_MAX}
                     rows={2}
                     placeholder="Ex.: Te chamei no direct! 📩"
+                    presets={PUBLIC_REPLY_PRESETS}
                   />
                 </div>
               )}
