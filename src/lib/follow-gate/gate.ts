@@ -1,3 +1,4 @@
+import { syncAccountProfile } from "@/lib/meta/account-profile";
 import { sendTemplateButtonsMessage } from "@/lib/meta/graph";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import { sleep } from "@/lib/utils";
@@ -47,7 +48,7 @@ export async function holdUnlessFollowing(
 
   // Delay humanizado da automação, também antes do portão.
   if (delayMs > 0) await sleep(delayMs);
-  await sendFollowGateMessage(token, account, rule, senderId, {
+  await sendFollowGateMessage(admin, token, account, rule, senderId, {
     again,
     confirmPayload: followCheckPayload(rule.id),
   });
@@ -72,18 +73,21 @@ export async function holdUnlessFollowing(
  * Mensagem do portão: texto (ou o "ainda não", com `again`) + botão que abre
  * o perfil + "Já segui" com `confirmPayload`. Automação usa
  * `falow:follow_check:<rule>`; o nó Automação de um workflow usa um payload
- * de sequência, que retoma o próprio run.
+ * de sequência, que retoma o próprio run. O @ do link vem do Instagram na
+ * hora (a conta pode ter trocado de @ depois de conectada).
  */
 export async function sendFollowGateMessage(
+  admin: AdminClient,
   token: string,
-  account: Pick<IgAccount, "ig_username">,
+  account: IgAccount,
   rule: Rule,
   senderId: string,
   { again, confirmPayload }: { again: boolean; confirmPayload: string }
 ): Promise<void> {
   const copy = followGateCopy(rule);
+  const { ig_username } = await syncAccountProfile(admin, account, token);
   await sendTemplateButtonsMessage(token, senderId, again ? copy.retryText : copy.text, [
-    { type: "web_url", title: copy.followLabel, url: profileUrl(account.ig_username) },
+    { type: "web_url", title: copy.followLabel, url: profileUrl(ig_username) },
     { type: "postback", title: copy.confirmLabel, payload: confirmPayload },
   ]);
 }

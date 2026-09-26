@@ -975,7 +975,7 @@ async function executeFrom(
             const follow = await checkFollow(token, run.ig_sender_id, { recheck: again });
             if (follow.status === "not_following") {
               await humanPause(token, run.ig_sender_id);
-              await sendFollowGateMessage(token, account, rule, run.ig_sender_id, {
+              await sendFollowGateMessage(admin, token, account, rule, run.ig_sender_id, {
                 again,
                 confirmPayload: buildSequencePayload(run.id, node.id, FOLLOW_CHECK_HANDLE),
               });

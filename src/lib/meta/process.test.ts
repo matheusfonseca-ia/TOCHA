@@ -92,6 +92,20 @@ vi.mock("@/lib/utils", async (importOriginal) => {
   return { ...actual, sleep: vi.fn(async () => {}) };
 });
 
+// Perfil atual da conta (o portão busca o @ na hora de montar o link).
+const { getInstagramProfileMock } = vi.hoisted(() => ({
+  getInstagramProfileMock: vi.fn(async (_token: string) => ({
+    igUserId: "17841400000000000",
+    username: "conta_teste",
+    profilePictureUrl: null as string | null,
+  })),
+}));
+
+vi.mock("@/lib/meta/oauth", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/meta/oauth")>();
+  return { ...actual, getInstagramProfile: getInstagramProfileMock };
+});
+
 let fake: FakeSupabase;
 
 beforeEach(() => {
@@ -993,6 +1007,45 @@ describe("processWebhookPayload: portão Seguir para liberar", () => {
     expect(fake.tables.rule_triggers[0].follow_gate_sent_at).not.toBeNull();
     expect(fake.tables.sequence_runs).toHaveLength(0);
     expect(fake.tables.interactions).toHaveLength(1);
+    expect(fake.tables.interactions[0].status).toBe("awaiting_follow");
+  });
+
+  it("conta trocou de @ depois de conectada: o botão abre o @ atual e o banco é corrigido", async () => {
+    const { account, rule } = seedCommentRule("s-rename");
+    getFollowsBusinessMock.mockImplementation(async () => false);
+    getInstagramProfileMock.mockResolvedValueOnce({
+      igUserId: account.ig_user_id,
+      username: "novo_arroba",
+      profilePictureUrl: "https://cdn.exemplo/foto.jpg",
+    });
+
+    await processWebhookPayload(postback(account, "s-rename", "pb-1", `falow:comment_link:${rule.id}`));
+
+    const call = sendTemplateButtonsMessageMock.mock.calls[0] as unknown as [
+      string,
+      string,
+      string,
+      { type: string; url?: string }[],
+    ];
+    expect(call[3][0].url).toBe("https://www.instagram.com/novo_arroba/");
+    expect(fake.tables.ig_accounts[0].ig_username).toBe("novo_arroba");
+    expect(fake.tables.ig_accounts[0].profile_picture_url).toBe("https://cdn.exemplo/foto.jpg");
+  });
+
+  it("perfil fora do ar na Meta: o portão sai com o @ salvo", async () => {
+    const { account, rule } = seedCommentRule("s-profile-down");
+    getFollowsBusinessMock.mockImplementation(async () => false);
+    getInstagramProfileMock.mockRejectedValueOnce(new Error("rede"));
+
+    await processWebhookPayload(postback(account, "s-profile-down", "pb-1", `falow:comment_link:${rule.id}`));
+
+    const call = sendTemplateButtonsMessageMock.mock.calls[0] as unknown as [
+      string,
+      string,
+      string,
+      { type: string; url?: string }[],
+    ];
+    expect(call[3][0].url).toBe("https://www.instagram.com/conta_teste/");
     expect(fake.tables.interactions[0].status).toBe("awaiting_follow");
   });
 

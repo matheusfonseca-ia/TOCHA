@@ -95,6 +95,20 @@ vi.mock("@/lib/utils", async (importOriginal) => {
   return { ...actual, sleep: vi.fn(async () => {}) };
 });
 
+// Perfil atual da conta (o portão busca o @ na hora de montar o link).
+const { getInstagramProfileMock } = vi.hoisted(() => ({
+  getInstagramProfileMock: vi.fn(async (_token: string) => ({
+    igUserId: "17841400000000000",
+    username: "conta_teste",
+    profilePictureUrl: null as string | null,
+  })),
+}));
+
+vi.mock("@/lib/meta/oauth", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/meta/oauth")>();
+  return { ...actual, getInstagramProfile: getInstagramProfileMock };
+});
+
 let fake: FakeSupabase;
 
 beforeEach(() => {
@@ -1008,9 +1022,10 @@ describe("QA portão: outros caminhos", () => {
     expect(triggerOf(rule, "s-97")?.link_delivered_at).not.toBeNull();
   });
 
-  it("portão enviado na DM leva o link do perfil da conta e o payload da regra", async () => {
+  it("portão enviado na DM leva o link do perfil da conta e o payload da regra (perfil fora do ar: usa o @ salvo, sem o @)", async () => {
     const { account, rule } = seedDm({}, { ig_username: "@minha.conta" });
     getFollowsBusinessMock.mockImplementation(async () => false);
+    getInstagramProfileMock.mockRejectedValueOnce(new Error("rede"));
 
     await processWebhookPayload(dm(account, "s-98", "m-1", "oi"));
 

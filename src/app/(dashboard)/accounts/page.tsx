@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { withSyncedProfiles } from "@/lib/meta/account-profile";
 import { createClient } from "@/lib/supabase/server";
 import type { IgAccount } from "@/types/database";
 
@@ -32,13 +33,23 @@ export default async function AccountsPage({
   const supabase = createClient();
   const { data } = await supabase
     .from("ig_accounts")
-    .select("id, ig_username, page_name, profile_picture_url, status, connected_at")
+    .select("id, ig_username, page_name, profile_picture_url, status, connected_at, access_token_enc")
     .order("connected_at", { ascending: false });
 
-  const accounts = (data ?? []) as Pick<
+  const stored = (data ?? []) as Pick<
     IgAccount,
-    "id" | "ig_username" | "page_name" | "profile_picture_url" | "status" | "connected_at"
+    "id" | "ig_username" | "page_name" | "profile_picture_url" | "status" | "connected_at" | "access_token_enc"
   >[];
+  // @ e foto mudam no Instagram sem aviso: contas ativas mostram (e gravam)
+  // os atuais; o token criptografado não segue para o client.
+  const synced = new Map(
+    (await withSyncedProfiles(supabase, stored.filter((a) => a.status === "active"))).map(
+      (a) => [a.id, a]
+    )
+  );
+  const accounts = stored.map(
+    ({ access_token_enc: _token, ...account }) => synced.get(account.id) ?? account
+  );
 
   const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/meta`;
 

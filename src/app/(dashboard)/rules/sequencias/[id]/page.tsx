@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { SequenceEditor } from "@/components/sequences/sequence-editor";
+import { withSyncedProfiles } from "@/lib/meta/account-profile";
 import { createClient } from "@/lib/supabase/server";
 import type { Rule } from "@/types/database";
 import type { Sequence, SequenceRun } from "@/types/sequence";
@@ -12,13 +13,13 @@ export default async function EditarSequenciaPage({
 }) {
   const supabase = createClient();
 
-  const [{ data: sequence }, { data: accounts }, { data: runs }, { data: rules }, { data: sequences }] =
+  const [{ data: sequence }, { data: storedAccounts }, { data: runs }, { data: rules }, { data: sequences }] =
     await Promise.all([
       // RLS garante que só sequências das contas do usuário aparecem aqui
       supabase.from("sequences").select("*").eq("id", params.id).maybeSingle(),
       supabase
         .from("ig_accounts")
-        .select("id, ig_username, profile_picture_url")
+        .select("id, ig_username, profile_picture_url, access_token_enc")
         .eq("status", "active")
         .order("connected_at"),
       // Últimas execuções pro painel de execuções do editor (RLS idem)
@@ -36,9 +37,12 @@ export default async function EditarSequenciaPage({
 
   if (!sequence) notFound();
 
+  // O @ pode ter mudado no Instagram: o link ig.me de referência usa o atual.
+  const accounts = await withSyncedProfiles(supabase, storedAccounts ?? []);
+
   return (
     <SequenceEditor
-      accounts={accounts ?? []}
+      accounts={accounts}
       sequence={sequence as Sequence}
       runs={(runs ?? []) as SequenceRun[]}
       rules={(rules ?? []) as Rule[]}
