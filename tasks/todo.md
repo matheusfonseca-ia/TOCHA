@@ -101,6 +101,13 @@ Na automação (comentário ou DM) aparece o interruptor **"Só entregar para qu
 - Achados no teste logado em produção: aviso de conflito falso ao criar qualquer automação ativa (vinha de e5cff59; corrigido em 64e1221) e `ReferenceError: __name is not defined` em todas as páginas (script do next-themes + keep_names do wrangler; corrigido com `keep_names = false`, recomendação do OpenNext).
 - Deploy sem depender da 0007: `saveRule` regrava sem as colunas do portão quando o banco não as tem (portão ligado avisa para aplicar a migration). Confirmado logado: portão ligado mostra o aviso, desligado salva.
 
+## Teste real do usuário (26/09): botão "Seguir perfil" abria perfil inexistente
+
+- Causa: `ig_accounts.ig_username` só era gravado ao conectar; o usuário trocou o @ (heliomonteir0.ia -> euheliomonteiro) e o link do portão (e o ig.me de referência dos workflows) usava o antigo. Confirmado comparando o banco com `me?fields=username` (mesmo user_id).
+- Correção para todos os usuários (f50d27a, wrangler a43954d0): `src/lib/meta/account-profile.ts` (`syncAccountProfile` / `withSyncedProfiles`) busca o perfil atual e grava o que mudou; roda no envio do portão (sempre), na página Contas e no editor de workflow. Falha na Meta usa o @ salvo. 8 testes novos (350/350).
+- Dado da conta do usuário corrigido no banco pela mesma lógica (valor vindo da API).
+- [ ] Usuário refaz o teste real (conta que não segue, tocar em "Seguir perfil")
+
 ## Riscos
 
 - Consentimento no toque do postback (Fase 0 resolve, Plano B pronto)

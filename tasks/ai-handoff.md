@@ -1,11 +1,22 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260925-191000-claude"
-Status: concluído
-Resumo: portão "Seguir para liberar" em produção e ativo (wrangler 92d6f684, main com migration 0007 aplicada e verificada em 25/09). vitest 342/342. Falta só o E2E com webhook real (conta que não segue comenta, toca, segue, "Já segui"). Push para `tocha` o usuário roda com `!`. ATENÇÃO: o TOCHA também publica na Vercel com OUTRO projeto Supabase (commit cbfb979 do dono do repo, mergeado em c4a4449); o build da Vercel roda scripts/check-db-schema.mjs. A 0007 NÃO está no script de propósito (o código funciona sem ela); o banco da Vercel precisa da 0007 para o portão ligar lá.
+Última tag: "HANDOFF-falow-20260926-125806-claude"
+Status: em andamento
+Resumo: portão em produção (wrangler a43954d0, main f50d27a). Teste real do usuário achou o botão "Seguir perfil" abrindo @ antigo (conta trocou de @); corrigido para todos com sincronização do perfil (src/lib/meta/account-profile.ts) e dado corrigido no banco. Falta o usuário refazer o teste real. Push para `tocha` o usuário roda com `!`. ATENÇÃO: o TOCHA também publica na Vercel com OUTRO projeto Supabase (script scripts/check-db-schema.mjs no build; 0007 fora dele de propósito).
 
 ---
+
+## [HANDOFF · falow · 2026-09-26T12:58:06-03:00 · claude]
+Status: em andamento
+Objetivo: corrigir o botão "Seguir perfil" que abria um perfil inexistente.
+Feito:
+- Causa: @ gravado só ao conectar; usuário trocou de @. syncAccountProfile no envio do portão, na página Contas e no editor de workflow (f50d27a), deploy a43954d0; @ da conta corrigido no banco com o valor da API
+Próximo passo:
+- Usuário refaz o teste real; push para tocha
+Arquivos tocados: src/lib/meta/account-profile.ts (+ teste), src/lib/follow-gate/gate.ts, src/lib/sequences/runtime.ts, src/app/(dashboard)/accounts/page.tsx, src/app/(dashboard)/rules/sequencias/nova/page.tsx, src/app/(dashboard)/rules/sequencias/[id]/page.tsx, testes de process e QA
+Decisões/contexto: não existe URL de perfil do Instagram por id; o link precisa do @ atual, por isso a busca na hora do envio.
+Tag: "HANDOFF-falow-20260926-125806-claude"
 
 ## [HANDOFF · falow · 2026-09-25T19:10:00-03:00 · claude]
 Status: concluído
