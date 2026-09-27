@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import gsap from "gsap";
 import {
   Instagram,
   LayoutDashboard,
@@ -31,10 +32,43 @@ const NAV_ITEMS = [
 export function Sidebar({ userEmail }: { userEmail: string }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const navRef = useRef<HTMLElement>(null);
+  const indicatorRef = useRef<HTMLDivElement>(null);
+  const positionedRef = useRef(false);
 
   // Fecha o drawer ao navegar para outra página
   useEffect(() => {
     setOpen(false);
+  }, [pathname]);
+
+  // Desliza o indicador até o item ativo em vez de trocar de estado sem
+  // transição — feedback de "onde eu estou" ao navegar. Sem transição na
+  // primeira medição (só encaixa na posição certa) e pulando pro estado
+  // final com "reduzir movimento" ativado.
+  useEffect(() => {
+    const nav = navRef.current;
+    const indicator = indicatorRef.current;
+    if (!nav || !indicator) return;
+    const activeLink = nav.querySelector<HTMLAnchorElement>(
+      '[data-active="true"]'
+    );
+    if (!activeLink) {
+      indicator.style.opacity = "0";
+      return;
+    }
+    const y = activeLink.offsetTop;
+    const height = activeLink.offsetHeight;
+    const reduceMotion =
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+      !positionedRef.current;
+    gsap.to(indicator, {
+      y,
+      height,
+      opacity: 1,
+      duration: reduceMotion ? 0 : 0.35,
+      ease: "power2.out",
+    });
+    positionedRef.current = true;
   }, [pathname]);
 
   return (
@@ -86,17 +120,23 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
         </div>
 
         {/* Navegação */}
-        <nav className="flex-1 space-y-0.5 px-3 py-4">
+        <nav ref={navRef} className="relative flex-1 space-y-0.5 px-3 py-4">
+          <div
+            ref={indicatorRef}
+            aria-hidden
+            className="pointer-events-none absolute left-3 right-3 top-0 z-0 rounded-md bg-secondary/70 opacity-0"
+          />
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
             const active = pathname.startsWith(href);
             return (
               <Link
                 key={href}
                 href={href}
+                data-active={active}
                 className={cn(
-                  "group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",
+                  "group relative z-10 flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",
                   active
-                    ? "bg-secondary/70 text-foreground"
+                    ? "text-foreground"
                     : "text-muted-foreground hover:bg-secondary/40 hover:text-foreground"
                 )}
               >

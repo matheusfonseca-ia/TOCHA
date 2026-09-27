@@ -30,7 +30,7 @@ export default async function SequenciasPage() {
       <EmptyState
         icon={Instagram}
         title="Conecte uma conta primeiro"
-        description="As sequências precisam de uma conta do Instagram conectada."
+        description="Os workflows precisam de uma conta do Instagram conectada."
       >
         <Button asChild>
           <Link href="/accounts">Conectar Instagram</Link>

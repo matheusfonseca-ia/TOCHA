@@ -7,8 +7,8 @@ import { Workflow, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const SECTION_ITEMS = [
-  { href: "/rules", label: "Minhas automações", icon: Zap },
-  { href: "/rules/sequencias", label: "Sequências", icon: Workflow },
+  { href: "/rules", label: "Automações", icon: Zap },
+  { href: "/rules/sequencias", label: "Workflow", icon: Workflow },
 ];
 
 export function AutomationSectionNav() {

@@ -13,7 +13,7 @@ import {
 } from "@/components/legal/legal-chrome";
 
 export const metadata: Metadata = {
-  title: "Política de Privacidade — Falow",
+  title: "Política de Privacidade | Falow",
   description:
     "Como o Falow coleta, usa, armazena e exclui os dados necessários para responder automaticamente DMs e comentários no Instagram.",
 };
@@ -38,7 +38,7 @@ export default function PrivacidadePage() {
             O Falow é uma ferramenta de automação de mensagens para o Instagram.
             Ele responde automaticamente a mensagens diretas (DMs) e a
             comentários com base em regras de palavra-chave e em sequências de
-            mensagens definidas por quem administra a conta — do tipo &ldquo;se a
+            mensagens definidas por quem administra a conta, do tipo &ldquo;se a
             mensagem contiver X, responda Y&rdquo;.
           </p>
           <p>
@@ -76,8 +76,8 @@ export default function PrivacidadePage() {
           <LegalList>
             <li>
               <Term>Dados da conta conectada:</Term> identificador e nome de
-              usuário da conta profissional de Instagram, foto de perfil e — em
-              conexões antigas feitas via Facebook — nome e identificador da
+              usuário da conta profissional de Instagram, foto de perfil e, em
+              conexões antigas feitas via Facebook, nome e identificador da
               Página vinculada. Tudo obtido pela API oficial da Meta, mediante
               autorização explícita do administrador.
             </li>
@@ -90,14 +90,14 @@ export default function PrivacidadePage() {
             <li>
               <Term>Mensagens diretas recebidas:</Term> o texto das DMs enviadas
               para a conta conectada e o identificador técnico do remetente
-              atribuído pela Meta — um código específico deste aplicativo, que
-              não revela sua identidade fora dele. O nome de usuário é guardado
+              atribuído pela Meta (um código específico deste aplicativo, que
+              não revela sua identidade fora dele). O nome de usuário é guardado
               quando a própria Meta o envia junto do evento.
             </li>
             <li>
               <Term>Comentários públicos:</Term> o texto do comentário, os
               identificadores do comentário e da publicação e o identificador de
-              quem comentou — usados para responder o comentário e, quando a
+              quem comentou, usados para responder o comentário e, quando a
               regra prevê, iniciar uma conversa na DM.
             </li>
             <li>
@@ -150,17 +150,17 @@ export default function PrivacidadePage() {
         <LegalSection title="3. Permissões pedidas à Meta e por quê">
           <LegalList>
             <li>
-              <Term>instagram_business_basic</Term> — identificar a conta
+              <Term>instagram_business_basic</Term>: identificar a conta
               profissional que está sendo conectada (nome de usuário, id e foto)
               e manter o token válido.
             </li>
             <li>
-              <Term>instagram_business_manage_messages</Term> — receber as DMs
+              <Term>instagram_business_manage_messages</Term>: receber as DMs
               enviadas à conta e responder a elas com o texto configurado nas
               regras e sequências.
             </li>
             <li>
-              <Term>instagram_business_manage_comments</Term> — ler os
+              <Term>instagram_business_manage_comments</Term>: ler os
               comentários das publicações da conta e responder publicamente ou
               por DM, conforme a regra.
             </li>
@@ -200,8 +200,8 @@ export default function PrivacidadePage() {
             </li>
             <li>
               Não envia mensagens para quem não iniciou o contato, e não envia
-              nada fora da janela de 24 horas permitida pela Meta — passado esse
-              prazo sem uma nova mensagem sua, a automação para.
+              nada fora da janela de 24 horas permitida pela Meta (passado
+              esse prazo sem uma nova mensagem sua, a automação para).
             </li>
             <li>
               Não instala rastreadores, pixels de publicidade ou ferramentas de
@@ -284,7 +284,7 @@ export default function PrivacidadePage() {
           <p>
             Esta aplicação usa apenas os cookies de sessão do Supabase Auth,
             estritamente necessários para manter o administrador conectado ao
-            painel. As páginas públicas — esta e a de exclusão de dados — não
+            painel. As páginas públicas (esta e a de exclusão de dados) não
             gravam cookies e não têm rastreamento de terceiros.
           </p>
         </LegalSection>

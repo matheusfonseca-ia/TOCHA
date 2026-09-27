@@ -14,7 +14,7 @@ import {
 } from "@/components/legal/legal-chrome";
 
 export const metadata: Metadata = {
-  title: "Exclusão de dados — Falow",
+  title: "Exclusão de dados | Falow",
   description:
     "Como pedir e como executar a exclusão dos dados tratados pelo Falow: passo a passo para quem interagiu com a conta e para quem administra a instalação.",
 };
@@ -40,7 +40,7 @@ export default function ExclusaoDeDadosPage() {
             O Falow responde automaticamente a DMs e comentários de uma conta de
             Instagram. Para isso, ele guarda o texto das mensagens recebidas, um
             identificador técnico de quem enviou e um registro do que foi
-            respondido — nada além disso. Esta página explica como fazer o Falow
+            respondido, nada além disso. Esta página explica como fazer o Falow
             apagar tudo o que guardou sobre você.
           </p>
           <p>
@@ -62,7 +62,7 @@ export default function ExclusaoDeDadosPage() {
         >
           <p>
             É o caso da maioria das pessoas. Você conversou com uma conta de
-            Instagram e recebeu uma resposta automática — os dados dessa
+            Instagram e recebeu uma resposta automática: os dados dessa
             interação estão no banco de quem administra a conta.
           </p>
 
@@ -152,14 +152,14 @@ export default function ExclusaoDeDadosPage() {
           </p>
           <p>
             No SQL Editor do seu projeto Supabase, apagar a linha da conta em{" "}
-            <Term>ig_accounts</Term> remove em cascata tudo que depende dela —
-            regras, conversas, gatilhos, sequências, execuções, contatos e logs:
+            <Term>ig_accounts</Term> remove em cascata tudo que depende dela
+            (regras, conversas, gatilhos, sequências, execuções, contatos e logs):
           </p>
           <LegalCode>{`-- troque pelo @ da conta que você quer apagar
 delete from public.ig_accounts where ig_username = 'seu_usuario';`}</LegalCode>
           <p>
-            Para apagar apenas os dados de <Term>uma pessoa</Term> — atendendo a
-            um pedido individual — use o identificador de remetente dela:
+            Para apagar apenas os dados de <Term>uma pessoa</Term> (atendendo a
+            um pedido individual), use o identificador de remetente dela:
           </p>
           <LegalCode>{`-- o ig_sender_id aparece na tela de Logs do painel
 delete from public.interactions   where ig_sender_id = 'ID_DO_REMETENTE';
@@ -173,8 +173,8 @@ delete from public.contacts       where ig_sender_id = 'ID_DO_REMETENTE';`}</Leg
           </p>
           <LegalSteps>
             <li>
-              Remova seu usuário em <Path>Supabase → Authentication → Users</Path>{" "}
-              — isso apaga em cascata todas as contas conectadas e seus dados.
+              Remova seu usuário em <Path>Supabase → Authentication → Users</Path>
+              : isso apaga em cascata todas as contas conectadas e seus dados.
             </li>
             <li>
               Exclua o projeto na Supabase e o deploy na Vercel, se não for mais
@@ -193,9 +193,9 @@ delete from public.contacts       where ig_sender_id = 'ID_DO_REMETENTE';`}</Leg
         <LegalSection title="3. Prazo">
           <p>
             Pedidos de exclusão são atendidos em até <Term>30 dias</Term>{" "}
-            corridos a partir do recebimento — na prática, quase sempre em alguns
-            dias. Você recebe uma confirmação pelo mesmo canal em que fez o
-            pedido. Nenhuma cópia de backup é mantida depois desse prazo.
+            corridos a partir do recebimento (na prática, quase sempre em
+            alguns dias). Você recebe uma confirmação pelo mesmo canal em que
+            fez o pedido. Nenhuma cópia de backup é mantida depois desse prazo.
           </p>
         </LegalSection>
 

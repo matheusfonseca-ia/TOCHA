@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import gsap from "gsap";
 import { Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -10,6 +11,7 @@ export interface BlockMenuItem {
   type: SequenceNodeType;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
+  group: string;
 }
 
 const MENU_WIDTH = 240;
@@ -64,6 +66,21 @@ export function BlockMenu({
     };
   }, [onClose]);
 
+  // Entrada em scale+fade em vez de aparecer sem transição — feedback de
+  // abertura de menu contextual (mesmo padrão de popover usado no resto do app).
+  useEffect(() => {
+    if (!ref.current) return;
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)"
+    ).matches;
+    if (reduceMotion) return;
+    gsap.fromTo(
+      ref.current,
+      { opacity: 0, scale: 0.95, transformOrigin: "top left" },
+      { opacity: 1, scale: 1, duration: 0.15, ease: "power2.out" }
+    );
+  }, []);
+
   // Mantém o menu inteiro dentro do canvas (clique perto da borda).
   const x = Math.max(8, Math.min(left, containerWidth - MENU_WIDTH - 8));
   const y = Math.max(8, Math.min(top, containerHeight - MENU_MAX_HEIGHT - 8));
@@ -100,20 +117,26 @@ export function BlockMenu({
         </div>
       </div>
       <div className="overflow-y-auto py-1" style={{ maxHeight: MENU_MAX_HEIGHT - 72 }}>
-        {filtered.map(({ type, label, icon: Icon }) => (
-          <button
-            key={type}
-            type="button"
-            role="menuitem"
-            onClick={() => onPick(type)}
-            className={cn(
-              "flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm",
-              "hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:outline-none"
+        {filtered.map(({ type, label, icon: Icon, group }, i) => (
+          <Fragment key={type}>
+            {group !== filtered[i - 1]?.group && (
+              <p className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground/80 first:pt-1">
+                {group}
+              </p>
             )}
-          >
-            <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
-            {label}
-          </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => onPick(type)}
+              className={cn(
+                "flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm",
+                "hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:outline-none"
+              )}
+            >
+              <Icon className="h-4 w-4 shrink-0 text-muted-foreground" />
+              {label}
+            </button>
+          </Fragment>
         ))}
         {filtered.length === 0 && (
           <p className="px-3 py-2 text-xs text-muted-foreground">Nenhum bloco com esse nome.</p>

@@ -423,7 +423,15 @@ export function RulesManager({
                   ? `${keywordLabel} · ${matchLabel}`
                   : matchLabel;
                 return (
-                  <TableRow key={rule.id}>
+                  <TableRow
+                    key={rule.id}
+                    className="cursor-pointer"
+                    onClick={() =>
+                      canEditInBuilder(rule)
+                        ? router.push(`/rules/${rule.id}/editar`)
+                        : openEdit(rule)
+                    }
+                  >
                     <TableCell>
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
@@ -471,7 +479,10 @@ export function RulesManager({
                     <TableCell className="text-center text-sm tabular-nums text-muted-foreground">
                       {executionCounts[rule.id] ?? 0}
                     </TableCell>
-                    <TableCell className="text-center">
+                    <TableCell
+                      className="text-center"
+                      onClick={(e) => e.stopPropagation()}
+                    >
                       <Switch
                         checked={rule.is_active}
                         onCheckedChange={(next) => handleToggle(rule, next)}
@@ -487,7 +498,7 @@ export function RulesManager({
                         locale: ptBR,
                       })}
                     </TableCell>
-                    <TableCell>
+                    <TableCell onClick={(e) => e.stopPropagation()}>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                           <Button variant="ghost" size="icon">

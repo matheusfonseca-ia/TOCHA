@@ -16,7 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 
 export const metadata: Metadata = {
-  title: "Falow — Respostas automáticas para DMs e comentários do Instagram",
+  title: "Falow: respostas automáticas para DMs e comentários do Instagram",
   description:
     "Conecte sua conta profissional, crie regras de palavra-chave e sequências de conversa, e deixe o Falow responder as DMs e os comentários sozinho, 24h por dia.",
 };
@@ -55,7 +55,7 @@ const FEATURES = [
   },
   {
     icon: Workflow,
-    title: "Sequências no canvas",
+    title: "Workflow no canvas",
     body: "Monte fluxos inteiros arrastando blocos: mensagem, botões, respostas rápidas, atraso e espera. A conversa segue sozinha.",
   },
   {
@@ -68,7 +68,7 @@ const FEATURES = [
 const PERMISSIONS = [
   {
     scope: "instagram_business_basic",
-    body: "Identificar a conta profissional conectada — usuário, id e foto — e manter a autorização válida.",
+    body: "Identificar a conta profissional conectada (usuário, id e foto) e manter a autorização válida.",
   },
   {
     scope: "instagram_business_manage_messages",
@@ -106,11 +106,11 @@ export default function HomePage() {
             </h1>
 
             <p className="mt-5 text-base leading-relaxed text-muted-foreground sm:text-lg">
-              O Falow conecta sua conta profissional do Instagram, lê as
-              mensagens e comentários que chegam e responde com o que{" "}
+              O Falow conecta sua conta do Instagram, lê as DMs e comentários
+              que chegam e responde com o que{" "}
               <strong className="font-semibold text-foreground">você</strong>{" "}
-              escreveu — por palavra-chave ou por fluxos inteiros de conversa.
-              24 horas por dia, sem você abrir o app.
+              escreveu: por palavra-chave ou por um workflow completo de
+              conversa, 24 horas por dia, sem você abrir o app.
             </p>
 
             <div className="mt-8 flex flex-wrap items-center gap-3">
@@ -194,7 +194,7 @@ export default function HomePage() {
               <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
               <div>
                 <h2 className="font-display text-2xl font-bold tracking-tight text-foreground">
-                  O que o Falow acessa — e o que não acessa
+                  O que o Falow acessa (e o que não acessa)
                 </h2>
                 <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
                   A conexão usa o login oficial da Meta e pede exatamente três
@@ -263,7 +263,7 @@ export default function HomePage() {
           </div>
 
           <p className="mt-8 text-xs leading-relaxed text-muted-foreground">
-            Falow — automação de respostas para DMs e comentários do Instagram.
+            Falow: automação de respostas para DMs e comentários do Instagram.
             Dúvidas, pedidos de exclusão de dados ou suporte:{" "}
             <a
               className="font-medium text-foreground underline decoration-primary decoration-2 underline-offset-4 transition-colors hover:text-primary"

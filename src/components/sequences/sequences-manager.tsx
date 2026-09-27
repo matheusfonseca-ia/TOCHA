@@ -111,7 +111,7 @@ export function SequencesManager({
     startTransition(async () => {
       const result = await deleteSequence(sequence.id);
       if (result.error) toast.error(result.error);
-      else toast.success("Sequência excluída.");
+      else toast.success("Workflow excluído.");
       setDeleteTarget(null);
     });
   }
@@ -120,13 +120,13 @@ export function SequencesManager({
     return (
       <EmptyState
         icon={Workflow}
-        title="Nenhuma sequência criada"
+        title="Nenhum workflow criado"
         description="Monte um fluxo de mensagens no canvas: gatilho, mensagens, botões, atrasos e ramificações. O Falow conduz a conversa sozinho."
       >
         <Button asChild>
           <Link href="/rules/sequencias/nova">
             <Plus />
-            Criar primeira sequência
+            Criar primeiro workflow
           </Link>
         </Button>
       </EmptyState>
@@ -139,7 +139,7 @@ export function SequencesManager({
         <div className="relative w-full max-w-xs">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
           <Input
-            placeholder="Pesquisar sequências..."
+            placeholder="Pesquisar workflows..."
             className="pl-8"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -148,7 +148,7 @@ export function SequencesManager({
         <Button asChild>
           <Link href="/rules/sequencias/nova">
             <Plus />
-            Nova sequência
+            Novo workflow
           </Link>
         </Button>
       </div>
@@ -156,7 +156,7 @@ export function SequencesManager({
       {filtered.length === 0 ? (
         <Card className="animate-fade-up">
           <p className="px-6 py-16 text-center text-sm text-muted-foreground">
-            Nenhuma sequência encontrada para &ldquo;{query}&rdquo;.
+            Nenhum workflow encontrado para &ldquo;{query}&rdquo;.
           </p>
         </Card>
       ) : (
@@ -164,7 +164,7 @@ export function SequencesManager({
           <Table className="min-w-[760px]">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
-                <TableHead>Sequência</TableHead>
+                <TableHead>Workflow</TableHead>
                 <TableHead>Blocos</TableHead>
                 <TableHead className="text-center">Execuções</TableHead>
                 <TableHead className="text-center">No fluxo</TableHead>
@@ -310,9 +310,9 @@ export function SequencesManager({
       >
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Excluir sequência</DialogTitle>
+            <DialogTitle>Excluir workflow</DialogTitle>
             <DialogDescription>
-              Excluir a sequência &ldquo;{deleteTarget?.name}&rdquo;? Quem
+              Excluir o workflow &ldquo;{deleteTarget?.name}&rdquo;? Quem
               estiver no meio do fluxo para de recebê-lo. Essa ação não pode
               ser desfeita.
             </DialogDescription>

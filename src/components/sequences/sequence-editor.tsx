@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   addEdge,
@@ -26,11 +26,10 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   ArrowLeft,
+  ChevronRight,
   Hourglass,
   ListChecks,
-  Maximize2,
   MessageSquareText,
-  Minimize2,
   MousePointerClick,
   PauseOctagon,
   Plus,
@@ -117,21 +116,30 @@ const PALETTE: {
   type: SequenceNodeType;
   label: string;
   icon: typeof MessageSquareText;
+  group: string;
 }[] = [
-  { type: "message", label: "Mensagem", icon: MessageSquareText },
-  { type: "buttons", label: "Botões", icon: MousePointerClick },
-  { type: "quickReplies", label: "Respostas rápidas", icon: ListChecks },
-  { type: "delay", label: "Atraso", icon: Timer },
-  { type: "waitReply", label: "Esperar resposta", icon: Hourglass },
-  { type: "automation", label: "Automação", icon: Workflow },
-  // Dados do contato
-  { type: "collectInput", label: "Coletar dado", icon: TextCursorInput },
-  { type: "condition", label: "Condição", icon: Split },
-  { type: "setField", label: "Definir campo", icon: Tag },
-  // Extras
-  { type: "randomizer", label: "Aleatório", icon: Shuffle },
-  { type: "goToSequence", label: "Ir para workflow", icon: Workflow },
-  { type: "stopAutomation", label: "Pausar automações", icon: PauseOctagon },
+  { type: "message", label: "Mensagem", icon: MessageSquareText, group: "Conteúdo" },
+  { type: "buttons", label: "Botões", icon: MousePointerClick, group: "Conteúdo" },
+  { type: "quickReplies", label: "Respostas rápidas", icon: ListChecks, group: "Conteúdo" },
+  { type: "delay", label: "Atraso", icon: Timer, group: "Conteúdo" },
+  { type: "waitReply", label: "Esperar resposta", icon: Hourglass, group: "Conteúdo" },
+  { type: "automation", label: "Automação", icon: Workflow, group: "Conteúdo" },
+  {
+    type: "collectInput",
+    label: "Coletar dado",
+    icon: TextCursorInput,
+    group: "Dados do contato",
+  },
+  { type: "condition", label: "Condição", icon: Split, group: "Dados do contato" },
+  { type: "setField", label: "Definir campo", icon: Tag, group: "Dados do contato" },
+  { type: "randomizer", label: "Aleatório", icon: Shuffle, group: "Extras" },
+  { type: "goToSequence", label: "Ir para workflow", icon: Workflow, group: "Extras" },
+  {
+    type: "stopAutomation",
+    label: "Pausar automações",
+    icon: PauseOctagon,
+    group: "Extras",
+  },
 ];
 
 // Largura fixa dos blocos no canvas (w-60 em sequence-nodes.tsx) e altura
@@ -342,7 +350,6 @@ function EditorInner({
   const [isPending, startTransition] = useTransition();
   const updateNodeInternals = useUpdateNodeInternals();
   const { fitView, getInternalNode, getViewport, setCenter, screenToFlowPosition } = useReactFlow();
-  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const graph = useMemo(() => initialGraph(sequence), [sequence]);
   const [nodes, setNodes, onNodesChangeRaw] = useNodesState<FlowNode>(
@@ -545,24 +552,14 @@ function EditorInner({
     if (ids.length > 0) updateNodeInternals(ids);
   }, [handleSignature, updateNodeInternals]);
 
-  // Reenquadra o fluxo quando o canvas muda de tamanho (montagem e
-  // entrada/saída da tela cheia) e permite sair da tela cheia com Esc.
+  // Reenquadra o fluxo quando o canvas monta.
   useEffect(() => {
     const timer = setTimeout(
       () => fitView({ padding: 0.25, maxZoom: 1 }),
       100
     );
     return () => clearTimeout(timer);
-  }, [isFullscreen, fitView]);
-
-  useEffect(() => {
-    if (!isFullscreen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setIsFullscreen(false);
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isFullscreen]);
+  }, [fitView]);
 
   const onSelectionChange = useCallback(
     ({ nodes: selected }: OnSelectionChangeParams) => {
@@ -806,7 +803,7 @@ function EditorInner({
   const handleSave = useCallback(() => {
     setInvalidNodeId(null);
     if (!name.trim()) {
-      toast.error("Dê um nome à sequência.");
+      toast.error("Dê um nome ao workflow.");
       return;
     }
     if (!accountId) {
@@ -846,7 +843,7 @@ function EditorInner({
         toast.error(result.error);
         return;
       }
-      toast.success(isActive ? "Sequência ativada." : "Sequência salva.");
+      toast.success(isActive ? "Workflow ativado." : "Workflow salvo.");
       if (result.warning) toast.warning(result.warning);
       router.push("/rules/sequencias");
       router.refresh();
@@ -875,25 +872,20 @@ function EditorInner({
   }, [nodes, selectedId]);
 
   return (
-    <div
-      className={cn(
-        "space-y-4",
-        isFullscreen &&
-          "fixed inset-0 z-50 flex flex-col overflow-hidden bg-background p-4 md:p-6"
-      )}
-    >
-      {/* ── Barra superior: nome, conta, status, salvar ───────────────── */}
+    <div className="fixed inset-y-0 left-0 right-0 z-50 flex flex-col gap-3 overflow-hidden bg-background p-3 md:left-60 md:gap-4 md:p-4">
+      {/* ── Barra superior: breadcrumb, nome, conta, status, salvar ────── */}
       <div className="flex flex-wrap items-center gap-3">
-        <Button
-          variant="ghost"
-          size="icon"
-          aria-label="Voltar para sequências"
+        <button
+          type="button"
           onClick={handleBack}
+          className="flex shrink-0 items-center gap-1.5 rounded-md py-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           <ArrowLeft className="h-4 w-4" />
-        </Button>
+          Workflow
+        </button>
+        <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground/40" />
         <Input
-          placeholder="Nome da sequência (ex.: Boas-vindas novos seguidores)"
+          placeholder="Nome do workflow (ex.: Boas-vindas novos seguidores)"
           className="min-w-0 flex-1 sm:w-72 sm:flex-none"
           value={name}
           onChange={(e) => setName(e.target.value)}
@@ -922,45 +914,27 @@ function EditorInner({
               {isActive ? "Ativa" : "Pausada"}
             </span>
           </div>
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => setIsFullscreen((f) => !f)}
-            title={
-              isFullscreen ? "Sair da tela cheia (Esc)" : "Tela cheia"
-            }
-            aria-label={
-              isFullscreen ? "Sair da tela cheia" : "Tela cheia"
-            }
-          >
-            {isFullscreen ? (
-              <Minimize2 className="h-4 w-4" />
-            ) : (
-              <Maximize2 className="h-4 w-4" />
-            )}
-          </Button>
           <Button onClick={handleSave} disabled={isPending}>
-            {isPending ? "Salvando…" : sequence ? "Salvar" : "Criar sequência"}
+            {isPending ? "Salvando…" : sequence ? "Salvar" : "Criar workflow"}
           </Button>
         </div>
       </div>
 
       {/* ── Paleta de blocos + undo/redo ──────────────────────────────── */}
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Adicionar bloco:
-        </span>
-        {PALETTE.map(({ type, label, icon: Icon }) => (
-          <Button
-            key={type}
-            variant="outline"
-            size="sm"
-            onClick={() => addNode(type)}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            <Icon className="h-3.5 w-3.5" />
-            {label}
-          </Button>
+        {PALETTE.map(({ type, label, icon: Icon, group }, i) => (
+          <Fragment key={type}>
+            {group !== PALETTE[i - 1]?.group && (
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {group}:
+              </span>
+            )}
+            <Button variant="outline" size="sm" onClick={() => addNode(type)}>
+              <Plus className="h-3.5 w-3.5" />
+              <Icon className="h-3.5 w-3.5" />
+              {label}
+            </Button>
+          </Fragment>
         ))}
         <div className="ml-auto flex items-center gap-1.5">
           <Button
@@ -987,20 +961,10 @@ function EditorInner({
       </div>
 
       {/* ── Canvas + inspector ────────────────────────────────────────── */}
-      <div
-        className={cn(
-          "flex flex-col gap-4 lg:flex-row",
-          isFullscreen && "min-h-0 flex-1"
-        )}
-      >
+      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
         <div
           ref={canvasRef}
-          className={cn(
-            "relative min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-card",
-            isFullscreen
-              ? "min-h-0 flex-1 lg:h-full"
-              : "h-[420px] sm:h-[480px] lg:h-[calc(100vh-330px)] lg:min-h-[460px]"
-          )}
+          className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-card lg:h-full"
         >
           <InvalidNodeContext.Provider value={invalidNodeId}>
             <AutomationRulesProvider
@@ -1073,14 +1037,8 @@ function EditorInner({
             />
           )}
         </div>
-        <aside
-          className={cn(
-            "w-full shrink-0 overflow-y-auto rounded-xl border border-border bg-card p-4 lg:w-80",
-            isFullscreen
-              ? "max-h-[40vh] lg:h-full lg:max-h-none"
-              : "max-h-[45vh] lg:h-[calc(100vh-330px)] lg:max-h-none lg:min-h-[460px]"
-          )}
-        >
+        <aside className="max-h-[40vh] w-full shrink-0 overflow-y-auto rounded-xl border border-border bg-card p-4 lg:h-full lg:max-h-none lg:w-80">
+
           <DataFieldsProvider fields={fieldKeysOf(liveGraph)}>
           <SequenceInspector
             node={selectedNode}
@@ -1103,7 +1061,7 @@ function EditorInner({
         open={leaveConfirmOpen}
         onOpenChange={setLeaveConfirmOpen}
         title="Sair sem salvar?"
-        description="Você tem alterações não salvas nesta sequência. Elas se perdem se sair agora."
+        description="Você tem alterações não salvas neste workflow. Elas se perdem se sair agora."
         confirmLabel="Sair sem salvar"
         destructive
         onConfirm={() => {

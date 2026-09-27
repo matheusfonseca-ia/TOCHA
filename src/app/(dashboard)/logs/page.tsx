@@ -107,7 +107,7 @@ export default async function LogsPage({
                     })}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
-                    @{log.ig_accounts?.ig_username ?? "—"}
+                    @{log.ig_accounts?.ig_username ?? "-"}
                   </TableCell>
                   <TableCell>
                     <p
@@ -131,14 +131,14 @@ export default async function LogsPage({
                         {log.matched_keyword}
                       </code>
                     ) : (
-                      <span className="text-xs text-muted-foreground/50">—</span>
+                      <span className="text-xs text-muted-foreground/50">-</span>
                     )}
                   </TableCell>
                   <TableCell>
                     <StatusBadge status={log.status as InteractionStatus} />
                   </TableCell>
                   <TableCell className="text-right text-xs text-muted-foreground">
-                    {log.latency_ms != null ? `${(log.latency_ms / 1000).toFixed(1)}s` : "—"}
+                    {log.latency_ms != null ? `${(log.latency_ms / 1000).toFixed(1)}s` : "-"}
                   </TableCell>
                 </TableRow>
               ))}

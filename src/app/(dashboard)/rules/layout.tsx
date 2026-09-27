@@ -8,7 +8,7 @@ export default function RulesLayout({
     <>
       <PageHeader
         title="Automação"
-        description='Regras de palavra-chave e sequências: de "se receber X, responda Y" a fluxos completos de conversa.'
+        description="Regras rápidas de palavra-chave e workflows completos de conversa."
       />
       <div className="flex flex-col gap-5 md:flex-row md:gap-8">
         <AutomationSectionNav />

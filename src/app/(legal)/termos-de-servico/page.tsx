@@ -13,7 +13,7 @@ import {
 } from "@/components/legal/legal-chrome";
 
 export const metadata: Metadata = {
-  title: "Termos de Serviço — Falow",
+  title: "Termos de Serviço | Falow",
   description:
     "Condições de uso do Falow: o que o serviço faz, o que se espera de quem administra a instalação, o que é proibido e como funciona o encerramento.",
 };
@@ -60,7 +60,7 @@ export default function TermosDeServicoPage() {
           <p>
             É uma ferramenta de execução, não um serviço de consultoria, de
             marketing ou de geração de resultados. Ele faz o que foi configurado,
-            na ordem configurada — nada além disso.
+            na ordem configurada, nada além disso.
           </p>
           <LegalCallout title="Sem vínculo com a Meta">
             <p>
@@ -177,7 +177,7 @@ export default function TermosDeServicoPage() {
           <p>
             Descumprir qualquer um desses pontos pode levar à suspensão imediata
             do acesso, e é motivo para a própria Meta restringir ou encerrar a
-            sua conta de Instagram — o que está fora do controle do Falow.
+            sua conta de Instagram, o que está fora do controle do Falow.
           </p>
         </LegalSection>
 
@@ -197,7 +197,7 @@ export default function TermosDeServicoPage() {
 
         <LegalSection title="8. Disponibilidade do serviço">
           <p>
-            O Falow depende de serviços que não controla — a API da Meta, a
+            O Falow depende de serviços que não controla: a API da Meta, a
             hospedagem e o banco de dados. Interrupções, mudanças de política ou
             alterações técnicas nessas plataformas podem afetar ou até
             inviabilizar o funcionamento, sem aviso prévio.
@@ -219,7 +219,7 @@ export default function TermosDeServicoPage() {
             Na máxima extensão permitida pela lei aplicável, não haverá
             responsabilidade por lucros cessantes, perda de oportunidade, perda
             de dados, dano à reputação ou qualquer dano indireto decorrente do
-            uso ou da impossibilidade de uso do serviço — inclusive por mensagens
+            uso ou da impossibilidade de uso do serviço, inclusive por mensagens
             enviadas de forma equivocada, mensagens não enviadas, suspensão da
             conta pela Meta ou indisponibilidade das APIs.
           </p>
@@ -269,7 +269,7 @@ export default function TermosDeServicoPage() {
           <p>
             Estes Termos são regidos pelas leis da República Federativa do
             Brasil. Fica eleito o foro da comarca de Itatiba, Estado de São
-            Paulo — domicílio de quem opera esta instalação —, para dirimir
+            Paulo (domicílio de quem opera esta instalação), para dirimir
             controvérsias que não puderem ser resolvidas de forma amigável,
             ressalvado o direito do consumidor de acionar o foro do seu
             domicílio.

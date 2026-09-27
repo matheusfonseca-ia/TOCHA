@@ -25,7 +25,7 @@ export default function LegalLayout({
       <footer className="border-t border-border">
         <div className="mx-auto max-w-3xl px-6 py-6">
           <p className="text-xs text-muted-foreground">
-            Falow — automação de respostas para DMs e comentários do Instagram.
+            Falow: automação de respostas para DMs e comentários do Instagram.
             Não somos afiliados à Meta Platforms, ao Instagram nem ao Facebook.
           </p>
         </div>

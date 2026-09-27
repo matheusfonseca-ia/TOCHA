@@ -23,7 +23,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Falow — Conversas que viram vendas",
+  title: "Falow: conversas que viram vendas",
   description:
     "Automação conversacional para o Instagram: conecte contas, crie regras de palavra-chave e sequências que respondem DMs e comentários automaticamente.",
 };
