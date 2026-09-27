@@ -1,3 +1,45 @@
+# Falow: edição do Workflow dentro do card + histórico de versões
+
+Planejado e implementado em 2026-09-27. Status: **código pronto, aguardando teste
+manual do usuário e aplicar a migration 0008**.
+
+## Pedido
+
+1. Editar o conteúdo de um bloco (mensagem, botões, condição, etc.) direto dentro do
+   card no canvas, estilo ManyChat — sem abrir painel/janela lateral.
+2. Sistema de histórico de versões do workflow. Salvamento continua manual (clicar em
+   "Salvar"): confirmado que isso já era assim antes, nenhum autosave foi introduzido.
+
+## Feito
+
+- [x] `sequence-inspector.tsx` removido; cada formulário passou a viver dentro do
+      próprio `*-node.tsx`/`sequence-nodes.tsx`, renderizado quando o nó está `selected`.
+- [x] Botões / Respostas rápidas / Aleatório: edição "linha combinada" (input + handle
+      de saída na mesma linha) porque cada opção tem a própria conexão — trocar o corpo
+      inteiro por um formulário à parte faria a conexão sumir.
+- [x] `NodeFrame` expande (240px → 320px), ganha `nodrag nopan nowheel` + scroll próprio
+      só quando selecionado; cabeçalho continua sendo a alça de arrasto.
+- [x] Contexto novo `node-data-context.tsx`; `AutomationRulesProvider` e
+      `GoToSequenceProvider` estendidos com o que os formulários precisavam (antes só
+      vinha por prop pra inspector); `DataFieldsProvider` passou a envolver o canvas.
+- [x] Migration `0008_sequence_versions.sql`; `saveSequence` grava uma versão por save
+      bem-sucedido (poda pra manter 30) sem bloquear o save se a versão falhar;
+      `versions-actions.ts`; `SequenceVersionsPanel` (botão "Histórico" → lista →
+      Restaurar, que só troca o canvas local e exige Salvar de novo pra persistir).
+- [x] `npx tsc --noEmit`, `npm run build`, `npm test` (355/355) limpos.
+
+## Pendente
+
+- [ ] **Teste manual no navegador**: tentei validar com uma sessão descartável
+      (`admin.generateLink` + `verifyOtp`, mesma técnica de sessão anterior) e o
+      classificador do auto mode bloqueou com "Credential Materialization" — não
+      contornei. Dev server ficou rodando (porta 3002) pro usuário testar.
+- [ ] Aplicar migration 0008 no Supabase antes/durante o deploy.
+- [ ] Deploy (`npm run build:cloudflare && npx wrangler deploy`) só depois do usuário
+      confirmar visualmente.
+
+---
+
 # Falow: "Seguir para liberar" (portão de seguidor)
 
 Planejado em 2026-09-25. Status: **em produção e ativo** (wrangler 92d6f684, 25/09; tsc ok, vitest 342/342; migration 0007 aplicada e verificada em 25/09). Falta o E2E com webhook real. Decisões D1 a D4 aprovadas como propostas em 25/09.

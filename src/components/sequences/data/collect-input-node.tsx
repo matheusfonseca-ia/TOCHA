@@ -1,21 +1,15 @@
 "use client";
 
+import { useNodeDataChange } from "@/components/sequences/node-data-context";
 import { INVALID_HANDLE, OUT_HANDLE, type CollectInputNodeData } from "@/types/sequence";
 
+import { CollectInputForm } from "./collect-input-form";
 import { inputTypeOption } from "./labels";
 import { OutputRow } from "./output-row";
 
-/** Conteúdo do card "Coletar dado" (a moldura é o NodeFrame de sequence-nodes.tsx). */
-export function CollectInputNodeBody({
-  data,
-  handleClassName,
-}: {
-  data: CollectInputNodeData;
-  handleClassName: string;
-}) {
+/** Resumo somente-leitura do card "Coletar dado" (pergunta + campo + tipo). */
+function CollectInputSummary({ data }: { data: CollectInputNodeData }) {
   const type = inputTypeOption(data.inputType);
-  const attempts = data.maxAttempts === 1 ? "1 tentativa" : `${data.maxAttempts} tentativas`;
-
   return (
     <div className="space-y-1.5">
       <p className="break-words text-xs text-muted-foreground">
@@ -32,6 +26,36 @@ export function CollectInputNodeBody({
         </p>
       ) : (
         <p className="text-xs italic text-muted-foreground/70">Escreva a pergunta…</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Conteúdo do card "Coletar dado" (a moldura é o NodeFrame de
+ * sequence-nodes.tsx). As duas saídas (resposta válida / inválido) são fixas
+ * — ficam sempre visíveis, editado ou não, pra nunca perder a conexão delas.
+ */
+export function CollectInputNodeContent({
+  id,
+  data,
+  selected,
+  handleClassName,
+}: {
+  id: string;
+  data: CollectInputNodeData;
+  selected?: boolean;
+  handleClassName: string;
+}) {
+  const onNodeDataChange = useNodeDataChange();
+  const attempts = data.maxAttempts === 1 ? "1 tentativa" : `${data.maxAttempts} tentativas`;
+
+  return (
+    <div className="space-y-1.5">
+      {selected ? (
+        <CollectInputForm data={data} onChange={(next) => onNodeDataChange(id, next)} />
+      ) : (
+        <CollectInputSummary data={data} />
       )}
       <OutputRow handleId={OUT_HANDLE} handleClassName={handleClassName} label="Resposta válida" />
       <OutputRow

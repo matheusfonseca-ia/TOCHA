@@ -12,7 +12,7 @@ import type { TriggerNodeData } from "@/types/sequence";
 /**
  * Campos extras do gatilho "Link de referência": código do link e a URL
  * pronta pra copiar (ig.me/m/<usuário>?ref=<código>). Usado dentro do
- * TriggerForm (sequence-inspector.tsx) quando esse modo está selecionado.
+ * TriggerForm (sequence-nodes.tsx) quando esse modo está selecionado.
  */
 export function RefLinkFields({
   data,

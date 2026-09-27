@@ -10,13 +10,18 @@ import { Switch } from "@/components/ui/switch";
 import type { Rule } from "@/types/database";
 import type { AutomationNodeData, TriggerSource } from "@/types/sequence";
 
-import { ruleDisplayName, ruleTypeLabel } from "./automation-rules-context";
+import {
+  ruleDisplayName,
+  ruleTypeLabel,
+  type AutomationPreviewAccount,
+} from "./automation-rules-context";
 import { RuleSelect } from "./rule-select";
 
 /**
- * Formulário do inspector para o nó "Automação": escolhe uma automação da
- * conta (por referência) e mostra o preview reaproveitado dos builders de
- * regra. Editar a automação muda o que o fluxo envia; aqui é só seleção.
+ * Formulário de edição do nó "Automação", renderizado dentro do próprio card
+ * quando ele está selecionado: escolhe uma automação da conta (por
+ * referência) e mostra o preview reaproveitado dos builders de regra. Editar
+ * a automação muda o que o fluxo envia; aqui é só seleção.
  *
  * Regras de posição (espelham validateSequenceGraph):
  *  - DM: qualquer ponto do fluxo.
@@ -24,10 +29,7 @@ import { RuleSelect } from "./rule-select";
  *    "gatilho por automação" (a automação é quem inicia o fluxo).
  */
 
-export interface AutomationPreviewAccount {
-  ig_username: string;
-  profile_picture_url?: string | null;
-}
+export type { AutomationPreviewAccount };
 
 interface AutomationNodeFormProps {
   data: AutomationNodeData;

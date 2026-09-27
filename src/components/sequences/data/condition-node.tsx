@@ -1,7 +1,9 @@
 "use client";
 
+import { useNodeDataChange } from "@/components/sequences/node-data-context";
 import { NO_HANDLE, YES_HANDLE, type ConditionNodeData } from "@/types/sequence";
 
+import { ConditionForm } from "./condition-form";
 import { operatorLabel } from "./labels";
 import { OutputRow } from "./output-row";
 
@@ -35,19 +37,33 @@ function ConditionSummary({ data }: { data: ConditionNodeData }) {
   );
 }
 
-/** Conteúdo do card "Condição" (a moldura é o NodeFrame de sequence-nodes.tsx). */
-export function ConditionNodeBody({
+/**
+ * Conteúdo do card "Condição" (a moldura é o NodeFrame de sequence-nodes.tsx).
+ * As saídas "sim"/"não" são fixas — ficam sempre visíveis, editado ou não,
+ * pra nunca perder a conexão delas.
+ */
+export function ConditionNodeContent({
+  id,
   data,
+  selected,
   handleClassName,
 }: {
+  id: string;
   data: ConditionNodeData;
+  selected?: boolean;
   handleClassName: string;
 }) {
+  const onNodeDataChange = useNodeDataChange();
+
   return (
     <div className="space-y-1.5">
-      <p className="break-words text-xs text-muted-foreground">
-        <ConditionSummary data={data} />
-      </p>
+      {selected ? (
+        <ConditionForm data={data} onChange={(next) => onNodeDataChange(id, next)} />
+      ) : (
+        <p className="break-words text-xs text-muted-foreground">
+          <ConditionSummary data={data} />
+        </p>
+      )}
       <OutputRow handleId={YES_HANDLE} handleClassName={handleClassName} label="Sim" />
       <OutputRow handleId={NO_HANDLE} handleClassName={handleClassName} label="Não" />
     </div>

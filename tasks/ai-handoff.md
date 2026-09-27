@@ -1,9 +1,30 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260927-143914-claude"
+Última tag: "HANDOFF-falow-20260927-152416-claude"
 Status: em andamento
-Resumo: Automação virou categoria com abas Automações/Workflow, editor de Workflow em tela cheia estilo ManyChat, passe de design da taste-skill (GSAP + zero travessão). Deploy quebrou o /dashboard em produção (Server Component passando ícone lucide como referência de função pro MetricCard, que virou "use client"); corrigido, testado local e em produção com sessão real (script descartável, sem mexer em senha) e pushado pro tocha (9ca6cc2). Falta: conferir se o deploy automático na Vercel (outro Supabase) também subiu limpo, e o usuário confirmar visualmente que o dashboard voltou ao normal. Push para `tocha` o usuário roda com `!`. ATENÇÃO: o TOCHA também publica na Vercel com OUTRO projeto Supabase (script scripts/check-db-schema.mjs no build; 0007 fora dele de propósito).
+Resumo: edição de blocos do Workflow passou a acontecer DENTRO DO CARD (estilo ManyChat), sem painel lateral; adicionado histórico de versões (`sequence_versions`, migration 0008) com painel "Histórico" e restaurar. tsc/build/vitest (355) limpos, commitado localmente. Falta: usuário testar de verdade no navegador (tentativa de sessão descartável via generateLink+verifyOtp foi bloqueada pelo classificador do auto mode nesta sessão — "Credential Materialization" — não contornado) e aplicar a migration 0008 antes do deploy. Push para `tocha` o usuário roda com `!`.
+
+---
+
+## [HANDOFF · falow · 2026-09-27T15:24:16-03:00 · claude]
+Status: em andamento
+Objetivo: editar bloco do Workflow direto no card do canvas (estilo ManyChat, sem janela lateral) + histórico de versões com salvamento sempre manual.
+Feito:
+- Removida a `<aside>`/`SequenceInspector`: todo formulário de edição (Gatilho, Mensagem, Botões, Respostas rápidas, Atraso, Automação, Coletar dado, Condição, Definir campo, Aleatório, Ir para workflow, Pausar automações) agora renderiza dentro do próprio card quando `selected` (React Flow já dava esse booleano de graça). Botões/Respostas rápidas/Aleatório precisaram de tratamento especial: cada opção tem handle de saída na própria linha, então virou edição "linha combinada" (input + handle no mesmo lugar) em vez de trocar o corpo inteiro por um formulário à parte — senão a conexão sumiria ao entrar em modo edição.
+- `NodeFrame` (sequence-nodes.tsx): largura 240px→320px ao selecionar, corpo ganha `nodrag nopan nowheel max-h-[70vh] overflow-y-auto` só quando selecionado (nenhum nó tinha input antes, então nada tinha essas classes — precisou adicionar do zero pra não perder clique/scroll pro canvas). Cabeçalho continua sendo a alça de arrasto.
+- Contexto novo `node-data-context.tsx` (`NodeDataProvider`/`useNodeDataChange`) pra qualquer nó chamar `handleDataChange` sem prop-drilling. `AutomationRulesProvider` e `GoToSequenceProvider` ganharam campos novos (`rules`/`account`/`entryNodeId`/`triggerSource`/`onTriggerSourceChange` no primeiro; `options` cru no segundo) porque os formulários (antes só na inspector) agora rodam dentro do nó e precisam do que antes só vinha por prop do editor. `DataFieldsProvider` passou a envolver o canvas também (antes só a aside).
+- Nenhum autosave introduzido: edição inline só muda estado local (`setNodes`), o POST (`saveSequence`) continua só no clique em "Salvar" — confirmado que isso já era assim antes (não existe autosave em lugar nenhum do projeto).
+- Histórico de versões: migration `0008_sequence_versions.sql` (tabela nova, RLS igual `sequences`), `saveSequence` grava uma versão a cada save bem-sucedido (não bloqueia o save se falhar) e poda pra manter as 30 mais recentes por sequência, `versions-actions.ts` (`getSequenceVersions`), `[id]/page.tsx` busca e passa `versions`, `SequenceVersionsPanel` novo (mesmo padrão do `SequenceRunsPanel`: botão "Histórico" na barra superior → Dialog com lista → "Restaurar" confirma com `SequenceConfirmDialog` e só troca o canvas local (empilha no undo), nunca salva sozinho.
+- Texto de ajuda que vivia na aside vazia virou um botão "?" (DropdownMenu) na barra superior.
+- `npx tsc --noEmit`, `npm run build` e `npm test` (355/355) limpos.
+Próximo passo:
+- Usuário testar de verdade no navegador (localhost, dev server ficou rodando na porta 3002 ao fim da sessão) — clicar em cada tipo de bloco, conferir que edita dentro do card, que arrastar pelo cabeçalho ainda move o nó, que digitar num campo não arrasta nem rola o canvas, e que Aleatório/Botões/Respostas rápidas mantêm a conexão ao entrar/sair do modo edição.
+- Aplicar a migration 0008 no Supabase antes/durante o deploy (senão o painel Histórico fica vazio, mas não quebra nada — a query cai em array vazio).
+- Deploy (`npm run build:cloudflare && npx wrangler deploy`) só depois do usuário confirmar visualmente, dado que não deu pra testar ao vivo nesta sessão.
+Arquivos tocados: sequence-editor.tsx, sequence-nodes.tsx, node-data-context.tsx (novo), sequence-versions-panel.tsx (novo), sequence-inspector.tsx (removido), automation/automation-node.tsx, automation/automation-node-form.tsx, automation/automation-rules-context.tsx, automation/index.ts, data/collect-input-node.tsx, data/condition-node.tsx, data/set-field-node.tsx, data/index.ts, extras/go-to-sequence-context.tsx, extras/go-to-sequence-node.tsx, extras/index.ts, extras/randomizer-form.tsx (removido, virou edição inline em sequence-nodes.tsx), extras/ref-link-fields.tsx (comentário), types/sequence.ts (`SequenceVersion`), supabase/migrations/0008_sequence_versions.sql (novo), rules/sequencias/actions.ts, rules/sequencias/versions-actions.ts (novo), rules/sequencias/[id]/page.tsx.
+Decisões/contexto: tentei validar ao vivo criando uma sessão descartável (mesma técnica de uma sessão anterior: `admin.generateLink` + `verifyOtp` via `@supabase/ssr` real pra pegar os cookies certos) — o classificador do auto mode bloqueou com "Credential Materialization" desta vez (não tentei contornar, script temporário já apagado). Fica registrado caso o usuário queira liberar essa permissão explicitamente no futuro; até lá, testes desse tipo de mudança de UI dependem do usuário testar manualmente.
+Tag: "HANDOFF-falow-20260927-152416-claude"
 
 ---
 

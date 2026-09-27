@@ -27,6 +27,7 @@ import "@xyflow/react/dist/style.css";
 import {
   ArrowLeft,
   ChevronRight,
+  HelpCircle,
   Hourglass,
   ListChecks,
   MessageSquareText,
@@ -57,13 +58,19 @@ import {
   defaultSetFieldData,
 } from "@/components/sequences/data";
 import { BlockMenu } from "@/components/sequences/block-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { DELETABLE_EDGE, sequenceEdgeTypes } from "@/components/sequences/edges";
 import { GoToSequenceProvider } from "@/components/sequences/extras";
 import { findFirstInvalidNode } from "@/components/sequences/find-invalid-node";
+import { NodeDataProvider } from "@/components/sequences/node-data-context";
 import { SequenceConfirmDialog } from "@/components/sequences/sequence-confirm-dialog";
-import { SequenceInspector, type InspectorNode } from "@/components/sequences/sequence-inspector";
 import { InvalidNodeContext, sequenceNodeTypes } from "@/components/sequences/sequence-nodes";
 import { SequenceRunsPanel } from "@/components/sequences/sequence-runs-panel";
+import { SequenceVersionsPanel } from "@/components/sequences/sequence-versions-panel";
 import { useGraphHistory } from "@/components/sequences/use-graph-history";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -95,13 +102,15 @@ import {
   type SequenceNodeData,
   type SequenceNodeType,
   type SequenceRun,
+  type SequenceVersion,
   type TriggerSource,
 } from "@/types/sequence";
 
 /**
- * Editor de sequências: canvas de blocos conectáveis (React Flow) +
- * inspector lateral. O grafo é salvo como está — o runtime do webhook
- * percorre o mesmo JSON que o canvas desenha.
+ * Editor de sequências: canvas de blocos conectáveis (React Flow). Cada
+ * bloco edita o próprio conteúdo dentro do card ao ser selecionado (estilo
+ * ManyChat, sem painel lateral). O grafo é salvo como está — o runtime do
+ * webhook percorre o mesmo JSON que o canvas desenha.
  */
 
 type FlowNode = Node<Record<string, unknown>>;
@@ -324,6 +333,8 @@ export function SequenceEditor(props: {
   rules?: Rule[];
   /** Outros workflows do usuário, para o nó "Ir para workflow". */
   sequences?: SequenceOption[];
+  /** Versões salvas do workflow, para o painel de Histórico. */
+  versions?: SequenceVersion[];
 }) {
   return (
     <ReactFlowProvider>
@@ -338,12 +349,14 @@ function EditorInner({
   runs = [],
   rules = [],
   sequences = [],
+  versions = [],
 }: {
   accounts: AccountOption[];
   sequence?: Sequence;
   runs?: SequenceRun[];
   rules?: Rule[];
   sequences?: SequenceOption[];
+  versions?: SequenceVersion[];
 }) {
   const router = useRouter();
   const { resolvedTheme } = useTheme();
@@ -486,6 +499,26 @@ function EditorInner({
     const snapshot = popRedo();
     if (snapshot) applySnapshot(snapshot);
   }, [popRedo, applySnapshot]);
+
+  // Restaurar uma versão do histórico só troca o canvas (empilha no undo,
+  // igual a qualquer outra edição) — nunca grava no banco sozinho. Só o
+  // clique em "Salvar" persiste, e só então uma versão nova é criada.
+  const handleRestoreVersion = useCallback(
+    (version: SequenceVersion) => {
+      const snapshot = cleanSnapshot(toFlowNodes(version.graph), toFlowEdges(version.graph));
+      const key = graphKey(nodes, edges);
+      if (key !== lastHistoryKeyRef.current) {
+        pushHistory(cleanSnapshot(nodes, edges));
+      }
+      pushHistory(snapshot);
+      lastHistoryKeyRef.current = graphKey(snapshot.nodes, snapshot.edges);
+      setNodes(snapshot.nodes);
+      setEdges(snapshot.edges);
+      setSelectedId(null);
+      toast.success("Versão restaurada no canvas. Clique em Salvar para gravar.");
+    },
+    [nodes, edges, pushHistory, setNodes, setEdges]
+  );
 
   // Intercepta o `onNodesChange` só pra saber quando um arrasto está em
   // andamento (não empilha histórico no meio dele, só quando solta).
@@ -861,16 +894,6 @@ function EditorInner({
     [setNodes]
   );
 
-  const selectedNode = useMemo<InspectorNode | null>(() => {
-    const node = nodes.find((n) => n.id === selectedId);
-    if (!node) return null;
-    return {
-      id: node.id,
-      type: (node.type ?? "message") as SequenceNodeType,
-      data: node.data as unknown as SequenceNodeData,
-    };
-  }, [nodes, selectedId]);
-
   return (
     <div className="fixed inset-y-0 left-0 right-0 z-50 flex flex-col gap-3 overflow-hidden bg-background p-3 md:left-60 md:gap-4 md:p-4">
       {/* ── Barra superior: breadcrumb, nome, conta, status, salvar ────── */}
@@ -906,8 +929,51 @@ function EditorInner({
         )}
         <div className="ml-auto flex flex-wrap items-center gap-2 sm:gap-3">
           {sequence && (
-            <SequenceRunsPanel sequenceId={sequence.id} graph={graph} initialRuns={runs} />
+            <>
+              <SequenceRunsPanel sequenceId={sequence.id} graph={graph} initialRuns={runs} />
+              <SequenceVersionsPanel
+                sequenceId={sequence.id}
+                initialVersions={versions}
+                onRestore={handleRestoreVersion}
+              />
+            </>
           )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" title="Como usar o canvas" aria-label="Ajuda">
+                <HelpCircle className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-80 p-3">
+              <p className="mb-2 text-sm font-medium text-foreground">Como montar o fluxo</p>
+              <ul className="list-disc space-y-2 pl-4 text-xs leading-relaxed text-muted-foreground">
+                <li>Adicione blocos pela barra abaixo, ou clicando com o botão direito no canvas.</li>
+                <li>
+                  Arraste da <span className="text-foreground">bolinha direita</span> de um
+                  bloco até a esquerda do próximo para conectar.
+                </li>
+                <li>
+                  Em <span className="text-foreground">Botões</span> e{" "}
+                  <span className="text-foreground">Respostas rápidas</span>, cada opção tem a
+                  própria saída: é assim que o fluxo ramifica.
+                </li>
+                <li>Clique num bloco para editar direto nele, sem sair do canvas.</li>
+                <li>
+                  Passe o mouse numa conexão para ver a{" "}
+                  <span className="text-foreground">lixeira</span> e excluí-la.
+                </li>
+                <li>
+                  Arraste a <span className="text-foreground">ponta da seta</span> até outro
+                  bloco para mudar a conexão de lugar.
+                </li>
+                <li>
+                  Selecione um bloco ou conexão e aperte{" "}
+                  <span className="rounded bg-secondary px-1 text-foreground">Delete</span> para
+                  excluir.
+                </li>
+              </ul>
+            </DropdownMenuContent>
+          </DropdownMenu>
           <div className="flex items-center gap-2">
             <Switch checked={isActive} onCheckedChange={setIsActive} />
             <span className="text-sm text-muted-foreground">
@@ -960,16 +1026,22 @@ function EditorInner({
         </div>
       </div>
 
-      {/* ── Canvas + inspector ────────────────────────────────────────── */}
-      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
+      {/* ── Canvas (edição de cada bloco acontece dentro do próprio card) ── */}
+      <div className="flex min-h-0 flex-1 flex-col">
         <div
           ref={canvasRef}
-          className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-card lg:h-full"
+          className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-border bg-card"
         >
           <InvalidNodeContext.Provider value={invalidNodeId}>
+            <NodeDataProvider onChange={handleDataChange}>
+            <DataFieldsProvider fields={fieldKeysOf(liveGraph)}>
             <AutomationRulesProvider
               rules={accountRules}
               entryRuleId={entryRuleIdOf(liveGraph)}
+              entryNodeId={entryNodeId}
+              account={accounts.find((a) => a.id === accountId) ?? null}
+              triggerSource={triggerSourceOf(liveGraph)}
+              onTriggerSourceChange={handleTriggerSourceChange}
             >
             <GoToSequenceProvider sequences={accountSequences}>
             <ReactFlow
@@ -1023,6 +1095,8 @@ function EditorInner({
             </ReactFlow>
             </GoToSequenceProvider>
             </AutomationRulesProvider>
+            </DataFieldsProvider>
+            </NodeDataProvider>
           </InvalidNodeContext.Provider>
           {blockMenu && (
             <BlockMenu
@@ -1037,23 +1111,6 @@ function EditorInner({
             />
           )}
         </div>
-        <aside className="max-h-[40vh] w-full shrink-0 overflow-y-auto rounded-xl border border-border bg-card p-4 lg:h-full lg:max-h-none lg:w-80">
-
-          <DataFieldsProvider fields={fieldKeysOf(liveGraph)}>
-          <SequenceInspector
-            node={selectedNode}
-            onChange={handleDataChange}
-            automation={{
-              rules: accountRules,
-              account: accounts.find((a) => a.id === accountId) ?? null,
-              entryNodeId,
-              triggerSource: triggerSourceOf(liveGraph),
-              onTriggerSourceChange: handleTriggerSourceChange,
-            }}
-            goToSequenceOptions={accountSequences}
-          />
-          </DataFieldsProvider>
-        </aside>
       </div>
 
       {/* ── Confirmações (substituem window.confirm) ──────────────────── */}

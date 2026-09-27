@@ -3,7 +3,10 @@
 import { MessageCircle, Send, TriangleAlert } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { useNodeDataChange } from "@/components/sequences/node-data-context";
+import type { AutomationNodeData } from "@/types/sequence";
 
+import { AutomationNodeForm } from "./automation-node-form";
 import {
   ruleDisplayName,
   ruleTypeLabel,
@@ -16,7 +19,7 @@ import {
  * blocos. Mostra a rule referenciada: nome, tipo (DM/Comentário) e se está
  * ativa; rule excluída vira o estado "Automação removida".
  */
-export function AutomationNodeBody({ ruleId }: { ruleId: string }) {
+function AutomationNodeBody({ ruleId }: { ruleId: string }) {
   const { rulesById } = useAutomationRules();
   const rule = ruleId ? rulesById.get(ruleId) : undefined;
 
@@ -62,6 +65,39 @@ export function AutomationNodeBody({ ruleId }: { ruleId: string }) {
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * Conteúdo do nó "Automação": resumo somente-leitura de costume, ou o
+ * formulário completo dentro do próprio card quando ele está selecionado
+ * (edição estilo ManyChat, sem abrir painel lateral).
+ */
+export function AutomationNodeContent({
+  id,
+  data,
+  selected,
+}: {
+  id: string;
+  data: AutomationNodeData;
+  selected?: boolean;
+}) {
+  const { rules, account, entryNodeId, triggerSource, onTriggerSourceChange } =
+    useAutomationRules();
+  const onNodeDataChange = useNodeDataChange();
+
+  if (!selected) return <AutomationNodeBody ruleId={data.ruleId} />;
+
+  return (
+    <AutomationNodeForm
+      data={data}
+      onChange={(next) => onNodeDataChange(id, next)}
+      rules={rules}
+      account={account}
+      isEntryPosition={entryNodeId === id}
+      triggerSource={triggerSource}
+      onTriggerSourceChange={onTriggerSourceChange}
+    />
   );
 }
 

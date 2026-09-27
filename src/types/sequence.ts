@@ -287,3 +287,18 @@ export interface SequenceRun {
   started_at: string;
   updated_at: string;
 }
+
+/**
+ * Snapshot do grafo salvo em cada "Salvar" bem-sucedido (migration 0008),
+ * para o painel de Histórico do editor: ver e restaurar versões anteriores.
+ * Restaurar só carrega o grafo no canvas — continua exigindo "Salvar" pra
+ * gravar de novo (o salvamento nunca é automático).
+ */
+export interface SequenceVersion {
+  id: string;
+  sequence_id: string;
+  name: string;
+  graph: SequenceGraph;
+  is_active: boolean;
+  created_at: string;
+}

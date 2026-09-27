@@ -338,6 +338,31 @@ export async function saveSequence(
   revalidatePath("/dashboard");
 
   const id = data.id as string;
+
+  // Snapshot pro histórico de versões do editor. Auxiliar (não é a fonte de
+  // verdade): erro aqui não falha o save principal, só fica sem essa versão
+  // no histórico. Poda pra manter só as 30 mais recentes por sequência.
+  const { error: versionError } = await supabase.from("sequence_versions").insert({
+    sequence_id: id,
+    account_id: input.account_id,
+    name: input.name,
+    graph,
+    is_active: input.is_active,
+  });
+  if (!versionError) {
+    const { data: staleVersions } = await supabase
+      .from("sequence_versions")
+      .select("id")
+      .eq("sequence_id", id)
+      .order("created_at", { ascending: false })
+      .range(30, 1000);
+    if (staleVersions && staleVersions.length > 0) {
+      await supabase
+        .from("sequence_versions")
+        .delete()
+        .in("id", staleVersions.map((v) => v.id));
+    }
+  }
   const warning = input.is_active
     ? ((await findConflictingSequenceName(supabase, {
         id,

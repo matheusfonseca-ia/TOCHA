@@ -4,7 +4,7 @@ import { SequenceEditor } from "@/components/sequences/sequence-editor";
 import { withSyncedProfiles } from "@/lib/meta/account-profile";
 import { createClient } from "@/lib/supabase/server";
 import type { Rule } from "@/types/database";
-import type { Sequence, SequenceRun } from "@/types/sequence";
+import type { Sequence, SequenceRun, SequenceVersion } from "@/types/sequence";
 
 export default async function EditarSequenciaPage({
   params,
@@ -13,27 +13,40 @@ export default async function EditarSequenciaPage({
 }) {
   const supabase = createClient();
 
-  const [{ data: sequence }, { data: storedAccounts }, { data: runs }, { data: rules }, { data: sequences }] =
-    await Promise.all([
-      // RLS garante que só sequências das contas do usuário aparecem aqui
-      supabase.from("sequences").select("*").eq("id", params.id).maybeSingle(),
-      supabase
-        .from("ig_accounts")
-        .select("id, ig_username, profile_picture_url, access_token_enc")
-        .eq("status", "active")
-        .order("connected_at"),
-      // Últimas execuções pro painel de execuções do editor (RLS idem)
-      supabase
-        .from("sequence_runs")
-        .select("*")
-        .eq("sequence_id", params.id)
-        .order("updated_at", { ascending: false })
-        .limit(50),
-      // Automações para o nó "Automação" e o gatilho do editor (RLS idem)
-      supabase.from("rules").select("*").order("created_at"),
-      // Workflows para o nó "Ir para workflow" (RLS idem)
-      supabase.from("sequences").select("id, account_id, name").order("name"),
-    ]);
+  const [
+    { data: sequence },
+    { data: storedAccounts },
+    { data: runs },
+    { data: rules },
+    { data: sequences },
+    { data: versions },
+  ] = await Promise.all([
+    // RLS garante que só sequências das contas do usuário aparecem aqui
+    supabase.from("sequences").select("*").eq("id", params.id).maybeSingle(),
+    supabase
+      .from("ig_accounts")
+      .select("id, ig_username, profile_picture_url, access_token_enc")
+      .eq("status", "active")
+      .order("connected_at"),
+    // Últimas execuções pro painel de execuções do editor (RLS idem)
+    supabase
+      .from("sequence_runs")
+      .select("*")
+      .eq("sequence_id", params.id)
+      .order("updated_at", { ascending: false })
+      .limit(50),
+    // Automações para o nó "Automação" e o gatilho do editor (RLS idem)
+    supabase.from("rules").select("*").order("created_at"),
+    // Workflows para o nó "Ir para workflow" (RLS idem)
+    supabase.from("sequences").select("id, account_id, name").order("name"),
+    // Últimas versões salvas pro painel de Histórico do editor (RLS idem)
+    supabase
+      .from("sequence_versions")
+      .select("id, sequence_id, name, graph, is_active, created_at")
+      .eq("sequence_id", params.id)
+      .order("created_at", { ascending: false })
+      .limit(30),
+  ]);
 
   if (!sequence) notFound();
 
@@ -47,6 +60,7 @@ export default async function EditarSequenciaPage({
       runs={(runs ?? []) as SequenceRun[]}
       rules={(rules ?? []) as Rule[]}
       sequences={sequences ?? []}
+      versions={(versions ?? []) as SequenceVersion[]}
     />
   );
 }

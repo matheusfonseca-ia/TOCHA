@@ -1,9 +1,12 @@
 "use client";
 
+import { useNodeDataChange } from "@/components/sequences/node-data-context";
 import type { SetFieldNodeData } from "@/types/sequence";
 
-/** Conteúdo do card "Definir campo" (a moldura é o NodeFrame de sequence-nodes.tsx). */
-export function SetFieldNodeBody({ data }: { data: SetFieldNodeData }) {
+import { SetFieldForm } from "./set-field-form";
+
+/** Resumo somente-leitura do card "Definir campo". */
+function SetFieldSummary({ data }: { data: SetFieldNodeData }) {
   if (data.mode === "tag") {
     if (!data.value.trim()) {
       return <p className="text-xs italic text-muted-foreground/70">Informe a tag…</p>;
@@ -28,4 +31,24 @@ export function SetFieldNodeBody({ data }: { data: SetFieldNodeData }) {
       </span>
     </p>
   );
+}
+
+/**
+ * Conteúdo do card "Definir campo": resumo de costume, ou o formulário
+ * completo dentro do próprio card quando ele está selecionado.
+ */
+export function SetFieldNodeContent({
+  id,
+  data,
+  selected,
+}: {
+  id: string;
+  data: SetFieldNodeData;
+  selected?: boolean;
+}) {
+  const onNodeDataChange = useNodeDataChange();
+
+  if (!selected) return <SetFieldSummary data={data} />;
+
+  return <SetFieldForm data={data} onChange={(next) => onNodeDataChange(id, next)} />;
 }
