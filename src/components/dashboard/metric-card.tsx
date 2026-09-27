@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import type { LucideIcon } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -9,7 +8,10 @@ interface MetricCardProps {
   label: string;
   value: string;
   hint?: string;
-  icon: LucideIcon;
+  /** Ícone já renderizado (ex.: <MessageSquare className="..." />), não o
+   *  componente em si — referência de função não atravessa a fronteira
+   *  servidor/cliente (MetricCard é "use client"). */
+  icon: ReactNode;
   index?: number;
 }
 
@@ -24,7 +26,7 @@ export function MetricCard({
   label,
   value,
   hint,
-  icon: Icon,
+  icon,
   index = 0,
 }: MetricCardProps) {
   const [display, setDisplay] = useState(value);
@@ -71,7 +73,7 @@ export function MetricCard({
           <p className="text-[13px] font-medium text-muted-foreground">
             {label}
           </p>
-          <Icon className="h-4 w-4 shrink-0 text-muted-foreground/50" />
+          {icon}
         </div>
         <p className="mt-3 font-display text-[28px] font-semibold leading-none tracking-tight tabular-nums">
           {display}

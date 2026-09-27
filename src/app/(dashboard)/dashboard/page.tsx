@@ -138,28 +138,28 @@ export default async function DashboardPage() {
           label="Mensagens recebidas"
           value={received.toLocaleString("pt-BR")}
           hint="DMs processadas pelo webhook"
-          icon={MessageSquare}
+          icon={<MessageSquare className="h-4 w-4 shrink-0 text-muted-foreground/50" />}
         />
         <MetricCard
           index={1}
           label="Respostas enviadas"
           value={replied.toLocaleString("pt-BR")}
           hint="Automações disparadas"
-          icon={Send}
+          icon={<Send className="h-4 w-4 shrink-0 text-muted-foreground/50" />}
         />
         <MetricCard
           index={2}
           label="Taxa de match"
           value={`${matchRate}%`}
           hint="Mensagens que casaram com regras"
-          icon={Target}
+          icon={<Target className="h-4 w-4 shrink-0 text-muted-foreground/50" />}
         />
         <MetricCard
           index={3}
           label="Contatos únicos"
           value={contacts.toLocaleString("pt-BR")}
           hint="Pessoas que enviaram DM"
-          icon={Users}
+          icon={<Users className="h-4 w-4 shrink-0 text-muted-foreground/50" />}
         />
       </div>
 
