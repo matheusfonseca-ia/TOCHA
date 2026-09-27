@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import type { LucideIcon } from "lucide-react";
-import gsap from "gsap";
 
 import { Card, CardContent } from "@/components/ui/card";
 
@@ -32,6 +31,7 @@ export function MetricCard({
 
   // Conta do zero até o valor real ao montar (chama atenção pro KPI); pula
   // direto pro valor final com "reduzir movimento" ativado ou valor zerado.
+  // Import dinâmico: gsap só carrega no navegador, nunca durante o SSR.
   useEffect(() => {
     const { target, suffix } = parseTarget(value);
     const reduceMotion = window.matchMedia(
@@ -41,17 +41,23 @@ export function MetricCard({
       setDisplay(value);
       return;
     }
-    const counter = { val: 0 };
-    const tween = gsap.to(counter, {
-      val: target,
-      duration: 1,
-      ease: "power2.out",
-      onUpdate: () => {
-        setDisplay(`${Math.round(counter.val).toLocaleString("pt-BR")}${suffix}`);
-      },
+    let cancelled = false;
+    let tween: { kill: () => void } | undefined;
+    import("gsap").then(({ default: gsap }) => {
+      if (cancelled) return;
+      const counter = { val: 0 };
+      tween = gsap.to(counter, {
+        val: target,
+        duration: 1,
+        ease: "power2.out",
+        onUpdate: () => {
+          setDisplay(`${Math.round(counter.val).toLocaleString("pt-BR")}${suffix}`);
+        },
+      });
     });
     return () => {
-      tween.kill();
+      cancelled = true;
+      tween?.kill();
     };
   }, [value]);
 

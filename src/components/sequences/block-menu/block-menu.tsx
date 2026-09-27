@@ -1,7 +1,6 @@
 "use client";
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import gsap from "gsap";
 import { Search } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -68,17 +67,26 @@ export function BlockMenu({
 
   // Entrada em scale+fade em vez de aparecer sem transição — feedback de
   // abertura de menu contextual (mesmo padrão de popover usado no resto do app).
+  // Import dinâmico: gsap só carrega no navegador, nunca durante o SSR.
   useEffect(() => {
     if (!ref.current) return;
     const reduceMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)"
     ).matches;
     if (reduceMotion) return;
-    gsap.fromTo(
-      ref.current,
-      { opacity: 0, scale: 0.95, transformOrigin: "top left" },
-      { opacity: 1, scale: 1, duration: 0.15, ease: "power2.out" }
-    );
+    let cancelled = false;
+    const node = ref.current;
+    import("gsap").then(({ default: gsap }) => {
+      if (cancelled) return;
+      gsap.fromTo(
+        node,
+        { opacity: 0, scale: 0.95, transformOrigin: "top left" },
+        { opacity: 1, scale: 1, duration: 0.15, ease: "power2.out" }
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Mantém o menu inteiro dentro do canvas (clique perto da borda).

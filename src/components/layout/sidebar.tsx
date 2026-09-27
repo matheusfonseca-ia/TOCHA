@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import gsap from "gsap";
 import {
   Instagram,
   LayoutDashboard,
@@ -44,7 +43,8 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
   // Desliza o indicador até o item ativo em vez de trocar de estado sem
   // transição — feedback de "onde eu estou" ao navegar. Sem transição na
   // primeira medição (só encaixa na posição certa) e pulando pro estado
-  // final com "reduzir movimento" ativado.
+  // final com "reduzir movimento" ativado. Import dinâmico: gsap só carrega
+  // no navegador, nunca durante o SSR.
   useEffect(() => {
     const nav = navRef.current;
     const indicator = indicatorRef.current;
@@ -58,17 +58,24 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
     }
     const y = activeLink.offsetTop;
     const height = activeLink.offsetHeight;
-    const reduceMotion =
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
-      !positionedRef.current;
-    gsap.to(indicator, {
-      y,
-      height,
-      opacity: 1,
-      duration: reduceMotion ? 0 : 0.35,
-      ease: "power2.out",
+    let cancelled = false;
+    import("gsap").then(({ default: gsap }) => {
+      if (cancelled) return;
+      const reduceMotion =
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+        !positionedRef.current;
+      gsap.to(indicator, {
+        y,
+        height,
+        opacity: 1,
+        duration: reduceMotion ? 0 : 0.35,
+        ease: "power2.out",
+      });
+      positionedRef.current = true;
     });
-    positionedRef.current = true;
+    return () => {
+      cancelled = true;
+    };
   }, [pathname]);
 
   return (
