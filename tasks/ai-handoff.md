@@ -1,11 +1,26 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260926-125806-claude"
+Última tag: "HANDOFF-falow-20260927-143914-claude"
 Status: em andamento
-Resumo: portão em produção (wrangler a43954d0, main f50d27a). Teste real do usuário achou o botão "Seguir perfil" abrindo @ antigo (conta trocou de @); corrigido para todos com sincronização do perfil (src/lib/meta/account-profile.ts) e dado corrigido no banco. Falta o usuário refazer o teste real. Push para `tocha` o usuário roda com `!`. ATENÇÃO: o TOCHA também publica na Vercel com OUTRO projeto Supabase (script scripts/check-db-schema.mjs no build; 0007 fora dele de propósito).
+Resumo: Automação virou categoria com abas Automações/Workflow, editor de Workflow em tela cheia estilo ManyChat, passe de design da taste-skill (GSAP + zero travessão). Deploy quebrou o /dashboard em produção (Server Component passando ícone lucide como referência de função pro MetricCard, que virou "use client"); corrigido, testado local e em produção com sessão real (script descartável, sem mexer em senha) e pushado pro tocha (9ca6cc2). Falta: conferir se o deploy automático na Vercel (outro Supabase) também subiu limpo, e o usuário confirmar visualmente que o dashboard voltou ao normal. Push para `tocha` o usuário roda com `!`. ATENÇÃO: o TOCHA também publica na Vercel com OUTRO projeto Supabase (script scripts/check-db-schema.mjs no build; 0007 fora dele de propósito).
 
 ---
+
+## [HANDOFF · falow · 2026-09-27T14:39:14-03:00 · claude]
+Status: em andamento
+Objetivo: transformar "Automação" numa categoria (Automações + Workflow) com editor em tela cheia estilo ManyChat, e aplicar a skill design-taste-frontend (agora principal, substituindo ui-ux-pro-max) dentro do app.
+Feito:
+- Sub-nav de /rules: "Automações" (regras) e "Workflow" (canvas, ex-Sequências); editor do Workflow em layout full-bleed (menu do app visível, canvas ocupa o resto, sem container centralizado), breadcrumb no topo, paleta de blocos agrupada por categoria (commit 7fdfe8b)
+- GSAP instalado; count-up no MetricCard do dashboard, indicador deslizante na sidebar, entrada em scale+fade no BlockMenu do editor; linha da tabela de Automações abre o editor ao clicar; travessão removido de toda copy voltada ao usuário (landing, 3 páginas legais, título raiz, placeholders de tabela) sem alterar sentido jurídico (commit 7fdfe8b)
+- Deploy do commit 7fdfe8b quebrou /dashboard em produção com "Application error" (digest 2276862654). 1ª tentativa (import estático do gsap → dinâmico, commit ad3e8fe) não era a causa raiz.
+- Causa raiz real, achada reproduzindo o erro com uma sessão de verdade (script descartável: admin.generateLink + verifyOtp pra pegar access/refresh token sem tocar senha, cookie sb-*-auth-token montado com @supabase/ssr, fetch local e em produção): MetricCard virou "use client" (pro gsap) mas dashboard/page.tsx continuava passando `icon={MessageSquare}` (referência de função, não atravessa fronteira servidor/cliente). Corrigido passando o ícone já renderizado (commit 9ca6cc2). Verificado local e em produção com a mesma sessão real, e pushado pro tocha (9a6ad01..9ca6cc2).
+Próximo passo:
+- Usuário confirma visualmente que o dashboard voltou ao normal
+- Conferir se o deploy automático na Vercel (dispara com o push pro tocha, outro projeto Supabase) também subiu sem esse erro
+Arquivos tocados: src/components/rules/automation-section-nav.tsx, src/app/(dashboard)/rules/layout.tsx, src/app/(dashboard)/rules/sequencias/page.tsx, src/components/sequences/sequence-editor.tsx, src/components/sequences/block-menu/block-menu.tsx, src/components/sequences/sequences-manager.tsx, src/components/rules/rules-manager.tsx, src/components/dashboard/metric-card.tsx, src/components/layout/sidebar.tsx, src/app/(dashboard)/dashboard/page.tsx, src/app/(dashboard)/logs/page.tsx, src/app/layout.tsx, src/app/page.tsx, src/app/(legal)/layout.tsx, src/app/(legal)/{privacidade,termos-de-servico,exclusao-de-dados}/page.tsx, package.json (gsap)
+Decisões/contexto: taste-skill (plugin `design-taste-frontend`) virou a skill principal de design no CLAUDE.md global por pedido explícito do usuário, mesmo se declarando fora de escopo pra dashboard; ui-ux-pro-max foi arquivado em ~/.claude/_archived-skills. Lição pro futuro: sempre que um componente ganhar "use client" novo, checar se algum Server Component pai passa função/componente (não JSX) como prop pra ele.
+Tag: "HANDOFF-falow-20260927-143914-claude"
 
 ## [HANDOFF · falow · 2026-09-26T12:58:06-03:00 · claude]
 Status: em andamento
