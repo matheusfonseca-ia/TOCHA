@@ -1,4 +1,5 @@
 import type { createAdminClient } from "@/lib/supabase/admin";
+import type { IgAccount } from "@/types/database";
 
 import type {
   MessageDraft,
@@ -18,15 +19,30 @@ const PG_UNIQUE_VIOLATION = "23505";
 // Sinal órfão (a mensagem nunca chegou) não fica para sempre na fila.
 const PENDING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-export async function findAccountId(admin: AdminClient, igUserId: string): Promise<string | null> {
+export async function findAccount(admin: AdminClient, igUserId: string): Promise<IgAccount | null> {
   if (!igUserId) return null;
   const { data } = await admin
     .from("ig_accounts")
-    .select("id")
+    .select("*")
     .eq("ig_user_id", igUserId)
     .eq("status", "active")
-    .maybeSingle<{ id: string }>();
-  return data?.id ?? null;
+    .maybeSingle<IgAccount>();
+  return data ?? null;
+}
+
+export async function findAccountId(admin: AdminClient, igUserId: string): Promise<string | null> {
+  return (await findAccount(admin, igUserId))?.id ?? null;
+}
+
+/** A conversa ainda não tem o @ do lead (o webhook de DM não traz o @). */
+export async function leadNeedsUsername(admin: AdminClient, accountId: string, leadId: string): Promise<boolean> {
+  const { data } = await admin
+    .from("conversations")
+    .select("ig_sender_username")
+    .eq("account_id", accountId)
+    .eq("ig_sender_id", leadId)
+    .maybeSingle<{ ig_sender_username: string | null }>();
+  return Boolean(data) && !data?.ig_sender_username;
 }
 
 /**

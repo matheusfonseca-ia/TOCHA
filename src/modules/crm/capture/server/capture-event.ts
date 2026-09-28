@@ -1,7 +1,8 @@
+import { fetchAndStoreUsername } from "@/lib/contacts/profile";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { parseMessagingEvent, type IncomingMessagingEvent } from "../utils/parse-event";
-import { findAccountId, markSeen, recordIncoming, recordSignal } from "./record";
+import { findAccount, leadNeedsUsername, markSeen, recordIncoming, recordSignal } from "./record";
 
 /**
  * Entrada do CRM no webhook: grava a mensagem, o eco ou o sinal (reação,
@@ -22,18 +23,25 @@ export async function captureMessagingEvent(
     if (!action) return;
 
     const admin = createAdminClient();
-    const accountId = await findAccountId(admin, businessId);
-    if (!accountId) return;
+    const account = await findAccount(admin, businessId);
+    if (!account) return;
 
     switch (action.type) {
-      case "message":
-        await recordIncoming(admin, accountId, action.message, action.echo ? "instagram_app" : "contact");
+      case "message": {
+        const { message } = action;
+        await recordIncoming(admin, account.id, message, action.echo ? "instagram_app" : "contact");
+        // O @ do lead aparece na lista do Inbox. Buscado uma vez, na mensagem
+        // dele: é quando a Meta garante o consentimento para ler o perfil.
+        if (message.direction === "inbound" && (await leadNeedsUsername(admin, account.id, message.leadId))) {
+          await fetchAndStoreUsername(admin, account, message.leadId);
+        }
         return;
+      }
       case "signal":
-        await recordSignal(admin, accountId, action.mid, action.signal, action.at);
+        await recordSignal(admin, account.id, action.mid, action.signal, action.at);
         return;
       case "seen":
-        await markSeen(admin, accountId, action.leadId, action.at);
+        await markSeen(admin, account.id, action.leadId, action.at);
         return;
     }
   } catch (err) {

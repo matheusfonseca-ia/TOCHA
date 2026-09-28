@@ -28,7 +28,11 @@ let nextMid = 0;
 function mockSendApi() {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (_url: string, init?: { body?: string }) => {
+    vi.fn(async (url: string, init?: { body?: string }) => {
+      // User Profile API (busca do @ do lead)
+      if (!init?.body && String(url).includes("fields=username")) {
+        return new Response(JSON.stringify({ username: "ion_comunnity", name: "Ion" }), { status: 200 });
+      }
       const body = JSON.parse(init?.body ?? "{}");
       const json = body.message
         ? { recipient_id: body.recipient?.id ?? "lead-from-comment", message_id: `sent-${++nextMid}` }
@@ -86,6 +90,14 @@ describe("mensagens do webhook", () => {
       mid: "m1",
       text: "oi",
     });
+  });
+
+  it("primeira DM do lead busca e guarda o @ (eco não busca)", async () => {
+    await captureMessagingEvent(account.ig_user_id, echo("e1", "oi"));
+    expect(fake.tables.conversations[0].ig_sender_username ?? null).toBeNull();
+
+    await captureMessagingEvent(account.ig_user_id, inbound({ mid: "m1", text: "oi" }));
+    expect(fake.tables.conversations[0].ig_sender_username).toBe("ion_comunnity");
   });
 
   it("webhook reentregue não duplica", async () => {
