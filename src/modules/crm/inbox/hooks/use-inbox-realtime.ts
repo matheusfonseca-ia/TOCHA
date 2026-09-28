@@ -22,7 +22,9 @@ export function useInboxRealtime() {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const refresh = () => {
       clearTimeout(timer);
-      timer = setTimeout(() => router.refresh(), 400);
+      // Uma mensagem gera vários eventos (mensagem, conversa, trigger) em até
+      // ~1s; cada refresh re-renderiza a página no servidor.
+      timer = setTimeout(() => router.refresh(), 1000);
     };
 
     void (async () => {

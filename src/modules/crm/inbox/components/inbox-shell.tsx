@@ -20,8 +20,9 @@ import { Thread } from "./thread";
 
 /**
  * Inbox em tela cheia (mesmo recurso do editor de Workflow): lista, conversa
- * e ficha do lead lado a lado. No celular vira uma tela por vez; a conversa
- * aberta vem de `?c=` na URL.
+ * e ficha do lead lado a lado. Abaixo de 1024px (celular e tablet, com a
+ * sidebar fixa ocupando espaço) vira uma tela por vez; a conversa aberta vem
+ * de `?c=` na URL.
  */
 export function InboxShell({
   accounts,
@@ -52,7 +53,7 @@ export function InboxShell({
     <div className="fixed inset-x-0 bottom-0 top-14 z-30 flex bg-background md:left-60 md:top-0">
       <aside
         className={cn(
-          "min-h-0 w-full shrink-0 flex-col border-r border-border/70 md:flex md:w-[320px] lg:w-[340px]",
+          "min-h-0 w-full shrink-0 flex-col border-r border-border/70 lg:flex lg:w-[320px] xl:w-[340px]",
           thread ? "hidden" : "flex"
         )}
       >
@@ -65,7 +66,7 @@ export function InboxShell({
         />
       </aside>
 
-      <section className={cn("min-h-0 min-w-0 flex-1 flex-col", thread ? "flex" : "hidden md:flex")}>
+      <section className={cn("min-h-0 min-w-0 flex-1 flex-col", thread ? "flex" : "hidden lg:flex")}>
         {thread ? (
           <Thread
             thread={thread}

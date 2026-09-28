@@ -53,7 +53,7 @@ export function Thread({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex items-center gap-3 border-b border-border/70 px-3 py-2.5 sm:px-4">
-        <Button asChild variant="ghost" size="icon" className="h-8 w-8 shrink-0 md:hidden">
+        <Button asChild variant="ghost" size="icon" className="h-8 w-8 shrink-0 lg:hidden">
           <Link href={backHref} aria-label="Voltar para a lista">
             <ArrowLeft className="h-4 w-4" />
           </Link>
