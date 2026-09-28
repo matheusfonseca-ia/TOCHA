@@ -307,10 +307,14 @@ Desenho da captura (a partir da Fase 0):
 - [x] Verificação: `tsc` limpo, vitest 400/400 (45 novos: parse-event 18, parse-sent 8,
       capture 16, process 3), `npm run build` ok, zero travessão em `src/modules`
 - [x] `scripts/check-db-schema.mjs` exige a 0009 (bloqueia o build da Vercel sem ela)
-- [ ] Aplicar 0009 no Supabase de produção (Cloudflare) **antes** do deploy: sem ela, a
-      captura criaria conversa com o `default now()` antigo de `last_inbound_at`
+- [x] 0009 aplicada no Supabase de produção (Cloudflare) em 28/09 pelo SQL Editor, antes do
+      deploy. Conferido no catálogo: `last_inbound_at` nullable e sem default, trigger,
+      unique, realtime (conversations, messages), policy; 58 conversas intactas
 - [ ] Aplicar 0009 também no Supabase da Vercel antes do próximo push para o `tocha`
-- [ ] Deploy + conferir no banco: mensagem real do lead de teste gravada com origem certa
+- [x] Deploy (Worker 760d67ac, 28/09). 1ª captura real: resposta pelo app da conta a um lead,
+      citando, gravada como `outbound/instagram_app` com `reply_to_mid`
+- [ ] E2E com o lead de teste: DM, resposta de automação (origem `automation`), reação e
+      edição conferidas no banco
 
 ### Fase 2: Inbox (leitura, ao vivo)
 

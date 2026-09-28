@@ -1,9 +1,26 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260928-155821-claude"
-Status: bloqueado (aguardando migration)
-Resumo: CRM Fase 1 (captura das mensagens) COMMITADA em 8f9d0a4, NÃO deployada: a migration 0009 precisa ser aplicada no Supabase de produção ANTES do deploy (sem ela, conversa criada pela captura herda o default now() de last_inbound_at e abre janela de 24h falsa). Também aplicar 0009 no Supabase da Vercel antes do próximo push para o tocha (check-db-schema bloqueia o build sem ela). Pendências anteriores: aplicar migration 0008 e confirmar visualmente o Workflow.
+Última tag: "HANDOFF-falow-20260928-180647-claude"
+Status: em andamento
+Resumo: CRM Fase 1 (captura das mensagens) EM PRODUÇÃO: migration 0009 aplicada no Supabase de produção (verificada no catálogo) e Worker 760d67ac deployado; 1ª captura real já gravada (resposta pelo app, citando). Falta: E2E com o lead de teste @ion_comunnity (DM, resposta de automação, reação, edição) e aplicar 0009 no Supabase da Vercel antes do próximo push para o tocha. Próximo: Fase 2 (Inbox). Pendências anteriores: aplicar migration 0008 e confirmar visualmente o Workflow.
+
+---
+
+## [HANDOFF · falow · 2026-09-28T18:06:47-03:00 · claude]
+Status: em andamento
+Objetivo: colocar a Fase 1 do CRM (captura) em produção.
+Feito:
+- 0009 aplicada no Supabase de produção (projeto ntzwudcauohpilbdwiyx) pelo SQL Editor no Chrome, com aprovação do usuário. O texto colado foi conferido linha a linha por hash contra o arquivo: só 4 linhas decorativas de comentário diferiam. Verificação no catálogo: last_inbound_at nullable e sem default, trigger messages_after_insert, constraint messages_account_mid_key, realtime em conversations e messages, 1 policy em messages, 58 conversas sem nenhuma janela zerada. check-db-schema: compatível.
+- `npm run build:cloudflare && npx wrangler deploy` (Worker 760d67ac); /dashboard 307, GET do webhook sem token 403.
+- 1ª mensagem real capturada: outbound/instagram_app com reply_to_mid.
+Próximo passo:
+- Usuário faz o E2E com @ion_comunnity no app do Instagram; conferir com `scratchpad/crm-spike/08-check-messages.mjs` (só metadados; texto só da conversa de teste).
+- Aplicar 0009 no Supabase da Vercel antes do próximo `! git push tocha main:main`.
+- Fase 2 (Inbox, leitura ao vivo).
+Arquivos tocados: tasks/todo.md, tasks/ai-handoff.md
+Decisões/contexto: colar SQL longo no editor por base64 transcrito à mão introduz erros de transcrição: sempre conferir hash linha a linha antes de rodar (aqui só comentários divergiram). O fechamento da aba do SQL Editor pelo Chrome travou 2x (provável aviso "Sair do site?" por edição não salva): pedir ao usuário para fechar.
+Tag: "HANDOFF-falow-20260928-180647-claude"
 
 ---
 
