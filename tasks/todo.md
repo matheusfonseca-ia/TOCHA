@@ -36,20 +36,20 @@ Arquitetura `modular-arch`.
 | Histórico anterior ao CRM | Viável com limitação | Conversations API: só as 20 mensagens mais recentes por conversa |
 | Mídia recebida | Viável com limitação | URL da CDN expira; copiar para Storage próprio já reprovou app no App Review (caso público do Chatwoot): guardar só a URL |
 | Responder pelo painel (texto, imagem, áudio, vídeo, PDF, ❤️) | Viável | janela de 24h, anexo por URL pública |
-| Responder até 7 dias (tag `HUMAN_AGENT`) | Viável com limitação | doc confirma a tag só para resposta humana; exigência de App Review incerta (Fase 0) |
+| Responder até 7 dias (tag `HUMAN_AGENT`) | **Inviável sem App Review** | Fase 0: 403 "must be reviewed and approved by Facebook" |
 | Tags com cor, filtro, aplicar e remover | Viável | catálogo novo + `contacts.tags` atual, zero mudança no runtime do workflow |
 | Excluir mensagem: "Apagar para mim" (só no Falow) | Viável | soft delete local |
 | Desfazer envio no Instagram / apagar conversa | **Inviável** | a API não tem endpoint |
 | Lead apagou uma mensagem | Viável | evento `messages` com `is_deleted: true` |
 | Editar mensagem enviada | **Inviável** | a API não tem endpoint |
-| Lead editou uma mensagem | Incerto | `message_edit` aparece na referência genérica, não na doc do Instagram Login (Fase 0) |
+| Lead editou uma mensagem | Viável (Fase 0) | `message_edit: {mid, text, num_edit}` chega no Instagram Login |
 | Alternativas de "editar" | Viável | rascunho, respostas rápidas, notas internas e dados do contato, todos editáveis |
 | Reação do lead | Viável | assinar `message_reactions` |
-| Reagir pela conta | Viável com limitação | `sender_action: react`; há relatos de aceitar só "love" (Fase 0) |
+| Reagir pela conta | **Inviável hoje** | Fase 0: "wow" = 400, "love"/"😂" = 500 em 5 tentativas |
 | Lead respondeu citando | Viável | `message.reply_to.mid` |
-| Responder citando pela conta | **Inviável** | envio não aceita `reply_to` |
+| Responder citando pela conta | Viável (Fase 0) | `reply_to: {mid}` no topo da requisição; eco confirma a citação |
 | "Visto" pelo lead | Viável | assinar `messaging_seen` |
-| Marcar como lida / digitando | Viável (`mark_seen` por inferência) | `sender_action` (Fase 0) |
+| Marcar como lida / digitando | Viável (Fase 0) | `mark_seen`, `typing_on/off` = 200 |
 | Kanban com arrastar | Viável | `@dnd-kit/core` + `sortable` (teclado, toque, scroll entre colunas) |
 | Atualização ao vivo | Viável | Supabase Realtime: WebSocket do navegador direto na Supabase, não passa pelo Worker |
 | Responsável / equipe | Fora do escopo | schema é 1 usuário por conta |
@@ -68,7 +68,8 @@ Arquitetura `modular-arch`.
       Mídia expirada aparece como "Mídia indisponível, abrir no Instagram".
 
 Restrições da API que viram UX (não são decisões): "Apagar para mim" com aviso de que o
-contato continua vendo; não existe "Editar mensagem enviada" nem "Responder citando".
+contato continua vendo; não existe "Editar mensagem enviada", reação enviada pela conta nem
+resposta fora das 24h (esta exige App Review do `HUMAN_AGENT`).
 
 ## Arquitetura (modular-arch)
 
@@ -135,7 +136,7 @@ Pontos de contato com código existente (só chamadas novas, sem refatorar):
   `processMessagingEvent` (antes do `return` do eco), em try/catch. **Falha no CRM nunca
   derruba automação.** Checagem de takeover antes do passo 4a.
 - `src/lib/meta/graph.ts`: `subscribed_fields` + `message_reactions,messaging_seen`
-  (+ `message_edit` se a Fase 0 confirmar); envio de anexo, ❤️, `mark_seen`, reação e
+  + `message_edit` (confirmados na Fase 0); envio de anexo, ❤️, `mark_seen`, `reply_to` e
   `messaging_type`/`tag`.
 - `src/lib/sequences/runtime.ts` e `processDueRuns`: respeitar takeover; nó `moveToStage`.
 - Pontos de envio (process.ts, runtime de sequências, follow-gate): gravar a mensagem
@@ -161,13 +162,15 @@ create table if not exists public.messages (
   text            text,
   attachments     jsonb,                  -- [{type, url}]: só a URL da CDN (D4)
   meta            jsonb,                  -- quick_reply, postback, botões enviados
-  reply_to_mid    text,                   -- lead respondeu citando
-  reaction        text,                   -- reação do lead a esta mensagem
+  reply_to_mid    text,                   -- citação (do lead ou da conta)
+  reaction_emoji  text,                   -- reação do lead (campo `emoji`)
   sent_by         uuid references auth.users (id),
   status          text not null default 'sent' check (status in ('sent', 'failed')),
   error_detail    text,
   deleted_by_contact_at timestamptz,      -- lead apagou (is_deleted)
-  edited_at       timestamptz,            -- lead editou (se message_edit existir)
+  edited_at       timestamptz,            -- lead editou (message_edit)
+  edit_count      int not null default 0,
+  original_text   text,                   -- texto antes da 1ª edição
   hidden_at       timestamptz,            -- "Apagar para mim"
   created_at      timestamptz not null    -- horário do evento na Meta
 );
@@ -176,7 +179,8 @@ create table if not exists public.messages (
 alter table public.conversations
   add column if not exists contact_id uuid references public.contacts (id) on delete set null,
   add column if not exists last_message_at timestamptz,
-  add column if not exists last_message_preview text,
+  add column if not exists last_message_text text,  -- a tela monta a prévia pelo kind
+  add column if not exists last_message_kind text,
   add column if not exists last_message_direction text,
   add column if not exists unread_count int not null default 0,
   add column if not exists contact_seen_at timestamptz,   -- messaging_seen
@@ -189,6 +193,8 @@ alter table public.conversations
 - RLS: `messages` select do dono (update só via server action); `conversations` ganha
   policy de update do dono.
 - `alter publication supabase_realtime add table public.messages, public.conversations;`
+- `message_signals_pending`: reação / edição / apagado que chegam antes da mensagem
+  (Fase 0 provou que acontece).
 - `crm_notes` (notas internas por contato) e `quick_replies` (atalho + texto).
 
 `0010_crm_tags.sql`: `crm_tags (account_id, name, color)` +
@@ -214,14 +220,74 @@ aplicada e teste manual logado antes da próxima. Deploy manual ao fim de cada f
 O usuário faz as ações no celular com a conta de teste; o Claude lê os eventos via
 `wrangler tail` (log temporário do payload bruto, removido no fim).
 
-- [ ] Mensagem enviada pela API e pelo app do Instagram: o eco traz algo que separe os dois
+- [x] Mensagem enviada pela API e pelo app do Instagram: o eco traz algo que separe os dois
       (`app_id`?) e o `mid` do eco é igual ao `message_id` devolvido no envio?
-- [ ] Assinar `message_reactions`, `messaging_seen` e `message_edit` na conta de teste; o lead
+- [x] Assinar `message_reactions`, `messaging_seen` e `message_edit` na conta de teste; o lead
       reage, visualiza, edita e apaga uma mensagem. Registrar o que chega e o formato.
-- [ ] Reação com emoji diferente de ❤️, `mark_seen` e 1 envio com `HUMAN_AGENT` fora das 24h.
-- [ ] Resultado anotado aqui; ajusta os itens "conforme Fase 0" das fases seguintes.
+- [x] Reação com emoji diferente de ❤️, `mark_seen` e 1 envio com `HUMAN_AGENT` fora das 24h.
+- [x] Resultado anotado aqui; ajusta os itens "conforme Fase 0" das fases seguintes.
+- [x] Limpeza: secret `WEBHOOK_DEBUG_IG_IDS` apagado (log parou), 0 sessões de tail
+      abertas, payloads capturados apagados do scratchpad. O `console.log` temporário em
+      `route.ts` sai no commit da Fase 1.
+
+**Resultados (28/09, conta @euheliomonteiro + lead de teste @ion_comunnity, IGSID
+4181139912021434).** Log temporário em produção (commit a99af2c, secret
+`WEBHOOK_DEBUG_IG_IDS`), lido pelo `wrangler tail`; scripts em scratchpad `crm-spike/`.
+
+- Assinatura por conta aceitou `message_reactions`, `messaging_seen` e `message_edit`
+  (200). A conta estava sem `messaging_referral` (conectada antes desse campo entrar no
+  OAuth): reassinado junto. **Contas conectadas antes de 23/09 podem estar sem o gatilho
+  "Link de referência" funcionando**; o script de reassinatura da Fase 1 resolve.
+- Eco: `mid` do eco == `message_id` devolvido pelo envio (confirmado). O payload do eco
+  é só `{mid, text, is_echo}`: **nada separa API de app**. Decisão: a origem é gravada no
+  envio; eco sem registro vira `instagram_app`.
+- Eco chegou ~7s depois do envio: o envio grava antes na maioria dos casos, mas o upsert
+  precisa funcionar nas duas ordens.
+- `messaging_seen` chega (`read: {mid}`), e o `mid` pode ser o da própria mensagem do lead:
+  "Visto" deve ser calculado por horário (`contact_seen_at`), não por mid.
+- Resposta a story chega com `reply_to.story {id, url}` e `url` em `lookaside.fbsbx.com`.
+- `typing_on`, `typing_off` e `mark_seen`: 200.
+- **`HUMAN_AGENT`: 403, exige App Review** ("must be reviewed and approved by Facebook").
+  Fora do MVP; indicador de janela mostra só "aberta" / "fechada".
+- **Reagir pela conta: não funciona.** "wow" = 400 "Reação inválida"; "love" e "😂" = 500
+  transitório em 5 tentativas. Fora do MVP.
+- Eco de mensagem enviada pelo **app do Instagram**: `{mid, text, is_echo}`, idêntico ao eco
+  da API (confirma a regra "eco sem registro = `instagram_app`").
+- **Reação do lead chega**: `reaction: {mid, action: "react", reaction: "like", emoji: "👍"}`.
+  Guardar o `emoji` (a categoria `reaction` é genérica).
+- **Edição do lead chega** (`message_edit` funciona no Instagram Login, ao contrário do que
+  a doc sugeria): `message_edit: {mid, text, num_edit}`. "Editada" no balão entra no MVP.
+- **Desfazer envio do lead**: `message: {mid, is_deleted: true}`, sem texto.
+- **Citação do lead**: `message.reply_to: {mid, is_self_reply}`. Eco de citação feita pelo
+  app da conta também traz `reply_to`.
+- **Citar pela API FUNCIONA** com `reply_to: {mid}` no TOPO da requisição (junto de
+  `recipient`), não dentro de `message` (esse dá 400 "Invalid keys"). Confirmado pelo eco
+  com `reply_to`. "Responder citando" entra no composer.
+- Foto e áudio: `attachments: [{type: "image" | "audio", payload: {url}}]`, sem texto, URL
+  em `lookaside.fbsbx.com/ig_messaging_cdn`.
+- **Eventos chegam fora de ordem**: a reação e a edição chegaram ANTES da mensagem a que
+  se referem. A captura precisa de fila de sinais pendentes (ver Fase 1).
+- Conversations API funciona no Instagram Login; mensagens com botões (template) voltam
+  com `message: ""` no histórico, então a importação não recupera o conteúdo delas.
 
 ### Fase 1: captura de mensagens (fundação, sem UI)
+
+Desenho da captura (a partir da Fase 0):
+- Enviadas: `graph.ts` ganha um observador opcional por contexto assíncrono
+  (`AsyncLocalStorage`, suportado no Worker com `nodejs_compat` e já usado pelo OpenNext).
+  `graph.ts` continua sem saber de CRM: só avisa "mensagem enviada" a quem estiver
+  observando. O módulo CRM expõe `observeOutbound(accountId, source, fn)`; `process.ts`
+  envolve regras (`automation`) e o runtime envolve workflows (`workflow`). Nenhum
+  ponto de envio muda de assinatura.
+- Envio grava com upsert que corrige a origem; eco faz insert que ignora duplicado.
+- Sinais (reação, edição, apagado, visto) que chegam antes da mensagem vão para
+  `message_signals_pending (account_id, mid, type, payload, created_at)`; ao gravar uma
+  mensagem, a captura aplica e remove os pendentes daquele `mid`. Pendentes com mais de
+  7 dias são descartados pelo mesmo sweep do cron.
+- Resposta privada a comentário cria conversa sem mensagem do lead: `last_inbound_at`
+  passa a aceitar nulo (janela fechada) e `touchConversation` precisa tratar nulo no
+  `.lt(...)` (hoje `null < at` não atualiza). `runtime.ts:1184` já trata ausência como
+  janela fechada.
 
 - [ ] Migration 0009
 - [ ] `capture/utils/parse-event.ts` (pura) + testes: texto, quick reply, postback, anexos,
@@ -230,7 +296,7 @@ O usuário faz as ações no celular com a conta de teste; o Claude lê os event
       `contacts` (upsert ignoreDuplicates) e `conversations.contact_id` preenchido
 - [ ] Enviadas: envio e eco convergem por upsert em `(account_id, mid)`. O envio grava a
       origem (automation / workflow / agent); eco sem registro vira `instagram_app`
-      (ou identificado pelo `app_id`, conforme Fase 0)
+      (Fase 0: o eco não traz nada que separe app de API)
 - [ ] Toque em botão (postback) gravado como mensagem do lead com o título do botão
 - [ ] `subscribed_fields` novos + script único para reassinar as contas já conectadas
       (token salvo, sem reautenticar)
@@ -263,14 +329,16 @@ O usuário faz as ações no celular com a conta de teste; o Claude lê os event
       `crm-uploads` do Supabase Storage com URL pública; é arquivo do usuário, não da Meta),
       Enter envia e Shift+Enter quebra linha, rascunho por conversa, envio otimista com
       "Falhou, tentar de novo"
-- [ ] Indicador de janela: "Janela aberta, fecha em 5h" / "Fora das 24h: resposta humana
-      até 7 dias" (`HUMAN_AGENT`, conforme Fase 0) / "Janela fechada: aguarde o lead escrever"
+- [ ] Responder citando: "Responder" no menu da mensagem mostra a citação no composer e
+      envia `reply_to: {mid}` no topo da requisição (Fase 0)
+- [ ] Indicador de janela: "Janela aberta, fecha em 5h" / "Janela fechada: aguarde o lead
+      escrever" (sem `HUMAN_AGENT`: exige App Review, Fase 0); composer desabilitado fora da janela
 - [ ] Erro de janela fechada da Meta vira aviso claro no balão
 - [ ] Handoff (D3): `human_takeover_at` checado antes do passo 4a em process.ts, no postback,
       no comentário e em `processDueRuns`; runs em espera ficam parados e só retomam depois
       de "Devolver ao bot"
 - [ ] Respostas rápidas: criar, editar, excluir + "/" no composer
-- [ ] `mark_seen` ao abrir a conversa (conforme Fase 0)
+- [ ] `mark_seen` ao abrir a conversa (confirmado na Fase 0)
 - [ ] Testes: takeover bloqueia regra, workflow novo, retomada por resposta e atraso;
       devolver ao bot volta ao normal
 
@@ -316,10 +384,11 @@ O usuário faz as ações no celular com a conta de teste; o Claude lê os event
 ### Fase 7: ações por mensagem e notas
 
 - [ ] Menu da mensagem: Copiar, Apagar para mim (com aviso "o contato continua vendo no
-      Instagram"), Reagir (paleta completa ou só ❤️, conforme Fase 0)
+      Instagram"), Responder (citando). Reagir pela conta fica fora (a API falhou na Fase 0)
 - [ ] Notas internas por contato (criar, editar, excluir; nunca vão para o Instagram), na
       ficha e intercaladas na conversa com estilo próprio
-- [ ] "Editada" no balão quando o lead editar (só se `message_edit` chegar, Fase 0)
+- [ ] "Editada" no balão quando o lead editar (`message_edit`, confirmado na Fase 0), com
+      o texto original acessível
 - [ ] Concluir / reabrir conversa
 
 ### Fase 8: importar histórico
@@ -343,7 +412,7 @@ O usuário faz as ações no celular com a conta de teste; o Claude lê os event
 - Realtime com RLS por subquery serve no volume atual; migrar para Broadcast se escalar.
   Limites: 200 conexões no Free, 500 no Pro.
 - Mídia expira e não pode ser copiada: mídia antiga não aparece.
-- `HUMAN_AGENT` pode exigir App Review.
+- `HUMAN_AGENT` exige App Review (confirmado): fora das 24h o painel não responde.
 - Conta que falhar ao reassinar os webhooks fica sem reação/visto até reconectar.
 - `mark_seen` mostra "Visto" para o lead no Instagram: ligado por padrão, com opção de desligar.
 

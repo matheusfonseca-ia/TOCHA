@@ -1,9 +1,26 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260928-120021-claude"
+Última tag: "HANDOFF-falow-20260928-151041-claude"
 Status: em andamento
-Resumo: CRM de conversas (Inbox estilo WhatsApp + Funil Kanban) PLANEJADO em `tasks/todo.md` (topo), com matriz de viabilidade validada por 8 agentes Sonnet; aguardando o usuário aprovar as decisões D1 a D4 antes de qualquer código. Nada implementado. Pendências da entrega anterior continuam: aplicar migration 0008 no Supabase e o usuário confirmar visualmente a edição dentro do card do Workflow.
+Resumo: CRM (Inbox + Funil) aprovado (D1 a D4) e Fase 0 (spike com conta real) CONCLUÍDA: formatos reais de eco, reação, edição, apagado, visto, citação e mídia registrados em `tasks/todo.md`; citar pela API funciona (reply_to no topo), HUMAN_AGENT exige App Review, reagir pela conta falha. Próximo: Fase 1 (captura). Rascunho `supabase/migrations/0009_crm_inbox.sql` existe no disco, NÃO commitado nem aplicado. Pendências anteriores: aplicar migration 0008 e confirmar visualmente o Workflow.
+
+---
+
+## [HANDOFF · falow · 2026-09-28T15:10:41-03:00 · claude]
+Status: em andamento
+Objetivo: Fase 0 do CRM: medir com conta real o que o webhook e a API do Instagram entregam antes de escrever a captura.
+Feito:
+- Log temporário do payload bruto no webhook (commit a99af2c, deploy e9cd0546), ligado só pelo secret `WEBHOOK_DEBUG_IG_IDS`; secret já APAGADO no fim (log parou). O `console.log` continua no `route.ts` até o commit da Fase 1.
+- @euheliomonteiro reassinada com `messages,messaging_postbacks,messaging_referral,comments,message_reactions,messaging_seen,message_edit` (estava sem `messaging_referral`: gatilho "Link de referência" provavelmente não funcionava para essa conta).
+- Testes pela API e pelo celular com o lead de teste @ion_comunnity (IGSID 4181139912021434). Resultados completos em `tasks/todo.md` > Fase 0 > Resultados.
+- Plano atualizado: matriz, Fase 1 (observador de envio por AsyncLocalStorage, fila `message_signals_pending`), Fase 3 (responder citando, sem HUMAN_AGENT), Fase 7 ("Editada" confirmada, sem reação pela conta).
+- Rascunho da migration 0009 no disco (messages, colunas em conversations, trigger, RLS, realtime, message_signals_pending).
+Próximo passo:
+- Fase 1: captura (parse-event puro + testes, capture-event no process.ts em best effort, observador de envio em graph.ts, fila de sinais, reassinatura das contas, remover o console.log temporário), aplicar 0009, deploy.
+Arquivos tocados: src/app/api/webhooks/meta/route.ts (log temporário), tasks/todo.md, tasks/ai-handoff.md, tasks/lessons.md, supabase/migrations/0009_crm_inbox.sql (rascunho, não commitado)
+Decisões/contexto: `wrangler tail` foi encerrado 2x pelo Claude Code por falta de RAM (0,9 a 1,6 GB livres); a captura que funcionou foi um script node leve no WebSocket de tail da Cloudflare (filtro no POST de criação, `{debug:false}` no open, ping a cada 10s), em `scratchpad/crm-spike/tail-lite.mjs`. No Windows o TaskStop não dispara o SIGTERM do script: apagar a sessão de tail pela API depois. Scripts do spike usam `createRequire` do projeto (vite-node não resolve imports absolutos). Payloads capturados já apagados (tinham DM real de lead).
+Tag: "HANDOFF-falow-20260928-151041-claude"
 
 ---
 
