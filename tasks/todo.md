@@ -1,3 +1,113 @@
+# Falow: servidor MCP (rodada 2)
+
+Planejado em 2026-09-28. Status: **spec e plano prontos, implementacao engatilhada**.
+Nao comecar agora.
+
+## Gatilho
+
+A implementacao so comeca **quando o Falow for preparado pra multi-tenant**. Motivo:
+a principal decisao de desenho (isolamento por RLS, autenticacao pronta pra varios
+tenants desde o dia um) so se exercita quando existe um segundo tenant. Antes disso,
+o teste de isolamento testa hipotese, nao caso real.
+
+## Documentos
+
+- Spec: `docs/superpowers/specs/2026-09-28-falow-mcp-design.md`
+- Plano: `docs/superpowers/plans/2026-09-28-falow-mcp-plan.md` — 17 tasks, TDD, com
+  tabela de cobertura da spec no fim
+
+## O que foi decidido
+
+- O Falow vira **servidor MCP remoto** em `/api/mcp`, Streamable HTTP **stateless**
+  (imposto pelos dois deploys serverless: Vercel e Cloudflare Workers).
+- **Duas portas, uma identidade**: Bearer token (Claude Code, n8n, Cursor) e OAuth 2.1
+  (conector do claude.ai e do ChatGPT) convergem numa unica funcao de verificacao.
+- **Isolamento e a RLS que ja existe.** O token resolve pra um `user_id` e o request usa
+  um client Supabase agindo como aquele usuario. Nenhuma tool filtra tenant na mao.
+- **Escopo:** so automacoes e numeros. Workflow do canvas fica inteiro de fora, nem leitura.
+- **Escrita e ativa e imediata**, sem rascunho nem flag — decisao do Matheus.
+- Refactor que vem junto: extrair validacao/conflito/escrita de `rules/actions.ts` pra
+  `src/lib/rules/save.ts`, recebendo o client como argumento.
+
+## Pendente
+
+- [ ] **Bloqueado pelo multi-tenant** — derrubar a trava de cadastro unico (`src/lib/config.ts`)
+      e resolver isolamento por usuario no painel. Projeto proprio, com spec propria.
+- [ ] Task 1 (spike): o `@modelcontextprotocol/sdk` sobrevive ao `npm run build:cloudflare`?
+      Se nao, o fallback (handler JSON-RPC proprio) ja esta desenhado e nenhuma tool muda.
+- [ ] Task 2 (investigacao que bloqueia o resto): client Supabase com identidade do usuario
+      sem cookie. Caminho preferido e assinar JWT com `SUPABASE_JWT_SECRET`. **Service role
+      esta rejeitado** — anula a decisao de isolamento.
+- [ ] Revisitar a escrita sem cerimonia antes de abrir o SaaS a terceiros.
+
+---
+
+# Falow: campo inteligente, pastas e deeplink automatico
+
+Planejado e implementado em 2026-09-27. Status: **codigo pronto, aguardando teste
+manual do usuario e as migrations 0009 e 0010**.
+
+## Pedido
+
+Rodada 1 de tres mudancas independentes, aprovadas depois do brainstorming:
+
+1. **Campo de texto inteligente** (mensagens padrao + Modo IA, que viraram o mesmo
+   componente): todo campo de texto ganha dois atalhos no canto, textos salvos e
+   escrever com IA.
+2. **Pastas** de um nivel, compartilhadas entre Automacoes e Workflow.
+3. **Deeplink automatico**: o codigo do link de referencia nasce do nome do
+   workflow, e o link e o QR code ficam na lista.
+
+Duplicar automacao saiu da lista: ja existia no menu "..." de cada linha.
+MCP ficou pra rodada 2, com spec propria.
+
+## Feito
+
+- [x] `src/lib/ai/` (fields, prompt, parse, provider): catalogo dos campos com
+      limite e papel de cada um, montagem do prompt, leitura tolerante da resposta
+      do modelo (JSON, bloco de codigo, lista numerada, preambulo) e chamada a
+      OpenRouter com fetch injetavel. 27 testes.
+- [x] `src/lib/presets/presets.ts`: normalizacao e ordenacao dos textos salvos
+      (os do mesmo tipo de campo primeiro, escondendo os que nao cabem no limite).
+      Preset e copia, nao referencia. 9 testes.
+- [x] `src/lib/folders/folders.ts`: nome, cores e contagem por pasta, contando
+      automacoes e workflows juntos. 8 testes.
+- [x] `src/lib/db/missing.ts`: detecta tabela/coluna ausente (PGRST205, 42703,
+      PGRST204) pras features novas sumirem sozinhas ate a migration rodar,
+      generalizando o que a 0007 fazia so pro portao. 8 testes.
+- [x] `suggestRefCode` e `refCodeOf`: slug do nome do workflow com desempate, e
+      leitura do codigo do gatilho pra lista. 10 testes.
+- [x] UI: `SmartTextField` (+ `AiGenerateDialog`, `SmartFieldsProvider` no layout
+      do painel), `FolderRail`, `MoveToFolderDialog`, `RefLinkDialog` com QR code
+      gerado no navegador (dependencia nova: `qrcode`).
+- [x] Campos migrados: resposta publica e boas-vindas (via `VariantList`, que
+      agora aceita `field` e ganhou "cadastrar as 5 sugestoes como variantes"),
+      mensagem entregue nas duas telas de automacao, os dois textos do portao de
+      seguidor, mensagem / botoes / respostas rapidas do canvas e a pergunta do
+      Coletar dado.
+- [x] Migrations `0009_message_presets.sql` e `0010_folders.sql`, as duas
+      idempotentes e seguras com a versao anterior do app no ar.
+- [x] `.env.example` e README com `OPENROUTER_API_KEY` / `OPENROUTER_MODEL`, e a
+      promessa de privacidade ajustada: nenhum dado de seguidor vai pra IA, so o
+      que o dono digita no painel, e so se ele configurar a chave.
+- [x] `npx tsc --noEmit`, `npm run build` e `npm test` (417/417) limpos.
+
+## Pendente
+
+- [ ] **Aplicar as migrations**: 0007 e 0008 seguem pendentes de antes; 0009 e
+      0010 entram agora. No projeto da Vercel faltam as quatro; no da Cloudflare,
+      da 0008 em diante. Sem elas o painel funciona, so sem os recursos novos.
+- [ ] **Preencher `OPENROUTER_API_KEY`** onde quiser o botao de IA (local, Vercel
+      e Cloudflare sao tres lugares).
+- [ ] **Teste manual no navegador**: os dois atalhos em cada tipo de campo,
+      inclusive dentro dos cards do canvas; criar/renomear/apagar pasta e mover
+      itens nas duas listas; escolher o gatilho de link e conferir que o codigo
+      nasce preenchido, com QR baixando certo.
+- [ ] Deploy na Cloudflare (`npm run build:cloudflare && npx wrangler deploy`) so
+      depois do teste, e sempre na pasta principal (ver tasks/lessons.md).
+
+---
+
 # Falow: edição do Workflow dentro do card + histórico de versões
 
 Planejado e implementado em 2026-09-27. Status: **código pronto, aguardando teste
