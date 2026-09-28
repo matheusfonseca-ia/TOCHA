@@ -1,9 +1,31 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260928-151041-claude"
-Status: em andamento
-Resumo: CRM (Inbox + Funil) aprovado (D1 a D4) e Fase 0 (spike com conta real) CONCLUÍDA: formatos reais de eco, reação, edição, apagado, visto, citação e mídia registrados em `tasks/todo.md`; citar pela API funciona (reply_to no topo), HUMAN_AGENT exige App Review, reagir pela conta falha. Próximo: Fase 1 (captura). Rascunho `supabase/migrations/0009_crm_inbox.sql` existe no disco, NÃO commitado nem aplicado. Pendências anteriores: aplicar migration 0008 e confirmar visualmente o Workflow.
+Última tag: "HANDOFF-falow-20260928-155821-claude"
+Status: bloqueado (aguardando migration)
+Resumo: CRM Fase 1 (captura das mensagens) COMMITADA em 8f9d0a4, NÃO deployada: a migration 0009 precisa ser aplicada no Supabase de produção ANTES do deploy (sem ela, conversa criada pela captura herda o default now() de last_inbound_at e abre janela de 24h falsa). Também aplicar 0009 no Supabase da Vercel antes do próximo push para o tocha (check-db-schema bloqueia o build sem ela). Pendências anteriores: aplicar migration 0008 e confirmar visualmente o Workflow.
+
+---
+
+## [HANDOFF · falow · 2026-09-28T15:58:21-03:00 · claude]
+Status: bloqueado (aguardando migration)
+Objetivo: Fase 1 do CRM: gravar toda mensagem (lead, eco, envio do Falow) e sinais (reação, edição, apagada, visto), sem UI.
+Feito:
+- `src/modules/crm/`: `shared/types/message.ts`, `capture/utils/parse-event.ts` e `parse-sent.ts` (puras), `capture/server/record.ts` (gravação), `capture-event.ts` (entrada do webhook, nunca lança), `observe-outbound.ts` (grava envios com origem), `server.ts` (API pública de servidor).
+- `graph.ts`: `observeSends` (AsyncLocalStorage) chamado em todo envio de mensagem; `WEBHOOK_FIELDS` com os 7 campos para contas novas.
+- `process.ts`: captura em paralelo com a automação (`processMessagingEvent` → `handleMessagingEvent`), regras envolvidas em `observeOutbound(source: automation)`, `touchConversation` trata `last_inbound_at` nulo.
+- `runtime.ts`: `executeFrom` virou invólucro de `runNodes` com `observeOutbound(source: workflow)`.
+- Migration 0009 (messages com unique (account_id, mid) constraint, message_signals_pending, colunas em conversations, trigger, RLS, realtime; last_inbound_at sem not null e sem default).
+- Log temporário da Fase 0 removido do route.ts. check-db-schema exige 0009.
+- tsc limpo, vitest 400/400 (45 novos), next build ok.
+Próximo passo:
+- Aplicar 0009 no Supabase de produção (Cloudflare) e depois `npm run build:cloudflare && npx wrangler deploy`.
+- Conferir no banco com uma DM real do lead de teste (@ion_comunnity) que a mensagem e a resposta da automação aparecem com origem certa.
+- Aplicar 0009 no Supabase da Vercel antes do push para o tocha.
+- Depois: Fase 2 (Inbox, leitura ao vivo).
+Arquivos tocados: src/modules/crm/**, src/lib/meta/graph.ts, src/lib/meta/process.ts, src/lib/meta/process.test.ts, src/lib/sequences/runtime.ts, src/lib/sequences/__tests__/fake-supabase.ts, src/types/database.ts, src/app/api/webhooks/meta/route.ts, supabase/migrations/0009_crm_inbox.sql, scripts/check-db-schema.mjs, tasks/todo.md
+Decisões/contexto: a captura NÃO cria linha em `contacts` para todo lead (inundaria a página Contatos, que por D1 fica como está); `conversations.contact_id` fica para a Fase 2/5. Fila de sinais pendentes limpa itens com mais de 7 dias quando um sinal novo entra (não no cron). Testes de runtime mockam as funções de envio, então o observador é coberto em `capture.test.ts` (fetch mockado, sendTextMessage real).
+Tag: "HANDOFF-falow-20260928-155821-claude"
 
 ---
 
