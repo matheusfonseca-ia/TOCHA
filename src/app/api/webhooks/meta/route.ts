@@ -41,6 +41,16 @@ export async function POST(request: NextRequest) {
     return new NextResponse("Bad request", { status: 400 });
   }
 
+  // TEMPORÁRIO (Fase 0 do CRM, 28/09): payload bruto das contas listadas em
+  // WEBHOOK_DEBUG_IG_IDS aparece só no `wrangler tail` (o Worker não persiste
+  // logs). Remover junto com o secret ao fim da Fase 0.
+  const debugIds = (process.env.WEBHOOK_DEBUG_IG_IDS ?? "")
+    .split(",")
+    .filter(Boolean);
+  if (payload.entry?.some((e) => debugIds.includes(e.id ?? ""))) {
+    console.log("[webhook:raw]", rawBody);
+  }
+
   try {
     await processWebhookPayload(payload);
   } catch (err) {

@@ -1,9 +1,24 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260927-152416-claude"
+Última tag: "HANDOFF-falow-20260928-120021-claude"
 Status: em andamento
-Resumo: edição de blocos do Workflow passou a acontecer DENTRO DO CARD (estilo ManyChat), sem painel lateral; adicionado histórico de versões (`sequence_versions`, migration 0008) com painel "Histórico" e restaurar. tsc/build/vitest (355) limpos, commitado localmente. Falta: usuário testar de verdade no navegador (tentativa de sessão descartável via generateLink+verifyOtp foi bloqueada pelo classificador do auto mode nesta sessão — "Credential Materialization" — não contornado) e aplicar a migration 0008 antes do deploy. Push para `tocha` o usuário roda com `!`.
+Resumo: CRM de conversas (Inbox estilo WhatsApp + Funil Kanban) PLANEJADO em `tasks/todo.md` (topo), com matriz de viabilidade validada por 8 agentes Sonnet; aguardando o usuário aprovar as decisões D1 a D4 antes de qualquer código. Nada implementado. Pendências da entrega anterior continuam: aplicar migration 0008 no Supabase e o usuário confirmar visualmente a edição dentro do card do Workflow.
+
+---
+
+## [HANDOFF · falow · 2026-09-28T12:00:21-03:00 · claude]
+Status: em andamento
+Objetivo: planejar um CRM dentro do Falow estilo Kommo: inbox estilo WhatsApp + kanban de leads, com tags, excluir, editar etc., seguindo modular-arch (`src/modules/crm/`).
+Feito:
+- Plano completo no topo de `tasks/todo.md`: matriz de viabilidade, decisões D1 a D4, árvore do módulo `src/modules/crm/` (capture, inbox, handoff, tags, pipeline, quick-replies, history-import), migrations 0009 (messages + colunas em conversations), 0010 (crm_tags), 0011 (pipelines/stages/leads/lead_stage_events) e Fases 0 a 9.
+- Validação por 8 agentes Sonnet (só pesquisa, sem editar arquivos), um por feature: inbox/histórico, envio manual, excluir, editar, reações/citação/visto, tags, kanban, realtime.
+Próximo passo:
+- Usuário aprova ou ajusta D1 (item CRM na sidebar), D2 (entrada automática no funil), D3 (responder pelo painel assume a conversa), D4 (mídia só por link da Meta).
+- Fase 0 (spike com conta real via `wrangler tail`) antes de codar a captura: eco app x API, mid do eco == message_id do envio, message_edit/reações/visto chegam no Instagram Login, reação além de ❤️, mark_seen, HUMAN_AGENT.
+Arquivos tocados: tasks/todo.md, tasks/ai-handoff.md
+Decisões/contexto: achados da API que definem o escopo: NÃO existe editar nem desfazer envio de mensagem enviada, nem responder citando (só "Apagar para mim" local, e editar vira rascunho/respostas rápidas/notas); lead apagar chega como `is_deleted: true` no campo `messages`; Conversations API só devolve as 20 últimas mensagens por conversa; copiar mídia da CDN da Meta para Storage próprio já reprovou app no App Review (caso Chatwoot #8583), por isso D4. `handleSequenceReply` roda antes do check de `automation_paused_until` em process.ts: o takeover humano precisa de checagem própria antes do passo 4a e em processDueRuns. Não existe client Supabase de navegador ainda (só server.ts/admin.ts). Kanban: @dnd-kit (hello-pangea em manutenção). Realtime: postgres_changes no MVP, Broadcast se escalar.
+Tag: "HANDOFF-falow-20260928-120021-claude"
 
 ---
 
