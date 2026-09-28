@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import type { ReplyButton } from "@/types/database";
 
 /**
@@ -68,12 +70,37 @@ async function graphGet(
 
 type Recipient = { id: string } | { comment_id: string };
 
-function sendMessage(
+export interface SentMessage {
+  /** Corpo enviado à Send API ({recipient, message, ...}). */
+  body: Record<string, unknown>;
+  /** Resposta da Meta ({recipient_id, message_id}). */
+  response: Record<string, unknown>;
+}
+
+type SendObserver = (sent: SentMessage) => Promise<void>;
+
+const sendObserver = new AsyncLocalStorage<SendObserver>();
+
+/**
+ * Roda `fn` avisando `observer` a cada mensagem enviada com sucesso dentro
+ * dela, inclusive em chamadas aninhadas (o observador mais interno vence).
+ * É assim que o CRM grava os envios com a origem certa sem que cada ponto de
+ * envio precise saber que ele existe. Falha do observador nunca derruba o envio.
+ */
+export function observeSends<T>(observer: SendObserver, fn: () => Promise<T>): Promise<T> {
+  return sendObserver.run(observer, fn);
+}
+
+async function sendMessage(
   igToken: string,
   recipient: Recipient,
   message: Record<string, unknown>
 ) {
-  return graphPost("me/messages", igToken, { recipient, message });
+  const body = { recipient, message };
+  const response = await graphPost("me/messages", igToken, body);
+  const observer = sendObserver.getStore();
+  if (observer) await observer({ body, response }).catch(() => {});
+  return response;
 }
 
 function textBody(text: string): Record<string, unknown> {
@@ -255,11 +282,23 @@ export function sendTypingAction(igToken: string, recipientId: string) {
 /**
  * Inscreve a conta profissional nos eventos necessários para o webhook:
  * mensagens, toques em botão postback (fluxos de comentário e sequências),
- * comentários e aberturas por link ig.me?ref= (gatilho "Link de referência").
+ * comentários, aberturas por link ig.me?ref= (gatilho "Link de referência")
+ * e, para o CRM, reação, visto e edição do lead (os três confirmados com
+ * conta real na Fase 0 do CRM, 28/09/2026).
  */
+export const WEBHOOK_FIELDS = [
+  "messages",
+  "messaging_postbacks",
+  "messaging_referral",
+  "comments",
+  "message_reactions",
+  "messaging_seen",
+  "message_edit",
+] as const;
+
 export function subscribeAccountToWebhooks(igToken: string) {
   return graphPost("me/subscribed_apps", igToken, {
-    subscribed_fields: "messages,messaging_postbacks,messaging_referral,comments",
+    subscribed_fields: WEBHOOK_FIELDS.join(","),
   });
 }
 

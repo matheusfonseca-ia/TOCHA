@@ -29,7 +29,9 @@ export type TableName =
   | "conversations"
   | "interactions"
   | "processed_events"
-  | "contacts";
+  | "contacts"
+  | "messages"
+  | "message_signals_pending";
 
 export interface FakeError {
   message: string;
@@ -69,6 +71,7 @@ const UNIQUE_CONSTRAINTS: Partial<Record<TableName, string[][]>> = {
   sequence_runs: [["sequence_id", "ig_sender_id"]],
   rule_triggers: [["rule_id", "ig_sender_id"]],
   contacts: [["account_id", "ig_sender_id"]],
+  messages: [["account_id", "mid"]],
 };
 
 const PG_UNIQUE_VIOLATION = "23505";
@@ -93,8 +96,21 @@ function defaultsFor(table: TableName): Row {
       return { ig_sender_username: null, created_at: now };
     case "contacts":
       return { ig_username: null, fields: {}, tags: [], created_at: now, updated_at: now };
+    case "messages":
+      return {
+        reaction_emoji: null,
+        sent_by: null,
+        status: "sent",
+        error_detail: null,
+        deleted_by_contact_at: null,
+        edited_at: null,
+        edit_count: 0,
+        original_text: null,
+        hidden_at: null,
+      };
     case "interactions":
     case "processed_events":
+    case "message_signals_pending":
       return { created_at: now };
     default:
       return {};
@@ -103,7 +119,12 @@ function defaultsFor(table: TableName): Row {
 
 function hasUniqueConflict(table: TableName, item: Row, rows: Row[]): boolean {
   const constraints = UNIQUE_CONSTRAINTS[table] ?? [];
-  return constraints.some((cols) => rows.some((r) => cols.every((c) => r[c] === item[c])));
+  // Como no Postgres: nulo nunca conflita (ex.: messages.mid de envio que falhou).
+  return constraints.some(
+    (cols) =>
+      cols.every((c) => item[c] != null) &&
+      rows.some((r) => cols.every((c) => r[c] === item[c]))
+  );
 }
 
 function resolveValue(row: Row, column: string, table: TableName, db: FakeSupabase): any {
@@ -369,6 +390,8 @@ export class FakeSupabase {
     interactions: [],
     processed_events: [],
     contacts: [],
+    messages: [],
+    message_signals_pending: [],
   };
 
   from(table: TableName): FakeQueryBuilder {

@@ -283,25 +283,34 @@ Desenho da captura (a partir da Fase 0):
 - Sinais (reação, edição, apagado, visto) que chegam antes da mensagem vão para
   `message_signals_pending (account_id, mid, type, payload, created_at)`; ao gravar uma
   mensagem, a captura aplica e remove os pendentes daquele `mid`. Pendentes com mais de
-  7 dias são descartados pelo mesmo sweep do cron.
+  7 dias são descartados quando um sinal novo entra na fila.
 - Resposta privada a comentário cria conversa sem mensagem do lead: `last_inbound_at`
   passa a aceitar nulo (janela fechada) e `touchConversation` precisa tratar nulo no
   `.lt(...)` (hoje `null < at` não atualiza). `runtime.ts:1184` já trata ausência como
   janela fechada.
 
-- [ ] Migration 0009
-- [ ] `capture/utils/parse-event.ts` (pura) + testes: texto, quick reply, postback, anexos,
+- [x] Migration 0009 escrita (`supabase/migrations/0009_crm_inbox.sql`); **falta aplicar**
+- [x] `capture/utils/parse-event.ts` (pura) + testes: texto, quick reply, postback, anexos,
       story reply, story mention, eco, `is_deleted`, reação, visto, `reply_to`
-- [ ] `captureMessagingEvent` em `process.ts` (best effort); todo lead ganha linha em
-      `contacts` (upsert ignoreDuplicates) e `conversations.contact_id` preenchido
-- [ ] Enviadas: envio e eco convergem por upsert em `(account_id, mid)`. O envio grava a
+- [x] `captureMessagingEvent` em `process.ts` (best effort, em paralelo com a automação).
+      Mudança: NÃO cria linha em `contacts` para todo lead (inundaria a página Contatos, D1);
+      `conversations.contact_id` fica para a Fase 2/5 decidir
+- [x] Enviadas: envio e eco convergem por upsert em `(account_id, mid)`. O envio grava a
       origem (automation / workflow / agent); eco sem registro vira `instagram_app`
       (Fase 0: o eco não traz nada que separe app de API)
-- [ ] Toque em botão (postback) gravado como mensagem do lead com o título do botão
-- [ ] `subscribed_fields` novos + script único para reassinar as contas já conectadas
-      (token salvo, sem reautenticar)
-- [ ] Testes de integração em `process.test.ts`: automação responde igual com e sem CRM;
+- [x] Toque em botão (postback) gravado como mensagem do lead com o título do botão
+- [x] `subscribed_fields` novos em `WEBHOOK_FIELDS` (graph.ts) para contas novas; a única
+      conta conectada já foi reassinada na Fase 0, então o script de reassinatura não foi necessário
+- [x] Testes de integração em `process.test.ts`: automação responde igual com e sem CRM;
       erro ao gravar em `messages` não muda a resposta; eco repetido não duplica
+
+- [x] Verificação: `tsc` limpo, vitest 400/400 (45 novos: parse-event 18, parse-sent 8,
+      capture 16, process 3), `npm run build` ok, zero travessão em `src/modules`
+- [x] `scripts/check-db-schema.mjs` exige a 0009 (bloqueia o build da Vercel sem ela)
+- [ ] Aplicar 0009 no Supabase de produção (Cloudflare) **antes** do deploy: sem ela, a
+      captura criaria conversa com o `default now()` antigo de `last_inbound_at`
+- [ ] Aplicar 0009 também no Supabase da Vercel antes do próximo push para o `tocha`
+- [ ] Deploy + conferir no banco: mensagem real do lead de teste gravada com origem certa
 
 ### Fase 2: Inbox (leitura, ao vivo)
 

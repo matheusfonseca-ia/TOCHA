@@ -91,8 +91,19 @@ export interface Conversation {
   account_id: string;
   ig_sender_id: string;
   ig_sender_username: string | null;
-  last_inbound_at: string;
+  /** Nulo em conversa criada por envio (resposta privada a comentário): janela fechada. */
+  last_inbound_at: string | null;
   created_at: string;
+  // CRM (migration 0009): opcionais para o código funcionar antes da migration.
+  contact_id?: string | null;
+  last_message_at?: string | null;
+  last_message_text?: string | null;
+  last_message_kind?: string | null;
+  last_message_direction?: "inbound" | "outbound" | null;
+  unread_count?: number;
+  contact_seen_at?: string | null;
+  human_takeover_at?: string | null;
+  status?: "open" | "done";
 }
 
 /**

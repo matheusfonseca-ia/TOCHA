@@ -38,6 +38,7 @@ import { FlowData } from "@/lib/sequences/flow-data";
 import { fetchAndStoreUsername } from "@/lib/contacts/profile";
 import { pickBranch } from "@/lib/sequences/randomizer";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { observeOutbound } from "@/modules/crm/server";
 import { sleep } from "@/lib/utils";
 import type { IgAccount, InteractionStatus, Rule } from "@/types/database";
 import {
@@ -778,8 +779,18 @@ export async function processDueRunsSafe(
  * mensagem sair, o run é apagado em vez de ficar como `error`. Sem isso o
  * unique (sequence_id, ig_sender_id) impediria a pessoa de entrar de novo por
  * causa de uma falha que ela nem viu.
+ *
+ * CRM: tudo que o fluxo enviar fica gravado como "workflow", inclusive quando
+ * ele foi iniciado por uma regra (o contexto mais interno vence).
  */
-async function executeFrom(
+function executeFrom(
+  ...args: Parameters<typeof runNodes>
+): Promise<SequenceOutcome> {
+  const [, account] = args;
+  return observeOutbound({ accountId: account.id, source: "workflow" }, () => runNodes(...args));
+}
+
+async function runNodes(
   admin: AdminClient,
   account: IgAccount,
   sequence: Sequence,

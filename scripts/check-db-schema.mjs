@@ -14,7 +14,9 @@ const requiredColumns = {
   rules: ["expires_at", "expire_action", "paused_by_expiry", "public_reply_variants", "welcome_text_variants"],
   sequences: ["entry_rule_id", "expires_at", "expire_action", "paused_by_expiry"],
   sequence_runs: ["entry_rule_id", "variables"],
-  conversations: ["automation_paused_until"],
+  conversations: ["automation_paused_until", "last_message_at", "unread_count", "human_takeover_at"],
+  messages: ["id", "conversation_id", "mid", "source", "reaction_emoji", "original_text"],
+  message_signals_pending: ["id", "mid", "payload"],
   contacts: ["id", "account_id", "fields", "tags"],
 };
 
@@ -45,7 +47,7 @@ const failures = checks.filter(Boolean);
 if (failures.length) {
   console.error("[schema] O banco da Vercel não acompanha o código deste commit:");
   for (const failure of failures) console.error(`  ${failure}`);
-  console.error("[schema] Aplique supabase/migrations/0002 a 0006 neste projeto antes do deploy.");
+  console.error("[schema] Aplique as migrations de supabase/migrations (0002 a 0009) neste projeto antes do deploy.");
   process.exit(1);
 }
 

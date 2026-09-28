@@ -24,6 +24,7 @@ import {
 } from "@/lib/sequences/runtime";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sleep } from "@/lib/utils";
+import { captureMessagingEvent, observeOutbound } from "@/modules/crm/server";
 import type { IgAccount, InteractionStatus, Rule } from "@/types/database";
 import {
   GraphApiError,
@@ -130,6 +131,14 @@ async function touchConversation(
     .eq("account_id", accountId)
     .eq("ig_sender_id", senderId)
     .lt("last_inbound_at", at);
+  // Conversa criada pelo CRM a partir de um envio (resposta privada a
+  // comentário, eco) nasce sem mensagem do lead: `lt` não casa com nulo.
+  await admin
+    .from("conversations")
+    .update({ last_inbound_at: at })
+    .eq("account_id", accountId)
+    .eq("ig_sender_id", senderId)
+    .is("last_inbound_at", null);
 }
 
 /**
@@ -151,18 +160,22 @@ export async function processWebhookPayload(
   const deadline = invocationDeadline(invocationStart);
 
   for (const entry of payload.entry ?? []) {
-    for (const event of entry.messaging ?? []) {
-      await processMessagingEvent(entry.id ?? "", event, deadline);
-    }
-
-    if (entry.field === "comments" && entry.value) {
-      await processCommentEvent(entry.id ?? "", entry.time, entry.value);
-    }
-    for (const change of entry.changes ?? []) {
-      if (change.field === "comments" && change.value) {
-        await processCommentEvent(entry.id ?? "", entry.time, change.value);
+    // CRM: tudo que as regras enviarem nesta conta fica gravado como
+    // "automação" (workflows sobrescrevem com "workflow" no runtime).
+    await observeOutbound({ igUserId: entry.id ?? "", source: "automation" }, async () => {
+      for (const event of entry.messaging ?? []) {
+        await processMessagingEvent(entry.id ?? "", event, deadline);
       }
-    }
+
+      if (entry.field === "comments" && entry.value) {
+        await processCommentEvent(entry.id ?? "", entry.time, entry.value);
+      }
+      for (const change of entry.changes ?? []) {
+        if (change.field === "comments" && change.value) {
+          await processCommentEvent(entry.id ?? "", entry.time, change.value);
+        }
+      }
+    });
   }
 
   // Tick oportunista: aproveita a invocação para retomar sequências paradas
@@ -173,7 +186,25 @@ export async function processWebhookPayload(
   await processDueRunsSafe(3, invocationDeadline(invocationStart));
 }
 
+/**
+ * O CRM grava o evento (mensagem, eco, reação, edição, visto) em paralelo com
+ * as automações: `captureMessagingEvent` nunca lança, então uma falha no CRM
+ * não atrasa nem derruba a resposta automática.
+ */
 async function processMessagingEvent(
+  igBusinessId: string,
+  event: MessagingEvent,
+  deadline: number
+): Promise<void> {
+  const capture = captureMessagingEvent(igBusinessId, event);
+  try {
+    await handleMessagingEvent(igBusinessId, event, deadline);
+  } finally {
+    await capture;
+  }
+}
+
+async function handleMessagingEvent(
   igBusinessId: string,
   event: MessagingEvent,
   deadline: number

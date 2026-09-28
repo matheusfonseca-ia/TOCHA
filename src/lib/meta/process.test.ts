@@ -1256,3 +1256,77 @@ describe("processWebhookPayload: portão Seguir para liberar", () => {
     expect(fake.tables.interactions[0].status).toBe("replied");
   });
 });
+
+describe("processWebhookPayload — captura do CRM", () => {
+  function dmPayload(account: IgAccount, extra: Record<string, unknown>): MetaWebhookPayload {
+    return {
+      object: "instagram",
+      entry: [
+        {
+          id: account.ig_user_id,
+          messaging: [
+            {
+              sender: { id: "sender-1" },
+              recipient: { id: account.ig_user_id },
+              timestamp: Date.now() - 1000,
+              ...extra,
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  function seedRule(account: IgAccount): Rule {
+    const rule = makeRule({ account_id: account.id, trigger_type: "dm", keyword: "oi", reply_text: "Oi! Tudo bem?" });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(rule);
+    return rule;
+  }
+
+  it("DM com regra: a regra responde, a mensagem do lead fica no CRM e a janela de 24h abre", async () => {
+    const account = makeAccount();
+    const rule = seedRule(account);
+
+    await processWebhookPayload(dmPayload(account, { message: { mid: "mid-1", text: "oi" } }));
+
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+    expect(sendRuleReplyMock.mock.calls[0][2].id).toBe(rule.id);
+    expect(fake.tables.interactions[0].status).toBe("replied");
+
+    expect(fake.tables.messages).toHaveLength(1);
+    expect(fake.tables.messages[0]).toMatchObject({ source: "contact", mid: "mid-1", text: "oi" });
+    // A captura cria a conversa sem janela; o webhook abre com o horário do evento.
+    expect(fake.tables.conversations).toHaveLength(1);
+    expect(fake.tables.conversations[0].last_inbound_at).toEqual(expect.any(String));
+  });
+
+  it("CRM quebrado não muda nada na automação", async () => {
+    const account = makeAccount();
+    seedRule(account);
+    // Tabela ausente = toda gravação do CRM falha.
+    delete (fake.tables as Partial<typeof fake.tables>).messages;
+
+    await processWebhookPayload(dmPayload(account, { message: { mid: "mid-1", text: "oi" } }));
+
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+    expect(fake.tables.interactions).toHaveLength(1);
+    expect(fake.tables.interactions[0].status).toBe("replied");
+    expect(fake.tables.conversations[0].last_inbound_at).toEqual(expect.any(String));
+  });
+
+  it("reação, visto e edição do lead não disparam automação nem viram interação", async () => {
+    const account = makeAccount();
+    seedRule(account);
+
+    await processWebhookPayload(dmPayload(account, { reaction: { mid: "x", action: "react", emoji: "👍" } }));
+    await processWebhookPayload(dmPayload(account, { read: { mid: "x" } }));
+    await processWebhookPayload(dmPayload(account, { message_edit: { mid: "x", text: "oi", num_edit: 1 } }));
+    await processWebhookPayload(dmPayload(account, { message: { mid: "x", is_deleted: true } }));
+
+    expect(sendRuleReplyMock).not.toHaveBeenCalled();
+    expect(fake.tables.interactions).toHaveLength(0);
+    // Sem a mensagem original, os sinais esperam na fila.
+    expect(fake.tables.message_signals_pending.map((p) => p.type)).toEqual(["reaction", "edit", "deleted"]);
+  });
+});
