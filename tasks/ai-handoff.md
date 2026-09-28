@@ -1,9 +1,27 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260928-180647-claude"
+Última tag: "HANDOFF-falow-20260928-204926-claude"
 Status: em andamento
-Resumo: CRM Fase 1 (captura das mensagens) EM PRODUÇÃO: migration 0009 aplicada no Supabase de produção (verificada no catálogo) e Worker 760d67ac deployado; 1ª captura real já gravada (resposta pelo app, citando). Falta: E2E com o lead de teste @ion_comunnity (DM, resposta de automação, reação, edição) e aplicar 0009 no Supabase da Vercel antes do próximo push para o tocha. Próximo: Fase 2 (Inbox). Pendências anteriores: aplicar migration 0008 e confirmar visualmente o Workflow.
+Resumo: CRM Fases 1 (captura) e 2 (tela de Conversas em /crm/conversas, ao vivo) EM PRODUÇÃO e conferidas logado no Chrome; 3 bugs achados na conferência e corrigidos (prefetch em massa → 503, canal ao vivo como anon, 768px espremido). Falta: aplicar 0009 no Supabase da Vercel antes do próximo push para o tocha. Próximo: Fase 3 (responder pelo painel + assumir conversa). Pendências anteriores: aplicar migration 0008 e confirmar visualmente o Workflow.
+
+---
+
+## [HANDOFF · falow · 2026-09-28T20:49:26-03:00 · claude]
+Status: em andamento
+Objetivo: Fase 2 do CRM: tela de Conversas (lista + conversa + ficha) ao vivo.
+Feito:
+- `src/modules/crm/inbox/` (components: inbox-shell, conversation-list, thread, message-bubble, contact-panel, lead-avatar; hooks/use-inbox-realtime; services/inbox.queries e inbox.actions; utils labels/time/href), `src/modules/crm/index.ts` (UI) e `server.ts` (consultas + captura). Rotas finas `/crm` → `/crm/conversas`. Sidebar com item CRM + badge de não lidas (layout soma `unread_count`). `src/lib/supabase/client.ts` (só para o Realtime).
+- Captura busca o @ do lead na 1ª DM; as 58 conversas antigas foram preenchidas uma vez por script (58/58). Testes bloqueiam a rede por padrão (`vitest.setup.ts`). 410/410, tsc e build ok.
+- Conferência logado (Browser 1, conta do usuário): 1280 real + iframes 375/768. Não abri conversas de leads reais (abrir zera as não lidas deles); só a de teste (@ion_comunnity, id 42e84631-d72f-46ef-986d-0e0c86d9811b).
+- Bugs corrigidos: (1) prefetch dos 60 links derrubava o Worker em 503 → `prefetch={false}`; (2) Realtime entrava como `anon` (claims_role em realtime.subscription) → `realtime.setAuth(session.access_token)` antes do subscribe; (3) 768px → duas colunas só a partir de lg; debounce do refresh 1s.
+- Deploys: 98ba9ed5 (Fase 2), prefetch fix, 61e689b1 (Realtime), e o de breakpoint/debounce (ver commit mais recente).
+Próximo passo:
+- Fase 3: composer (texto, imagem, citação com reply_to no topo), assumir/devolver ao bot (human_takeover_at checado antes do passo 4a, no postback, no comentário e em processDueRuns), respostas rápidas, mark_seen ao abrir.
+- Aplicar 0009 no Supabase da Vercel antes do push para o tocha.
+Arquivos tocados: src/modules/crm/**, src/app/(dashboard)/crm/**, src/app/(dashboard)/layout.tsx, src/components/layout/sidebar.tsx, src/lib/supabase/client.ts, vitest.config.ts, vitest.setup.ts, tasks/todo.md, tasks/ai-handoff.md
+Decisões/contexto: horários do Inbox sempre em America/Sao_Paulo (servidor UTC x navegador quebravam a hidratação). Sem abas CRM ainda: "Funil" entra quando a Fase 5 existir. Campos da ficha só leitura até a Fase 4. A aba do SQL Editor do Supabase (Browser 1) ficou aberta com edição não salva; não fechar pelo MCP (trava no aviso "Sair do site?").
+Tag: "HANDOFF-falow-20260928-204926-claude"
 
 ---
 

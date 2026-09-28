@@ -318,21 +318,41 @@ Desenho da captura (a partir da Fase 0):
 
 ### Fase 2: Inbox (leitura, ao vivo)
 
-- [ ] Carregar `design-taste-frontend` antes da UI (seguindo a identidade atual do app, dark/light)
-- [ ] `src/lib/supabase/client.ts` (createBrowserClient)
-- [ ] Sidebar com "CRM" + badge de não lidas; `crm/layout.tsx` com as abas
-- [ ] Lista: foto, @, prévia, horário, não lidas; filtros (conta, não lidas, abertas /
-      concluídas, tag); busca por @, nome e texto
-- [ ] Conversa: balão por tipo (texto, imagem, vídeo, áudio com player, story com miniatura,
-      reel ou post compartilhado, botões e respostas rápidas enviadas, toque em botão),
-      separador por dia, origem da enviada (Automação, Workflow, Você, App do Instagram),
-      "Visto", "Mensagem apagada pelo contato", citação, reação
-- [ ] Ficha lateral: perfil, campos coletados (`contacts.fields`, editáveis), tags, etapa do
-      funil, workflows em andamento, link "Abrir no Instagram"
-- [ ] Realtime (postgres_changes) em `conversations` e `messages`; refetch ao voltar o foco
-      da aba como rede de segurança
-- [ ] Abrir a conversa zera `unread_count`
-- [ ] Conferir 375 / 768 / 1440
+- [x] `design-taste-frontend` carregada; leitura: tela de produto para quem atende DMs, linguagem
+      calma de chat (WhatsApp/Kommo), tokens e ícones que o Falow já usa; dials 3/3/6. A skill se
+      declara fora de escopo para dashboard: aplicado o que cabe (zero travessão, 1 acento verde,
+      raio único, estados vazio/erro, claro/escuro)
+- [x] `src/lib/supabase/client.ts` (createBrowserClient, só para o Realtime)
+- [x] Sidebar com "CRM" + badge de não lidas (layout soma `unread_count`). Sem abas por enquanto:
+      "Funil" entra como aba quando a Fase 5 existir (sem tela placeholder)
+- [x] Lista: iniciais do @ (foto da Meta expira), prévia por tipo, horário, não lidas; filtros
+      conta (Select, só com 2+ contas) e Todas/Não lidas; busca por @ e texto (debounce, no servidor)
+- [x] Conversa: balão por tipo (texto, foto, vídeo, áudio, story com miniatura, menção,
+      compartilhamento/reel/arquivo como link, botões e respostas rápidas enviadas, toque em botão,
+      não suportada), separador por dia, origem da enviada, "Visto", "Mensagem apagada pelo
+      contato", citação, reação, "editada" (original no title), mídia expirada vira aviso
+- [x] Ficha lateral: perfil, pausa de automações, workflows em andamento, tags, dados coletados,
+      primeiro contato. **Campos ainda só leitura** (edição entra junto com as tags, Fase 4)
+- [x] Realtime (postgres_changes em conversations e messages → `router.refresh` com debounce) +
+      refresh ao voltar para a aba
+- [x] Abrir a conversa zera `unread_count` (server action, posse conferida pelo RLS)
+- [x] Horários sempre no fuso de Brasília (evita divergência servidor UTC x navegador na hidratação)
+- [x] @ do lead: buscado na captura, na 1ª DM (consentimento garantido); 58 conversas antigas
+      preenchidas uma vez por script (58/58)
+- [x] Testes bloqueiam a rede por padrão (`vitest.setup.ts`); 410/410, tsc e build ok
+- [x] Conferido logado em produção (1280 real + iframes de 375 e 768, porque o Chrome não
+      redimensiona a área interna). 3 bugs achados e corrigidos na hora:
+      1. **Prefetch em massa**: 60 links da lista pré-renderizados no servidor → Worker em 503
+         (inclusive /rules e /logs). `prefetch={false}` nos links do Inbox.
+      2. **Ao vivo mudo**: o canal entrava como `anon` (`realtime.subscription.claims_role`),
+         porque o supabase-js 2.110 só repassa o token em SIGNED_IN/TOKEN_REFRESHED e a sessão
+         vem dos cookies (INITIAL_SESSION). Corrigido com `realtime.setAuth` antes do
+         subscribe; "Teste 3" apareceu na tela sem recarregar.
+      3. **768px espremido**: sidebar fixa + lista deixavam ~200px para a conversa. Lista e
+         conversa lado a lado só a partir de 1024px; debounce do ao vivo 400ms → 1s (1 mensagem
+         gerava 6 refresh).
+- [x] Rodapé da conversa avisa que responder pelo Falow chega na Fase 3
+- [ ] Usuário confere no próprio uso (abrir conversa real zera as não lidas: não abri as dele)
 
 ### Fase 3: responder e passar para o humano
 
