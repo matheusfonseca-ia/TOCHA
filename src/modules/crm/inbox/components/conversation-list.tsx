@@ -94,6 +94,7 @@ export function ConversationList({
               key={o.label}
               href={inboxHref({ ...filters, unreadOnly: o.unreadOnly }, selectedId)}
               replace
+              prefetch={false}
               className={cn(
                 "rounded-md px-3 py-1 text-xs font-medium transition-colors",
                 filters.unreadOnly === o.unreadOnly
@@ -161,9 +162,12 @@ function ConversationItem({
     : "Sem mensagens gravadas";
 
   return (
+    // Sem prefetch: com dezenas de conversas visíveis, o Next renderizaria
+    // cada uma no servidor ao carregar a lista (derrubou o Worker com 503).
     <Link
       href={href}
       scroll={false}
+      prefetch={false}
       aria-current={active ? "page" : undefined}
       className={cn(
         "flex items-center gap-3 px-4 py-3 transition-colors",

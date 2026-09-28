@@ -26,7 +26,11 @@ export function useInboxRealtime() {
       .channel("crm-inbox")
       .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, refresh)
       .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, refresh)
-      .subscribe();
+      .subscribe((status, err) => {
+        // Sem canal, o Inbox só atualiza ao voltar para a aba: deixa rastro no console.
+        if (status === "SUBSCRIBED") console.info("[crm] ao vivo: conectado");
+        else console.warn(`[crm] ao vivo: ${status}`, err?.message ?? "");
+      });
 
     const onVisible = () => {
       if (document.visibilityState === "visible") refresh();
