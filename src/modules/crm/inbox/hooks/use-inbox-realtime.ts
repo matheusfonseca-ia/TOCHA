@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 
 import { createClient } from "@/lib/supabase/client";
 
@@ -16,21 +17,34 @@ export function useInboxRealtime() {
 
   useEffect(() => {
     const supabase = createClient();
+    let channel: RealtimeChannel | null = null;
+    let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const refresh = () => {
       clearTimeout(timer);
       timer = setTimeout(() => router.refresh(), 400);
     };
 
-    const channel = supabase
-      .channel("crm-inbox")
-      .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, refresh)
-      .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, refresh)
-      .subscribe((status, err) => {
-        // Sem canal, o Inbox só atualiza ao voltar para a aba: deixa rastro no console.
-        if (status === "SUBSCRIBED") console.info("[crm] ao vivo: conectado");
-        else console.warn(`[crm] ao vivo: ${status}`, err?.message ?? "");
-      });
+    void (async () => {
+      // O supabase-js só repassa o token ao Realtime em SIGNED_IN e
+      // TOKEN_REFRESHED; sessão restaurada dos cookies (INITIAL_SESSION) não
+      // entra. Sem isto o canal entra como `anon` e o RLS descarta todo
+      // evento em silêncio (visto em produção em 28/09/2026).
+      const { data } = await supabase.auth.getSession();
+      if (cancelled) return;
+      if (data.session) await supabase.realtime.setAuth(data.session.access_token);
+      if (cancelled) return;
+
+      channel = supabase
+        .channel("crm-inbox")
+        .on("postgres_changes", { event: "*", schema: "public", table: "messages" }, refresh)
+        .on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, refresh)
+        .subscribe((status, err) => {
+          // Sem canal, o Inbox só atualiza ao voltar para a aba: deixa rastro no console.
+          if (status === "SUBSCRIBED") console.info("[crm] ao vivo: conectado");
+          else console.warn(`[crm] ao vivo: ${status}`, err?.message ?? "");
+        });
+    })();
 
     const onVisible = () => {
       if (document.visibilityState === "visible") refresh();
@@ -38,9 +52,10 @@ export function useInboxRealtime() {
     document.addEventListener("visibilitychange", onVisible);
 
     return () => {
+      cancelled = true;
       clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
-      void supabase.removeChannel(channel);
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [router]);
 }
