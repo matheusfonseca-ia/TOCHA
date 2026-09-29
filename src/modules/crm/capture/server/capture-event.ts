@@ -1,8 +1,16 @@
 import { fetchAndStoreUsername } from "@/lib/contacts/profile";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { enrollLeadFromCapture } from "@/modules/crm/pipeline/server/enroll-lead";
 
 import { parseMessagingEvent, type IncomingMessagingEvent } from "../utils/parse-event";
-import { findAccount, leadNeedsUsername, markSeen, recordIncoming, recordSignal } from "./record";
+import {
+  ensureConversation,
+  findAccount,
+  leadNeedsUsername,
+  markSeen,
+  recordIncoming,
+  recordSignal,
+} from "./record";
 
 /**
  * Entrada do CRM no webhook: grava a mensagem, o eco ou o sinal (reação,
@@ -34,6 +42,13 @@ export async function captureMessagingEvent(
         // dele: é quando a Meta garante o consentimento para ler o perfil.
         if (message.direction === "inbound" && (await leadNeedsUsername(admin, account.id, message.leadId))) {
           await fetchAndStoreUsername(admin, account, message.leadId);
+        }
+        // Entrada automática no funil padrão (D2): só para mensagem do lead
+        // (nunca eco). `moveLead` é idempotente: reentrega do webhook ou
+        // corrida com "Trazer conversas existentes" só bate no 23505.
+        if (message.direction === "inbound") {
+          const conversationId = await ensureConversation(admin, account.id, message.leadId);
+          await enrollLeadFromCapture(admin, account.id, conversationId, message.leadId);
         }
         return;
       }

@@ -4,6 +4,7 @@ import type { SequenceRunStatus } from "@/types/sequence";
 import type { MessageRow } from "../../shared/types/message";
 import type {
   ContactPanelData,
+  ContactPipelineSection,
   InboxConversation,
   InboxFilters,
   InboxThread,
@@ -57,6 +58,39 @@ export async function listConversations(
   return { conversations: ((data ?? []) as unknown as ConversationRow[]).map(toInboxConversation), error: null };
 }
 
+/**
+ * Etapa atual do lead no funil padrão, pra seção "Funil" da ficha (Fase 6).
+ * Sem funil padrão ainda, ou conversa sem lead aberto: `undefined` (a ficha
+ * mostra "Ainda não entrou no funil").
+ */
+async function loadPipelineSection(
+  supabase: UserClient,
+  accountId: string,
+  conversationId: string
+): Promise<ContactPipelineSection | undefined> {
+  const { data: pipeline } = await supabase
+    .from("pipelines")
+    .select("id")
+    .eq("account_id", accountId)
+    .eq("is_default", true)
+    .maybeSingle<{ id: string }>();
+  if (!pipeline) return undefined;
+
+  const [{ data: lead }, { data: stages }] = await Promise.all([
+    supabase
+      .from("leads")
+      .select("id, stage_id")
+      .eq("pipeline_id", pipeline.id)
+      .eq("conversation_id", conversationId)
+      .is("closed_at", null)
+      .maybeSingle<{ id: string; stage_id: string }>(),
+    supabase.from("pipeline_stages").select("id, name").eq("pipeline_id", pipeline.id).order("position"),
+  ]);
+  if (!lead) return undefined;
+
+  return { leadId: lead.id, currentStageId: lead.stage_id, stages: (stages ?? []) as { id: string; name: string }[] };
+}
+
 export async function getThread(supabase: UserClient, conversationId: string): Promise<InboxThread | null> {
   const { data: row } = await supabase
     .from("conversations")
@@ -66,7 +100,7 @@ export async function getThread(supabase: UserClient, conversationId: string): P
   if (!row) return null;
   const conversation = toInboxConversation(row as unknown as ConversationRow);
 
-  const [messagesRes, contactRes, runsRes] = await Promise.all([
+  const [messagesRes, contactRes, runsRes, pipelineSection] = await Promise.all([
     supabase
       .from("messages")
       .select("*")
@@ -87,6 +121,7 @@ export async function getThread(supabase: UserClient, conversationId: string): P
       .eq("ig_sender_id", conversation.ig_sender_id)
       .in("status", ACTIVE_RUN_STATUSES)
       .order("updated_at", { ascending: false }),
+    loadPipelineSection(supabase, conversation.account_id, conversationId),
   ]);
 
   const rows = (messagesRes.data ?? []) as MessageRow[];
@@ -104,6 +139,7 @@ export async function getThread(supabase: UserClient, conversationId: string): P
       updatedAt: r.updated_at,
       sequenceName: r.sequences?.name ?? "Workflow removido",
     })),
+    pipeline: pipelineSection,
   };
 
   return {

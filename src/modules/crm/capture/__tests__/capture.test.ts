@@ -235,3 +235,31 @@ describe("sinais do lead", () => {
     expect(fake.tables.conversations[0].contact_seen_at).toBe(new Date(later).toISOString());
   });
 });
+
+describe("entrada automática no funil (Fase 5, D2)", () => {
+  it("a 1ª DM do lead cria o funil padrão e entra na 1ª etapa aberta", async () => {
+    await captureMessagingEvent(account.ig_user_id, inbound({ mid: "m1", text: "oi" }));
+
+    const pipeline = fake.tables.pipelines.find((p) => p.account_id === account.id && p.is_default);
+    expect(pipeline).toBeDefined();
+    const novos = fake.tables.pipeline_stages.find((s) => s.pipeline_id === pipeline!.id && s.name === "Novos");
+    expect(fake.tables.leads).toHaveLength(1);
+    expect(fake.tables.leads[0]).toMatchObject({
+      pipeline_id: pipeline!.id,
+      stage_id: novos!.id,
+      conversation_id: fake.tables.conversations[0].id,
+      ig_sender_id: LEAD,
+    });
+  });
+
+  it("segunda mensagem do mesmo lead não duplica o lead (23505 vira no-op)", async () => {
+    await captureMessagingEvent(account.ig_user_id, inbound({ mid: "m1", text: "oi" }));
+    await captureMessagingEvent(account.ig_user_id, inbound({ mid: "m2", text: "de novo" }));
+    expect(fake.tables.leads).toHaveLength(1);
+  });
+
+  it("eco (mensagem enviada) não inscreve ninguém", async () => {
+    await captureMessagingEvent(account.ig_user_id, echo("e1", "resposta"));
+    expect(fake.tables.leads).toHaveLength(0);
+  });
+});

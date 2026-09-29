@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import { CrmTabs } from "../../shared/components/crm-tabs";
 import type { InboxAccount, InboxConversation, InboxFilters } from "../../shared/types/conversation";
 import { inboxHref } from "../utils/href";
 import { leadName, messagePreview } from "../utils/labels";
@@ -51,7 +52,7 @@ export function ConversationList({
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="space-y-3 border-b border-border/70 px-4 pb-3 pt-4">
-        <h1 className="font-display text-lg font-semibold">Conversas</h1>
+        <CrmTabs />
 
         {multiAccount && (
           <Select

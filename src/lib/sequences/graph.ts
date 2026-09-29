@@ -15,6 +15,7 @@ import {
   type DelayUnit,
   type GoToSequenceNodeData,
   type MessageNodeData,
+  type MoveToStageNodeData,
   type QuickRepliesNodeData,
   type RandomizerNodeData,
   type Sequence,
@@ -125,6 +126,15 @@ export function goToSequenceIdsOf(graph: SequenceGraph): string[] {
   const ids = graph.nodes
     .filter((n) => n.type === "goToSequence")
     .map((n) => (n.data as GoToSequenceNodeData).sequenceId)
+    .filter((id): id is string => !!id?.trim());
+  return Array.from(new Set(ids));
+}
+
+/** Ids (únicos) das etapas referenciadas por nós "Mover para etapa". Fase 6. */
+export function moveToStageIdsOf(graph: SequenceGraph): string[] {
+  const ids = graph.nodes
+    .filter((n) => n.type === "moveToStage")
+    .map((n) => (n.data as MoveToStageNodeData).stageId)
     .filter((id): id is string => !!id?.trim());
   return Array.from(new Set(ids));
 }
@@ -412,6 +422,11 @@ function validateNode(node: SequenceGraphNode): string | null {
       }
       return null;
     }
+    case "moveToStage": {
+      const data = node.data as MoveToStageNodeData;
+      if (!data.stageId?.trim()) return "Mover para etapa: escolha a etapa de destino.";
+      return null;
+    }
   }
 }
 
@@ -444,6 +459,8 @@ export interface GraphValidationContext {
   sequencesById?: Map<string, Pick<Sequence, "id" | "account_id">>;
   /** Id da própria sequência sendo validada — barra apontar pra si mesma. */
   selfSequenceId?: string;
+  /** O que a validação do nó "Mover para etapa" precisa saber de cada etapa referenciada. Fase 6. */
+  stagesById?: Map<string, { id: string; account_id: string }>;
 }
 
 /**
@@ -472,6 +489,29 @@ function validateGoToSequenceNodes(
     }
     if (ctx.accountId && target.account_id !== ctx.accountId) {
       return "Ir para workflow: o workflow de destino é de outra conta do Instagram.";
+    }
+  }
+  return null;
+}
+
+/**
+ * Nó "Mover para etapa": quando o contexto traz as etapas da conta (a
+ * `saveSequence` busca por `moveToStageIdsOf`), a etapa referenciada precisa
+ * existir e ser de uma conta do mesmo usuário. Sem `stagesById` (validação
+ * rápida no editor), só o campo vazio é checado (já em `validateNode`).
+ */
+function validateMoveToStageNodes(graph: SequenceGraph, ctx: GraphValidationContext): string | null {
+  if (!ctx.stagesById) return null;
+  for (const node of graph.nodes) {
+    if (node.type !== "moveToStage") continue;
+    const stageId = (node.data as MoveToStageNodeData).stageId?.trim();
+    if (!stageId) continue; // já reportado por validateNode
+    const stage = ctx.stagesById.get(stageId);
+    if (!stage) {
+      return "Mover para etapa: a etapa escolhida não existe mais.";
+    }
+    if (ctx.accountId && stage.account_id !== ctx.accountId) {
+      return "Mover para etapa: a etapa escolhida é de outra conta do Instagram.";
     }
   }
   return null;
@@ -608,6 +648,9 @@ export function validateSequenceGraph(
 
   const goToSequenceError = validateGoToSequenceNodes(graph, ctx);
   if (goToSequenceError) return goToSequenceError;
+
+  const moveToStageError = validateMoveToStageNodes(graph, ctx);
+  if (moveToStageError) return moveToStageError;
 
   // Ciclo com espera (resposta, botão, atraso) é permitido; sem espera ele
   // dispararia mensagens em laço. O editor destaca os nós com

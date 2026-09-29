@@ -1,10 +1,20 @@
 "use client";
 
+import { useState, useTransition } from "react";
 import { ExternalLink, PauseCircle, Workflow, X } from "lucide-react";
+import { toast } from "sonner";
 
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { moveLeadAction } from "@/modules/crm/pipeline/services/pipeline.actions";
 
 import type { InboxThread } from "../../shared/types/conversation";
 import { RUN_STATUS_LABEL, leadName } from "../utils/labels";
@@ -78,6 +88,14 @@ function PanelBody({ thread }: { thread: InboxThread }) {
           <span suppressHydrationWarning>Automações pausadas para este lead até {fullDateTime(pausedUntil)}</span>
         </p>
       )}
+
+      <PanelSection title="Funil">
+        {panel.pipeline ? (
+          <StageSelect leadId={panel.pipeline.leadId} currentStageId={panel.pipeline.currentStageId} stages={panel.pipeline.stages} />
+        ) : (
+          <Empty>Ainda não entrou no funil</Empty>
+        )}
+      </PanelSection>
 
       <PanelSection title="Workflows em andamento">
         {panel.runs.length === 0 ? (
@@ -155,4 +173,44 @@ function PanelSection({ title, children }: { title: string; children: React.Reac
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="text-[13px] text-muted-foreground/80">{children}</p>;
+}
+
+/** Etapa atual do lead + mover, direto da ficha (Fase 6). */
+function StageSelect({
+  leadId,
+  currentStageId,
+  stages,
+}: {
+  leadId: string;
+  currentStageId: string;
+  stages: { id: string; name: string }[];
+}) {
+  const [value, setValue] = useState(currentStageId);
+  const [isPending, startTransition] = useTransition();
+
+  function handleChange(next: string) {
+    setValue(next);
+    startTransition(async () => {
+      const res = await moveLeadAction({ leadId, toStageId: next });
+      if (res.error) {
+        toast.error(res.error);
+        setValue(currentStageId);
+      }
+    });
+  }
+
+  return (
+    <Select value={value} onValueChange={handleChange} disabled={isPending}>
+      <SelectTrigger className="h-8 text-[13px]" aria-label="Etapa do funil">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {stages.map((s) => (
+          <SelectItem key={s.id} value={s.id}>
+            {s.name}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
 }

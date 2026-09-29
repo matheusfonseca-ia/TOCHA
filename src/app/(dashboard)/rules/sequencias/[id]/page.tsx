@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { SequenceEditor } from "@/components/sequences/sequence-editor";
 import { withSyncedProfiles } from "@/lib/meta/account-profile";
 import { createClient } from "@/lib/supabase/server";
+import { stageOptionsFromRows } from "@/modules/crm/pipeline/services/pipeline.queries";
 import type { Rule } from "@/types/database";
 import type { Sequence, SequenceRun, SequenceVersion } from "@/types/sequence";
 
@@ -20,6 +21,7 @@ export default async function EditarSequenciaPage({
     { data: rules },
     { data: sequences },
     { data: versions },
+    { data: stageRows },
   ] = await Promise.all([
     // RLS garante que só sequências das contas do usuário aparecem aqui
     supabase.from("sequences").select("*").eq("id", params.id).maybeSingle(),
@@ -46,6 +48,8 @@ export default async function EditarSequenciaPage({
       .eq("sequence_id", params.id)
       .order("created_at", { ascending: false })
       .limit(30),
+    // Etapas dos funis para o nó "Mover para etapa" e a condição "Está na etapa" (RLS idem)
+    supabase.from("pipeline_stages").select("id, name, pipelines(name, account_id)").order("position"),
   ]);
 
   if (!sequence) notFound();
@@ -61,6 +65,7 @@ export default async function EditarSequenciaPage({
       rules={(rules ?? []) as Rule[]}
       sequences={sequences ?? []}
       versions={(versions ?? []) as SequenceVersion[]}
+      stages={stageOptionsFromRows(stageRows)}
     />
   );
 }

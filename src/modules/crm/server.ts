@@ -11,3 +11,5 @@ export type {
   MessageRow,
   MessageSource,
 } from "./shared/types/message";
+export { ensureDefaultPipeline } from "./pipeline/server/ensure-default-pipeline";
+export { getBoard, listPipelines } from "./pipeline/services/pipeline.queries";

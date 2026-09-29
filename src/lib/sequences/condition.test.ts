@@ -68,4 +68,21 @@ describe("evaluateCondition", () => {
     expect(check("hasTag", "", "comprador")).toBe(false);
     expect(check("hasTag", "", "")).toBe(false);
   });
+
+  it("inStage compara o id da etapa com o lead aberto do contato", () => {
+    expect(
+      evaluateCondition(
+        { operator: "inStage", fieldKey: "", value: "stage-1" },
+        { ...subject, stageIds: ["stage-1", "stage-2"] }
+      )
+    ).toBe(true);
+    expect(
+      evaluateCondition(
+        { operator: "inStage", fieldKey: "", value: "stage-3" },
+        { ...subject, stageIds: ["stage-1", "stage-2"] }
+      )
+    ).toBe(false);
+    expect(evaluateCondition({ operator: "inStage", fieldKey: "", value: "" }, subject)).toBe(false);
+    expect(evaluateCondition({ operator: "inStage", fieldKey: "", value: "stage-1" }, subject)).toBe(false);
+  });
 });

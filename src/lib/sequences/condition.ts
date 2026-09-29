@@ -10,6 +10,8 @@ import type { ConditionNodeData } from "@/types/sequence";
 export interface ConditionSubject {
   fields: Record<string, unknown>;
   tags: readonly string[];
+  /** Ids das etapas em que o contato tem lead aberto (todos os funis). Fase 6. */
+  stageIds?: readonly string[];
 }
 
 /** Comparação de texto sem diferenciar maiúsculas, acentos e espaços nas pontas. */
@@ -52,6 +54,11 @@ export function evaluateCondition(
   if (condition.operator === "hasTag") {
     const tag = normalize(expected);
     return !!tag && subject.tags.some((t) => normalize(t) === tag);
+  }
+
+  if (condition.operator === "inStage") {
+    const stageId = expected.trim();
+    return !!stageId && !!subject.stageIds?.includes(stageId);
   }
 
   const actual = asText(ownValue(subject.fields, condition.fieldKey));
