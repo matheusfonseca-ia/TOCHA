@@ -17,7 +17,7 @@ export interface PendingMessage {
   key: string;
   input: ComposerSendInput;
   text: string | null;
-  kind: Extract<MessageKind, "text" | "image" | "file" | "sticker">;
+  kind: Extract<MessageKind, "text" | "image" | "audio" | "file" | "sticker">;
   failed: boolean;
   error: string | null;
 }
@@ -36,7 +36,7 @@ export function useComposer(conversationId: string) {
     async (key: string, input: ComposerSendInput) => {
       try {
         let attachmentUrl: string | undefined;
-        let attachmentKind: "image" | "file" | undefined;
+        let attachmentKind: "image" | "audio" | "file" | undefined;
         if (input.file) {
           const form = new FormData();
           form.set("conversationId", conversationId);
@@ -74,7 +74,9 @@ export function useComposer(conversationId: string) {
         : input.file
           ? input.file.type.startsWith("image/")
             ? "image"
-            : "file"
+            : input.file.type.startsWith("audio/") || /.(m4a|wav)$/i.test(input.file.name)
+              ? "audio"
+              : "file"
           : "text";
       setPending((list) => [
         ...list,

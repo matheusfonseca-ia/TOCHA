@@ -13,13 +13,13 @@ import { getFreshToken } from "@/lib/meta/token";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { IgAccount } from "@/types/database";
+
+import { classifyUpload, type UploadKind } from "../utils/attachment-types";
 import { observeOutbound } from "@/modules/crm/server";
 
 import { setTakeover } from "../../handoff/server/takeover";
 
 const MAX_TEXT = 1000;
-const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
-const MAX_PDF_BYTES = 25 * 1024 * 1024;
 const WINDOW_24H_MS = 24 * 60 * 60 * 1000;
 const BUCKET = "crm-uploads";
 
@@ -124,7 +124,7 @@ function sanitizeFileName(name: string): string {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-80) || "arquivo";
 }
 
-export type UploadAttachmentResult = { url: string; kind: "image" | "file" } | { error: string };
+export type UploadAttachmentResult = { url: string; kind: UploadKind } | { error: string };
 
 /**
  * Sobe o anexo pra o bucket público `crm-uploads` (arquivo do usuário, não
@@ -138,23 +138,19 @@ export async function uploadComposerAttachment(formData: FormData): Promise<Uplo
   const conversation = await ownConversation(conversationId);
   if (!conversation) return { error: "Conversa não encontrada." };
 
-  const isImage = file.type === "image/png" || file.type === "image/jpeg";
-  const isPdf = file.type === "application/pdf";
-  if (!isImage && !isPdf) return { error: "Envie uma imagem (PNG ou JPG) ou um PDF." };
-
-  const maxBytes = isImage ? MAX_IMAGE_BYTES : MAX_PDF_BYTES;
-  if (file.size > maxBytes) return { error: isImage ? "Imagem maior que 8MB." : "PDF maior que 25MB." };
+  const check = classifyUpload(file.type, file.size, file.name);
+  if ("error" in check) return { error: check.error };
 
   const admin = createAdminClient();
   const path = `${conversation.account_id}/${randomUUID()}-${sanitizeFileName(file.name)}`;
   const bytes = new Uint8Array(await file.arrayBuffer());
 
   const { error } = await admin.storage.from(BUCKET).upload(path, bytes, {
-    contentType: file.type,
+    contentType: check.contentType,
     upsert: false,
   });
   if (error) return { error: "Falha ao enviar o arquivo. Tente de novo." };
 
   const { data } = admin.storage.from(BUCKET).getPublicUrl(path);
-  return { url: data.publicUrl, kind: isImage ? "image" : "file" };
+  return { url: data.publicUrl, kind: check.kind };
 }

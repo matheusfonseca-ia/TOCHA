@@ -1,5 +1,9 @@
 # Lessons
 
+## 2026-09-29 · Vercel não é do usuário
+- Erro: tratei o build da Vercel (disparado pelo push para o `tocha`) como entrega e pedi para aplicar migrations no Supabase dela. A Vercel é de um sócio do TOCHA; o usuário não usa.
+- Regra: produção do Falow = Cloudflare Worker + Supabase `falow`. Falha de build da Vercel não é pendência nem motivo para segurar push.
+
 ## 2026-09-28 · agentes em worktree e código de agente
 - Erro evitado por sorte: as worktrees dos agentes nasceram num commit 47 atrás da main (sem o CRM). Os agentes perceberam e fizeram ff sozinhos, mas poderiam ter codado em cima do nada.
 - Regra: no prompt de agente em worktree, mandar conferir a base na 1ª ação (`git merge-base --is-ancestor <commit-da-main> HEAD`) e fazer `git merge --ff-only main` se precisar.
