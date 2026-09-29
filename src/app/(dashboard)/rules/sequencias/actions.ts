@@ -17,6 +17,7 @@ import {
   findTriggerNode,
   goToSequenceIdsOf,
   MAX_NODES,
+  stageIdsOf,
   triggerSourceOf,
   validateSequenceGraph,
 } from "@/lib/sequences/graph";
@@ -115,7 +116,7 @@ const nodeSchema = z.discriminatedUnion("type", [
     type: z.literal("condition"),
     data: z.object({
       fieldKey: z.string().max(40),
-      operator: z.enum(["equals", "contains", "exists", "gt", "lt", "hasTag"]),
+      operator: z.enum(["equals", "contains", "exists", "gt", "lt", "hasTag", "inStage"]),
       value: z.string().max(500),
     }),
   }),
@@ -154,6 +155,11 @@ const nodeSchema = z.discriminatedUnion("type", [
     ...nodeBase,
     type: z.literal("stopAutomation"),
     data: z.object({ hours: z.number() }),
+  }),
+  z.object({
+    ...nodeBase,
+    type: z.literal("moveToStage"),
+    data: z.object({ stageId: z.string().max(64) }),
   }),
 ]);
 
@@ -302,11 +308,28 @@ export async function saveSequence(
         .in("id", targetSequenceIds)
     : { data: [] };
 
+  // Etapas referenciadas ("Mover para etapa" e Condição "está na etapa"):
+  // id + conta do funil (via join), pra checar existência e posse.
+  const stageIds = stageIdsOf(graph);
+  const { data: stageRefs } = stageIds.length
+    ? await supabase
+        .from("pipeline_stages")
+        .select("id, pipelines!inner(account_id)")
+        .in("id", stageIds)
+    : { data: [] };
+  const stagesById = new Map(
+    ((stageRefs ?? []) as unknown as { id: string; pipelines: { account_id: string } | null }[]).map((s) => [
+      s.id,
+      { id: s.id, account_id: s.pipelines?.account_id ?? "" },
+    ])
+  );
+
   const graphError = validateSequenceGraph(graph, {
     accountId: input.account_id,
     rulesById: new Map((ruleRefs ?? []).map((r) => [r.id, r])),
     sequencesById: new Map((sequenceRefs ?? []).map((s) => [s.id, s])),
     selfSequenceId: input.id,
+    stagesById,
   });
   if (graphError) return { error: graphError };
 

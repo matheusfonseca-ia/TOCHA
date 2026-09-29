@@ -22,7 +22,9 @@ export type SequenceNodeType =
   // Extras (aleatório, ir para workflow, pausar automações)
   | "randomizer"
   | "goToSequence"
-  | "stopAutomation";
+  | "stopAutomation"
+  // CRM (Fase 6)
+  | "moveToStage";
 
 /** Handle de saída padrão (nós lineares: gatilho, mensagem, atraso, esperar). */
 export const OUT_HANDLE = "out";
@@ -143,7 +145,9 @@ export type ConditionOperator =
   | "exists"
   | "gt"
   | "lt"
-  | "hasTag";
+  | "hasTag"
+  /** Contato está na etapa, lead aberto ou fechado (`value` = id da etapa). Fase 6. */
+  | "inStage";
 
 export interface ConditionNodeData {
   /** Ignorado em "hasTag" (a tag vem em `value`). */
@@ -193,6 +197,15 @@ export interface StopAutomationNodeData {
   hours: number;
 }
 
+/**
+ * Nó "Mover para etapa": move o contato para uma etapa de um funil (mesma
+ * lógica do board, `source: "automation"`), criando o lead se ele ainda não
+ * estiver em nenhuma etapa aberta deste funil. Fase 6.
+ */
+export interface MoveToStageNodeData {
+  stageId: string;
+}
+
 export type SequenceNodeData =
   | TriggerNodeData
   | MessageNodeData
@@ -206,7 +219,8 @@ export type SequenceNodeData =
   | SetFieldNodeData
   | RandomizerNodeData
   | GoToSequenceNodeData
-  | StopAutomationNodeData;
+  | StopAutomationNodeData
+  | MoveToStageNodeData;
 
 export interface SequenceGraphNode {
   id: string;

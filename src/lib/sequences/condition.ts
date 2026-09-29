@@ -10,10 +10,16 @@ import type { ConditionNodeData } from "@/types/sequence";
 export interface ConditionSubject {
   fields: Record<string, unknown>;
   tags: readonly string[];
+  /** Etapa atual do contato em cada funil (lead aberto ou fechado). Fase 6. */
+  stageIds?: readonly string[];
 }
 
-/** Comparação de texto sem diferenciar maiúsculas, acentos e espaços nas pontas. */
-function normalize(value: string): string {
+/**
+ * Comparação de texto sem diferenciar maiúsculas, acentos e espaços nas
+ * pontas. Exportada para o catálogo de tags do CRM reaproveitar a mesma
+ * normalização usada pela Condição do workflow.
+ */
+export function normalize(value: string): string {
   return value
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")
@@ -52,6 +58,11 @@ export function evaluateCondition(
   if (condition.operator === "hasTag") {
     const tag = normalize(expected);
     return !!tag && subject.tags.some((t) => normalize(t) === tag);
+  }
+
+  if (condition.operator === "inStage") {
+    const stageId = expected.trim();
+    return !!stageId && !!subject.stageIds?.includes(stageId);
   }
 
   const actual = asText(ownValue(subject.fields, condition.fieldKey));

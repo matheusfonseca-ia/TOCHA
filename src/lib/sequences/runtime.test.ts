@@ -86,7 +86,9 @@ import {
   handleSequencePostback,
   handleSequenceReply,
   maybeStartSequence,
+  processDueRuns,
   startSequenceFromRule,
+  startStageEnterSequence,
 } from "@/lib/sequences/runtime";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -665,5 +667,264 @@ describe("nó Pausar automações", () => {
     );
     expect(conversation?.automation_paused_until).toBeDefined();
     expect(Date.parse(conversation!.automation_paused_until)).toBeGreaterThan(before + 23 * 3600 * 1000);
+  });
+});
+
+describe("processDueRuns: Assumir conversa (D3)", () => {
+  it("conversa assumida: atraso vencido não dispara, o run continua waiting_delay (sem erro)", async () => {
+    const account = makeAccount();
+    const sequence = makeSequence({
+      account_id: account.id,
+      graph: {
+        nodes: [triggerNode({ keyword: "promo" }), node("d", "delay", { amount: 1, unit: "hours" }), messageNode("a", "Depois do atraso")],
+        edges: [edge("trigger", "d"), edge("d", "a")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+    fake.tables.conversations.push(
+      row({
+        account_id: account.id,
+        ig_sender_id: "sender-50",
+        last_inbound_at: new Date().toISOString(),
+        human_takeover_at: new Date().toISOString(),
+      })
+    );
+    const run = row({
+      sequence_id: sequence.id,
+      account_id: account.id,
+      ig_sender_id: "sender-50",
+      status: "waiting_delay",
+      current_node_id: "d",
+      next_run_at: new Date(Date.now() - 1000).toISOString(),
+      steps_executed: 1,
+      last_error: null,
+      entry_rule_id: null,
+      variables: {},
+      started_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    fake.tables.sequence_runs.push(run);
+
+    const processed = await processDueRuns(5);
+
+    expect(processed).toBe(0);
+    expect(sendTextMessageMock).not.toHaveBeenCalled();
+    expect(fake.tables.sequence_runs[0].status).toBe("waiting_delay");
+    expect(fake.tables.sequence_runs[0].last_error).toBeNull();
+    // Sai do topo da fila: a retomada é adiada, não descartada.
+    expect(Date.parse(fake.tables.sequence_runs[0].next_run_at)).toBeGreaterThan(Date.now() + 10 * 60 * 1000);
+  });
+
+  it("run de conversa assumida não trava a fila: o atraso de outro lead roda no tick seguinte", async () => {
+    const account = makeAccount();
+    const sequence = makeSequence({
+      account_id: account.id,
+      graph: {
+        nodes: [triggerNode({ keyword: "promo" }), node("d", "delay", { amount: 1, unit: "hours" }), messageNode("a", "Depois do atraso")],
+        edges: [edge("trigger", "d"), edge("d", "a")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+    const now = Date.now();
+    for (const [sender, takenOver] of [["sender-60", true], ["sender-61", false]] as const) {
+      fake.tables.conversations.push(
+        row({
+          account_id: account.id,
+          ig_sender_id: sender,
+          last_inbound_at: new Date().toISOString(),
+          human_takeover_at: takenOver ? new Date().toISOString() : null,
+        })
+      );
+    }
+    const baseRun = {
+      sequence_id: sequence.id,
+      account_id: account.id,
+      status: "waiting_delay",
+      current_node_id: "d",
+      steps_executed: 1,
+      last_error: null,
+      entry_rule_id: null,
+      variables: {},
+      started_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    // O da conversa assumida é o mais antigo: com limit 1, é ele que vem primeiro.
+    fake.tables.sequence_runs.push(
+      row({ ...baseRun, ig_sender_id: "sender-60", next_run_at: new Date(now - 60_000).toISOString() }),
+      row({ ...baseRun, ig_sender_id: "sender-61", next_run_at: new Date(now - 1000).toISOString() })
+    );
+
+    expect(await processDueRuns(1)).toBe(0);
+    expect(await processDueRuns(1)).toBe(1);
+    expect(sendTextMessageMock).toHaveBeenCalledWith(expect.any(String), "sender-61", "Depois do atraso");
+    expect(sendTextMessageMock).not.toHaveBeenCalledWith(expect.any(String), "sender-60", expect.anything());
+  });
+});
+
+describe("nó Mover para etapa (Fase 6, CRM)", () => {
+  function seedPipeline(accountId: string) {
+    const pipeline = row({ account_id: accountId, name: "Funil de teste", is_default: true, auto_enroll: true });
+    const stageA = row({ pipeline_id: pipeline.id, name: "A", position: 1, color: "#000", stage_type: "open", on_enter_sequence_id: null });
+    const stageB = row({ pipeline_id: pipeline.id, name: "B", position: 2, color: "#000", stage_type: "open", on_enter_sequence_id: null });
+    fake.tables.pipelines.push(pipeline);
+    fake.tables.pipeline_stages.push(stageA, stageB);
+    return { pipeline, stageA, stageB };
+  }
+
+  it("move o lead pra etapa (criando-o) e grava o histórico", async () => {
+    const account = makeAccount();
+    const { stageB } = seedPipeline(account.id);
+    const sequence = makeSequence({
+      account_id: account.id,
+      graph: {
+        nodes: [
+          triggerNode({ keyword: "mover" }),
+          node("m", "moveToStage", { stageId: stageB.id }),
+          messageNode("a", "Movido"),
+        ],
+        edges: [edge("trigger", "m"), edge("m", "a")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+    fake.tables.conversations.push(makeOpenConversation(account.id, "sender-30"));
+
+    const outcome = await maybeStartSequence(admin, account, "sender-30", { kind: "dm", text: "mover" });
+
+    expect(outcome?.status).toBe("replied");
+    expect(sendTextMessageMock).toHaveBeenCalledWith(expect.any(String), "sender-30", "Movido");
+    expect(fake.tables.leads).toHaveLength(1);
+    expect(fake.tables.leads[0]).toMatchObject({ stage_id: stageB.id, ig_sender_id: "sender-30" });
+    expect(fake.tables.lead_stage_events).toHaveLength(1);
+    expect(fake.tables.lead_stage_events[0]).toMatchObject({ from_stage_id: null, to_stage_id: stageB.id, source: "automation" });
+  });
+
+  it("etapa com 'ao entrar, iniciar workflow' dispara o workflow da etapa 1 vez", async () => {
+    const account = makeAccount();
+    const { stageB } = seedPipeline(account.id);
+    const onEnter = makeSequence({
+      account_id: account.id,
+      is_active: true,
+      graph: {
+        nodes: [triggerNode({ keyword: "entrada-etapa" }), messageNode("we", "Bem-vindo à etapa B")],
+        edges: [edge("trigger", "we")],
+      },
+    });
+    Object.assign(stageB, { on_enter_sequence_id: onEnter.id });
+
+    const source = makeSequence({
+      account_id: account.id,
+      graph: {
+        nodes: [triggerNode({ keyword: "mover2" }), node("m", "moveToStage", { stageId: stageB.id })],
+        edges: [edge("trigger", "m")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(source, onEnter);
+    fake.tables.conversations.push(makeOpenConversation(account.id, "sender-31"));
+
+    const outcome = await maybeStartSequence(admin, account, "sender-31", { kind: "dm", text: "mover2" });
+
+    expect(outcome?.status).toBe("replied");
+    expect(sendTextMessageMock).toHaveBeenCalledWith(expect.any(String), "sender-31", "Bem-vindo à etapa B");
+    const onEnterRuns = fake.tables.sequence_runs.filter((r) => r.sequence_id === onEnter.id);
+    expect(onEnterRuns).toHaveLength(1);
+    expect(onEnterRuns[0].status).toBe("completed");
+  });
+
+  it("trava anti-loop: já estar na etapa não repete o histórico nem redispara o workflow de entrada", async () => {
+    const account = makeAccount();
+    const { pipeline, stageB } = seedPipeline(account.id);
+    const onEnter = makeSequence({
+      account_id: account.id,
+      graph: {
+        nodes: [triggerNode({ keyword: "entrada-etapa-2" }), messageNode("we2", "Bem-vindo de novo")],
+        edges: [edge("trigger", "we2")],
+      },
+    });
+    Object.assign(stageB, { on_enter_sequence_id: onEnter.id });
+
+    const conversation = makeOpenConversation(account.id, "sender-32");
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(onEnter);
+    fake.tables.conversations.push(conversation);
+    // Lead já está na etapa B (sem passar pelo moveLead — simula estado anterior).
+    fake.tables.leads.push(
+      row({
+        pipeline_id: pipeline.id,
+        account_id: account.id,
+        conversation_id: conversation.id,
+        ig_sender_id: "sender-32",
+        stage_id: stageB.id,
+        value: null,
+        position: 1,
+        entered_stage_at: new Date().toISOString(),
+        closed_at: null,
+        lost_reason: null,
+      })
+    );
+
+    const source2 = makeSequence({
+      account_id: account.id,
+      graph: {
+        nodes: [
+          triggerNode({ keyword: "mover3" }),
+          node("m", "moveToStage", { stageId: stageB.id }),
+          messageNode("fim", "Fim do fluxo"),
+        ],
+        edges: [edge("trigger", "m"), edge("m", "fim")],
+      },
+    });
+    fake.tables.sequences.push(source2);
+
+    const outcome = await maybeStartSequence(admin, account, "sender-32", { kind: "dm", text: "mover3" });
+
+    expect(outcome?.status).toBe("replied");
+    expect(sendTextMessageMock).toHaveBeenCalledWith(expect.any(String), "sender-32", "Fim do fluxo");
+    expect(sendTextMessageMock).not.toHaveBeenCalledWith(expect.any(String), "sender-32", "Bem-vindo de novo");
+    expect(fake.tables.lead_stage_events).toHaveLength(0);
+    expect(fake.tables.sequence_runs.filter((r) => r.sequence_id === onEnter.id)).toHaveLength(0);
+  });
+});
+
+describe("startStageEnterSequence: workflow de entrada da etapa (Fase 6)", () => {
+  function setup(senderId: string, takenOver: boolean) {
+    const account = makeAccount();
+    const sequence = makeSequence({
+      account_id: account.id,
+      is_active: true,
+      graph: {
+        nodes: [triggerNode({ keyword: "x" }), messageNode("m", "Bem-vindo à etapa")],
+        edges: [edge("trigger", "m")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+    fake.tables.conversations.push(
+      row({
+        account_id: account.id,
+        ig_sender_id: senderId,
+        last_inbound_at: new Date().toISOString(),
+        human_takeover_at: takenOver ? new Date().toISOString() : null,
+      })
+    );
+    return { account, sequence };
+  }
+
+  it("inicia o workflow da etapa para o lead", async () => {
+    const { account, sequence } = setup("sender-90", false);
+    const outcome = await startStageEnterSequence(admin, account, "sender-90", sequence.id);
+    expect(outcome?.status).toBe("replied");
+    expect(sendTextMessageMock).toHaveBeenCalledWith(expect.any(String), "sender-90", "Bem-vindo à etapa");
+  });
+
+  it("conversa assumida (D3): não inicia nem manda nada", async () => {
+    const { account, sequence } = setup("sender-91", true);
+    const outcome = await startStageEnterSequence(admin, account, "sender-91", sequence.id);
+    expect(outcome).toBeNull();
+    expect(sendTextMessageMock).not.toHaveBeenCalled();
+    expect(fake.tables.sequence_runs).toHaveLength(0);
   });
 });

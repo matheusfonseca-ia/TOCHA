@@ -3,10 +3,11 @@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FIELD_VALUE_MAX, TAG_MAX } from "@/lib/sequences/fields";
+import { FIELD_VALUE_MAX } from "@/lib/sequences/fields";
 import type { SetFieldNodeData } from "@/types/sequence";
 
 import { FieldKeyInput } from "./data-fields-context";
+import { TagNameInput } from "./tags-catalog-context";
 import { TemplateHint } from "./template-hint";
 
 export function SetFieldForm({
@@ -66,12 +67,10 @@ export function SetFieldForm({
           </Tabs>
           <div className="space-y-2">
             <Label htmlFor="set-field-tag">Tag</Label>
-            <Input
+            <TagNameInput
               id="set-field-tag"
-              placeholder="ex.: vip"
-              maxLength={TAG_MAX}
               value={data.value}
-              onChange={(e) => onChange({ ...data, value: e.target.value })}
+              onChange={(value) => onChange({ ...data, value })}
             />
           </div>
         </>

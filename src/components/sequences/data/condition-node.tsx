@@ -1,14 +1,16 @@
 "use client";
 
 import { useNodeDataChange } from "@/components/sequences/node-data-context";
+import { usePipelineStageOptions } from "@/modules/crm/pipeline/components/workflow";
 import { NO_HANDLE, YES_HANDLE, type ConditionNodeData } from "@/types/sequence";
 
 import { ConditionForm } from "./condition-form";
 import { operatorLabel } from "./labels";
 import { OutputRow } from "./output-row";
 
-/** "Se {plano} é igual a pro", "Se tem a tag vip". */
+/** "Se {plano} é igual a pro", "Se tem a tag vip", "Se está na etapa Novos". */
 function ConditionSummary({ data }: { data: ConditionNodeData }) {
+  const { optionsById } = usePipelineStageOptions();
   if (data.operator === "hasTag") {
     return data.value.trim() ? (
       <>
@@ -16,6 +18,19 @@ function ConditionSummary({ data }: { data: ConditionNodeData }) {
       </>
     ) : (
       <span className="italic text-muted-foreground/70">Informe a tag…</span>
+    );
+  }
+  if (data.operator === "inStage") {
+    const stage = optionsById.get(data.value);
+    return stage ? (
+      <>
+        Se está na etapa{" "}
+        <span className="font-medium text-foreground">
+          {stage.pipelineName} · {stage.name}
+        </span>
+      </>
+    ) : (
+      <span className="italic text-muted-foreground/70">Escolha a etapa…</span>
     );
   }
   if (!data.fieldKey) {

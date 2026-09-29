@@ -1,9 +1,176 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260927-234000-claude"
+Última tag: "HANDOFF-falow-20260929-133645-claude"
 Status: em andamento
-Resumo: rodada 1 das ideias novas implementada — campo de texto inteligente (textos salvos + escrever com IA), pastas de um nível compartilhadas entre Automações e Workflow, e deeplink automático com QR code na lista. tsc/build/vitest (417) limpos. Falta: usuário testar no navegador, aplicar as migrations (0007 e 0008 seguem pendentes; 0009 e 0010 entram agora) e, se quiser o botão de IA, preencher OPENROUTER_API_KEY. MCP ficou pra rodada 2, com spec própria.
+Resumo: CRM completo (Fases 0 a 9) em produção com os 15 achados da revisão corrigidos (Worker 3e7de824). Nesta mesma branch, a rodada 1 das ideias novas do Falow (campo de texto inteligente, pastas, deeplink automático) foi mesclada por cima: migrations renumeradas de 0009/0010 para 0014/0015 pra não colidir com as do CRM (0009 a 0013), conflitos de merge resolvidos em layout.tsx e sequencias/nova/page.tsx (mantendo os dois lados). Nota herdada do handoff do CRM: "Vercel NÃO é do usuário: ignorar" — checar com o usuário antes de assumir que o projeto tocha-six.vercel.app é dele. Falta: usuário testar os dois conjuntos de features no navegador e aplicar as migrations pendentes (0007, 0008, 0014, 0015).
+
+---
+
+## [HANDOFF · falow · 2026-09-29T13:36:45-03:00 · claude]
+Status: concluído
+Objetivo: corrigir os 15 achados do /code-review do CRM (origin/main...HEAD, 61 commits) e publicar.
+Feito:
+- LGPD (`exclusao-de-dados`): `lead_stage_events` é apagado via join em `leads` (não tem `ig_sender_id`; o bloco DO abortava inteiro).
+- Inbox: `Thread`/`ContactPanel` com `key={conversation.id}` (pendências, etapa e gravação não vazam para outro lead). Seleção múltipla só zera quando o filtro muda.
+- Condição "está na etapa": `dataNodeError` não pede campo; `stageIdsOf`/`validateStageRefs` (graph.ts) conferem existência e conta da etapa no save (antes só o nó Mover para etapa).
+- Funil: lead ganho/perdido continua sendo o lead da conversa (`currentLeadOf` em move-lead.ts, mais recente por created_at). Board/estatística/"carregar mais" sem filtro de closed_at; captura e "Trazer conversas existentes" não recriam; ficha e condição inStage enxergam o fechado; moveLead por conversa reabre o mesmo card. moveLead recusa etapa de outro funil.
+- `startStageEnterSequence` (runtime.ts): caminho único do "ao entrar na etapa", com `isTakenOver` (D3). Board e nó Mover para etapa usam ele.
+- Excluir etapa: leads vão para o fim da coluna destino com `closingFields` do tipo dela; mudar o tipo da etapa sincroniza closed_at/lost_reason dos leads.
+- Funil com seletor de conta (`PipelineSwitcher`), trocar de funil mantém `conta`. "Carregar mais" por cursor de posição e cards entram no estado do arrastar.
+- Composer: legenda digitada vai com o anexo; se só o texto falhar, `attachmentSent` faz o retry mandar só o texto e a conversa é assumida. Regex `\.(m4a|wav)`; microfone desliga se o setup do Web Audio falhar.
+- Tags: `tagged-contacts.ts` (varredura paginada por id, sem diferenciar maiúscula/acento) usada no filtro do Inbox e no rename/remove (RPC por grafia encontrada); `FlowData.setTag` e cores usam `normalize`.
+- Perfil: `leadNeedsProfile` tenta de novo sem @ no máximo 1x/24h; `backfillLeadProfiles` pega o token 1 vez e roda em lotes de 5.
+- 510 testes (11 novos), tsc ok, build em 2 etapas, deploy 3e7de824. QA logado: Funil, Conversas, ficha da conversa de teste, script novo servido em /exclusao-de-dados, sem erro no console.
+Próximo passo:
+- Usuário: `! git -C "D:/Projetos-vibeocding/eu/falow-instalacaonamaquina" push tocha main:main`.
+- Não feito (opcional): corrida do `is_latest` no trigger `crm_on_message_insert` (precisa migration), importação reabrindo conversas concluídas, `ensureConversation` repetido por mensagem, helpers de posse duplicados, `find-invalid-node.ts` divergente, e mover expiry/follow-gate/contacts de `src/lib`/`src/components` para módulos (modular-arch).
+Arquivos tocados: src/app/(legal)/exclusao-de-dados/page.tsx, src/app/(dashboard)/crm/funil/page.tsx, src/app/(dashboard)/rules/sequencias/actions.ts, src/lib/sequences/{condition,fields,flow-data,graph,runtime}.ts, src/types/sequence.ts, src/modules/crm/{inbox,pipeline,tags,capture,lead-profile}/..., testes em fields/runtime/move-lead/tags.
+Decisões/contexto: sem migration nova (tudo em código). Lead fechado é o lead da conversa; o índice único só cobre abertos, então pode sobrar duplicata antiga (currentLeadOf pega a mais recente). Varredura de tags percorre só contatos com tag, em páginas de 1000.
+Tag: "HANDOFF-falow-20260929-133645-claude"
+
+---
+
+## [HANDOFF · falow · 2026-09-29T00:35:27-03:00 · claude]
+Status: concluído
+Objetivo: enviar áudio pelo painel do CRM.
+Feito:
+- Spike com conta real: a Meta aceita M4A (AAC), MP4 de áudio e WAV; recusa MP3 e WebM ("formato de anexo não é aceito"). O MediaRecorder do Chrome grava WebM, então o gravador captura PCM com Web Audio e gera WAV 16 kHz mono (`inbox/utils/wav.ts`, `inbox/hooks/use-voice-recorder.ts`, limite 5 min).
+- `inbox/utils/attachment-types.ts` (`classifyUpload`): imagem 8MB, PDF 25MB, áudio M4A/WAV 25MB, MP3 recusado com explicação. Upload e envio (`composer.actions.ts`, `use-composer.ts`) aceitam kind audio. Composer com botão de microfone e barra de gravação (tempo, cancelar, enviar áudio).
+- 499 testes (7 novos em `inbox/__tests__/audio.test.ts`), tsc e build ok; deploy 1b6c473c.
+- Teste real: WAV anexado pelo composer na conversa de teste chegou pela Meta (gravado como agent/audio com URL do bucket e mid); conversa devolvida ao bot depois.
+- Vercel: o 2º projeto Supabase da conta é de outro sistema (print jobs), não é o Falow; nada aplicado. Usuário disse que a Vercel é de um sócio: ignorar.
+Próximo passo:
+- Usuário testa gravar pelo microfone (permissão do navegador) e decide "Trazer conversas existentes".
+- Push do b4976c7 para o tocha quando quiser (`! git push tocha main:main`).
+Arquivos tocados: src/modules/crm/inbox/{utils/attachment-types.ts,utils/wav.ts,hooks/use-voice-recorder.ts,hooks/use-composer.ts,services/composer.actions.ts,components/composer.tsx,__tests__/audio.test.ts}, tasks/lessons.md, tasks/ai-handoff.md
+Decisões/contexto: gravação não testada ao vivo (prompt de permissão do microfone não é automatizável); a cadeia upload + envio + captura foi testada com WAV real gerado na página.
+Tag: "HANDOFF-falow-20260929-003527-claude"
+
+---
+
+## [HANDOFF · falow · 2026-09-28T22:33:57-03:00 · claude]
+Status: concluído
+Objetivo: terminar todas as fases do CRM com agentes (A: 3+7, B: 4, C: 5+6, D: perfil + 8 + LGPD) e publicar.
+Feito:
+- Merge das 4 branches na ordem D, B, A, C com conflitos resolvidos à mão (ficha, lista, thread, consultas, tipos, fake, editor de Workflow, runtime.test). Worktrees dos agentes nasceram num commit antigo (793eafc); cada agente fez ff para a main antes de codar.
+- Correções de revisão: processDueRuns adia em 15 min o run de conversa assumida (antes travava a fila); enrollLeadFromCapture só cria lead (antes devolvia o lead para "Novos" a cada DM); next.config bodySizeLimit 26mb (upload do composer); importação: vazio recebido vira anexo (áudio), vazio enviado vira botões; leadNeedsProfile (leads com @ também ganham foto); revoke explícito das funções de tag para anon/authenticated.
+- Conferido com conta real antes do merge: campos da User Profile API válidos; id da Conversations API == mid do webhook (import não duplica); anexo de imagem em attachments.data[].image_data.url; áudio vem sem anexo.
+- Migrations 0010 a 0013 aplicadas pelo SQL Editor: arquivo servido por node em 127.0.0.1 (CSP do Supabase bloqueia fetch; cópia exata via botão injetado + clipboard, colado com Ctrl+V, hash conferido com CRLF normalizado). Catálogo conferido: 6 colunas de perfil, 7 tabelas, bucket crm-uploads público, 2 funções, 4 índices, realtime em conversations/leads/messages, 10 policies.
+- Backfill de perfis: 59/59 (55 com foto). Build em 2 etapas em primeiro plano (NEXT_PRIVATE_STANDALONE=true + NEXT_PRIVATE_OUTPUT_TRACE_ROOT, depois opennextjs-cloudflare build --skipNextBuild) para não ser morto por falta de RAM; deploys a22c26af e fd0cae14 (layout: ficha fixa só em 2xl, nome trunca, sem "Ver perfil" no cabeçalho, funil com min-w-0).
+- QA logado: lista com fotos, cartão de perfil com "Abrir no Instagram", composer enviando de verdade para @ion_comunnity (gravado como agent, takeover automático, devolvido ao bot), funil com etapas padrão.
+Próximo passo:
+- Usuário: 0009 a 0013 no Supabase da Vercel, push para o tocha, decidir "Trazer conversas existentes".
+- Opcional: pipeline adicional pela UI, reordenar etapas arrastando, remoção de tag em massa.
+Arquivos tocados: src/modules/crm/** (capture, inbox, handoff, notes, quick-replies, tags, pipeline, lead-profile, history-import, shared), src/lib/meta/{graph,process}.ts, src/lib/sequences/{runtime,condition,flow-data,graph}.ts, src/components/sequences/**, src/app/(dashboard)/crm/**, src/app/(dashboard)/rules/sequencias/**, src/app/(legal)/**, src/components/accounts/account-card.tsx, next.config.mjs, scripts/check-db-schema.mjs, supabase/migrations/0010 a 0013.
+Decisões/contexto: aba do SQL Editor (Browser 1) ficou aberta com edição não salva; não fechar pelo MCP. Worktrees dos agentes continuam em .claude/worktrees/agent-* (sem junction de node_modules, conferido).
+Tag: "HANDOFF-falow-20260928-223357-claude"
+
+---
+
+## [HANDOFF · falow · 2026-09-28T21:21:59-03:00 · claude]
+Status: em andamento
+Objetivo: terminar todas as fases do CRM com agentes em paralelo (pedido do usuário: "pode avançar todas as fases, jogue seus agentes").
+Feito:
+- @dnd-kit instalado na pasta principal (2c8597d) antes de criar as worktrees (npm install em worktree com junction pode estragar o node_modules real).
+- 4 agentes Sonnet lançados em worktrees isoladas, com escopo, número de migration e regras de recurso (sem build/deploy, tsc no máximo 2 vezes, junction de node_modules removida no fim).
+- Pedido novo do usuário incluído no Agente D: foto do lead na lista/conversa/ficha e diálogo de perfil com "Abrir no Instagram".
+Próximo passo:
+- Receber os 4 relatórios; merge na main na ordem D (0010), A (0011), B (0012), C (0013), resolvendo conflitos em contact-panel.tsx, thread.tsx, conversation-list.tsx, capture-event.ts, fake-supabase.ts, process.ts e runtime.ts.
+- tsc + vitest + next build; revisão enxuta dos pontos críticos (takeover no webhook, auto-enroll na captura, moveToStage no runtime).
+- Aplicar 0010 a 0013 no Supabase de produção (Chrome, SQL Editor, conferência por hash), backfill de perfis, build:cloudflare + deploy, QA logado (só a conversa de teste @ion_comunnity).
+Arquivos tocados: package.json, package-lock.json, tasks/ai-handoff.md
+Decisões/contexto: memória do PC em ~1,6 GB livres com 4 processos do Claude Code abertos; builds em background são mortos pelo Claude Code quando a sessão fica ociosa. Preferir build em primeiro plano quando possível.
+Tag: "HANDOFF-falow-20260928-212159-claude"
+
+---
+
+## [HANDOFF · falow · 2026-09-28T20:49:26-03:00 · claude]
+Status: em andamento
+Objetivo: Fase 2 do CRM: tela de Conversas (lista + conversa + ficha) ao vivo.
+Feito:
+- `src/modules/crm/inbox/` (components: inbox-shell, conversation-list, thread, message-bubble, contact-panel, lead-avatar; hooks/use-inbox-realtime; services/inbox.queries e inbox.actions; utils labels/time/href), `src/modules/crm/index.ts` (UI) e `server.ts` (consultas + captura). Rotas finas `/crm` → `/crm/conversas`. Sidebar com item CRM + badge de não lidas (layout soma `unread_count`). `src/lib/supabase/client.ts` (só para o Realtime).
+- Captura busca o @ do lead na 1ª DM; as 58 conversas antigas foram preenchidas uma vez por script (58/58). Testes bloqueiam a rede por padrão (`vitest.setup.ts`). 410/410, tsc e build ok.
+- Conferência logado (Browser 1, conta do usuário): 1280 real + iframes 375/768. Não abri conversas de leads reais (abrir zera as não lidas deles); só a de teste (@ion_comunnity, id 42e84631-d72f-46ef-986d-0e0c86d9811b).
+- Bugs corrigidos: (1) prefetch dos 60 links derrubava o Worker em 503 → `prefetch={false}`; (2) Realtime entrava como `anon` (claims_role em realtime.subscription) → `realtime.setAuth(session.access_token)` antes do subscribe; (3) 768px → duas colunas só a partir de lg; debounce do refresh 1s.
+- Deploys: 98ba9ed5 (Fase 2), prefetch fix, 61e689b1 (Realtime), e o de breakpoint/debounce (ver commit mais recente).
+Próximo passo:
+- Fase 3: composer (texto, imagem, citação com reply_to no topo), assumir/devolver ao bot (human_takeover_at checado antes do passo 4a, no postback, no comentário e em processDueRuns), respostas rápidas, mark_seen ao abrir.
+- Aplicar 0009 no Supabase da Vercel antes do push para o tocha.
+Arquivos tocados: src/modules/crm/**, src/app/(dashboard)/crm/**, src/app/(dashboard)/layout.tsx, src/components/layout/sidebar.tsx, src/lib/supabase/client.ts, vitest.config.ts, vitest.setup.ts, tasks/todo.md, tasks/ai-handoff.md
+Decisões/contexto: horários do Inbox sempre em America/Sao_Paulo (servidor UTC x navegador quebravam a hidratação). Sem abas CRM ainda: "Funil" entra quando a Fase 5 existir. Campos da ficha só leitura até a Fase 4. A aba do SQL Editor do Supabase (Browser 1) ficou aberta com edição não salva; não fechar pelo MCP (trava no aviso "Sair do site?").
+Tag: "HANDOFF-falow-20260928-204926-claude"
+
+---
+
+## [HANDOFF · falow · 2026-09-28T18:06:47-03:00 · claude]
+Status: em andamento
+Objetivo: colocar a Fase 1 do CRM (captura) em produção.
+Feito:
+- 0009 aplicada no Supabase de produção (projeto ntzwudcauohpilbdwiyx) pelo SQL Editor no Chrome, com aprovação do usuário. O texto colado foi conferido linha a linha por hash contra o arquivo: só 4 linhas decorativas de comentário diferiam. Verificação no catálogo: last_inbound_at nullable e sem default, trigger messages_after_insert, constraint messages_account_mid_key, realtime em conversations e messages, 1 policy em messages, 58 conversas sem nenhuma janela zerada. check-db-schema: compatível.
+- `npm run build:cloudflare && npx wrangler deploy` (Worker 760d67ac); /dashboard 307, GET do webhook sem token 403.
+- 1ª mensagem real capturada: outbound/instagram_app com reply_to_mid.
+Próximo passo:
+- Usuário faz o E2E com @ion_comunnity no app do Instagram; conferir com `scratchpad/crm-spike/08-check-messages.mjs` (só metadados; texto só da conversa de teste).
+- Aplicar 0009 no Supabase da Vercel antes do próximo `! git push tocha main:main`.
+- Fase 2 (Inbox, leitura ao vivo).
+Arquivos tocados: tasks/todo.md, tasks/ai-handoff.md
+Decisões/contexto: colar SQL longo no editor por base64 transcrito à mão introduz erros de transcrição: sempre conferir hash linha a linha antes de rodar (aqui só comentários divergiram). O fechamento da aba do SQL Editor pelo Chrome travou 2x (provável aviso "Sair do site?" por edição não salva): pedir ao usuário para fechar.
+Tag: "HANDOFF-falow-20260928-180647-claude"
+
+---
+
+## [HANDOFF · falow · 2026-09-28T15:58:21-03:00 · claude]
+Status: bloqueado (aguardando migration)
+Objetivo: Fase 1 do CRM: gravar toda mensagem (lead, eco, envio do Falow) e sinais (reação, edição, apagada, visto), sem UI.
+Feito:
+- `src/modules/crm/`: `shared/types/message.ts`, `capture/utils/parse-event.ts` e `parse-sent.ts` (puras), `capture/server/record.ts` (gravação), `capture-event.ts` (entrada do webhook, nunca lança), `observe-outbound.ts` (grava envios com origem), `server.ts` (API pública de servidor).
+- `graph.ts`: `observeSends` (AsyncLocalStorage) chamado em todo envio de mensagem; `WEBHOOK_FIELDS` com os 7 campos para contas novas.
+- `process.ts`: captura em paralelo com a automação (`processMessagingEvent` → `handleMessagingEvent`), regras envolvidas em `observeOutbound(source: automation)`, `touchConversation` trata `last_inbound_at` nulo.
+- `runtime.ts`: `executeFrom` virou invólucro de `runNodes` com `observeOutbound(source: workflow)`.
+- Migration 0009 (messages com unique (account_id, mid) constraint, message_signals_pending, colunas em conversations, trigger, RLS, realtime; last_inbound_at sem not null e sem default).
+- Log temporário da Fase 0 removido do route.ts. check-db-schema exige 0009.
+- tsc limpo, vitest 400/400 (45 novos), next build ok.
+Próximo passo:
+- Aplicar 0009 no Supabase de produção (Cloudflare) e depois `npm run build:cloudflare && npx wrangler deploy`.
+- Conferir no banco com uma DM real do lead de teste (@ion_comunnity) que a mensagem e a resposta da automação aparecem com origem certa.
+- Aplicar 0009 no Supabase da Vercel antes do push para o tocha.
+- Depois: Fase 2 (Inbox, leitura ao vivo).
+Arquivos tocados: src/modules/crm/**, src/lib/meta/graph.ts, src/lib/meta/process.ts, src/lib/meta/process.test.ts, src/lib/sequences/runtime.ts, src/lib/sequences/__tests__/fake-supabase.ts, src/types/database.ts, src/app/api/webhooks/meta/route.ts, supabase/migrations/0009_crm_inbox.sql, scripts/check-db-schema.mjs, tasks/todo.md
+Decisões/contexto: a captura NÃO cria linha em `contacts` para todo lead (inundaria a página Contatos, que por D1 fica como está); `conversations.contact_id` fica para a Fase 2/5. Fila de sinais pendentes limpa itens com mais de 7 dias quando um sinal novo entra (não no cron). Testes de runtime mockam as funções de envio, então o observador é coberto em `capture.test.ts` (fetch mockado, sendTextMessage real).
+Tag: "HANDOFF-falow-20260928-155821-claude"
+
+---
+
+## [HANDOFF · falow · 2026-09-28T15:10:41-03:00 · claude]
+Status: em andamento
+Objetivo: Fase 0 do CRM: medir com conta real o que o webhook e a API do Instagram entregam antes de escrever a captura.
+Feito:
+- Log temporário do payload bruto no webhook (commit a99af2c, deploy e9cd0546), ligado só pelo secret `WEBHOOK_DEBUG_IG_IDS`; secret já APAGADO no fim (log parou). O `console.log` continua no `route.ts` até o commit da Fase 1.
+- @euheliomonteiro reassinada com `messages,messaging_postbacks,messaging_referral,comments,message_reactions,messaging_seen,message_edit` (estava sem `messaging_referral`: gatilho "Link de referência" provavelmente não funcionava para essa conta).
+- Testes pela API e pelo celular com o lead de teste @ion_comunnity (IGSID 4181139912021434). Resultados completos em `tasks/todo.md` > Fase 0 > Resultados.
+- Plano atualizado: matriz, Fase 1 (observador de envio por AsyncLocalStorage, fila `message_signals_pending`), Fase 3 (responder citando, sem HUMAN_AGENT), Fase 7 ("Editada" confirmada, sem reação pela conta).
+- Rascunho da migration 0009 no disco (messages, colunas em conversations, trigger, RLS, realtime, message_signals_pending).
+Próximo passo:
+- Fase 1: captura (parse-event puro + testes, capture-event no process.ts em best effort, observador de envio em graph.ts, fila de sinais, reassinatura das contas, remover o console.log temporário), aplicar 0009, deploy.
+Arquivos tocados: src/app/api/webhooks/meta/route.ts (log temporário), tasks/todo.md, tasks/ai-handoff.md, tasks/lessons.md, supabase/migrations/0009_crm_inbox.sql (rascunho, não commitado)
+Decisões/contexto: `wrangler tail` foi encerrado 2x pelo Claude Code por falta de RAM (0,9 a 1,6 GB livres); a captura que funcionou foi um script node leve no WebSocket de tail da Cloudflare (filtro no POST de criação, `{debug:false}` no open, ping a cada 10s), em `scratchpad/crm-spike/tail-lite.mjs`. No Windows o TaskStop não dispara o SIGTERM do script: apagar a sessão de tail pela API depois. Scripts do spike usam `createRequire` do projeto (vite-node não resolve imports absolutos). Payloads capturados já apagados (tinham DM real de lead).
+Tag: "HANDOFF-falow-20260928-151041-claude"
+
+---
+
+## [HANDOFF · falow · 2026-09-28T12:00:21-03:00 · claude]
+Status: em andamento
+Objetivo: planejar um CRM dentro do Falow estilo Kommo: inbox estilo WhatsApp + kanban de leads, com tags, excluir, editar etc., seguindo modular-arch (`src/modules/crm/`).
+Feito:
+- Plano completo no topo de `tasks/todo.md`: matriz de viabilidade, decisões D1 a D4, árvore do módulo `src/modules/crm/` (capture, inbox, handoff, tags, pipeline, quick-replies, history-import), migrations 0009 (messages + colunas em conversations), 0010 (crm_tags), 0011 (pipelines/stages/leads/lead_stage_events) e Fases 0 a 9.
+- Validação por 8 agentes Sonnet (só pesquisa, sem editar arquivos), um por feature: inbox/histórico, envio manual, excluir, editar, reações/citação/visto, tags, kanban, realtime.
+Próximo passo:
+- Usuário aprova ou ajusta D1 (item CRM na sidebar), D2 (entrada automática no funil), D3 (responder pelo painel assume a conversa), D4 (mídia só por link da Meta).
+- Fase 0 (spike com conta real via `wrangler tail`) antes de codar a captura: eco app x API, mid do eco == message_id do envio, message_edit/reações/visto chegam no Instagram Login, reação além de ❤️, mark_seen, HUMAN_AGENT.
+Arquivos tocados: tasks/todo.md, tasks/ai-handoff.md
+Decisões/contexto: achados da API que definem o escopo: NÃO existe editar nem desfazer envio de mensagem enviada, nem responder citando (só "Apagar para mim" local, e editar vira rascunho/respostas rápidas/notas); lead apagar chega como `is_deleted: true` no campo `messages`; Conversations API só devolve as 20 últimas mensagens por conversa; copiar mídia da CDN da Meta para Storage próprio já reprovou app no App Review (caso Chatwoot #8583), por isso D4. `handleSequenceReply` roda antes do check de `automation_paused_until` em process.ts: o takeover humano precisa de checagem própria antes do passo 4a e em processDueRuns. Não existe client Supabase de navegador ainda (só server.ts/admin.ts). Kanban: @dnd-kit (hello-pangea em manutenção). Realtime: postgres_changes no MVP, Broadcast se escalar.
+Tag: "HANDOFF-falow-20260928-120021-claude"
 
 ---
 
@@ -15,7 +182,7 @@ Feito:
 - Mensagens padrão e Modo IA viraram UM componente (`SmartTextField`): dois botões no canto do textarea. O tipo do campo (`AiFieldKind`) carrega limite e papel, então o prompt nasce pronto e os presets que não cabem no limite somem da lista.
 - Módulos puros com teste primeiro: `lib/ai/{fields,prompt,parse,provider}`, `lib/presets/presets`, `lib/folders/folders`, `lib/db/missing`, `suggestRefCode`/`refCodeOf`. 62 testes novos (355 -> 417).
 - `parse.ts` é tolerante de propósito (JSON, bloco de código, lista numerada, preâmbulo, aspas) e DESCARTA sugestão acima do limite em vez de cortar no meio.
-- `lib/db/missing.ts` generaliza o truque da 0007: sem as migrations 0009/0010 as features novas somem sozinhas (lista vazia), o painel não quebra. Payloads de erro colhidos do Supabase real do projeto da Vercel.
+- `lib/db/missing.ts` generaliza o truque da 0007: sem as migrations 0014/0015 as features novas somem sozinhas (lista vazia), o painel não quebra. Payloads de erro colhidos do Supabase real do projeto da Vercel.
 - Pastas são compartilhadas entre as duas telas de propósito (lessons.md: o usuário espera workflow e automação como um sistema só). `on delete set null`: apagar pasta não apaga nada dentro.
 - Deeplink: `suggestRefCode` roda no `selectWhen` do gatilho, então o código nasce preenchido ao escolher "Link de referência"; a lista ganhou "Link e QR code" com o PNG gerado no navegador (dep nova `qrcode`, nenhum serviço externo de QR).
 - `VariantList` ganhou `field`: com ele, gerar com IA pede 5 e oferece "cadastrar as 5 como variantes", que reaproveita o `applyPresets` que já existia.
@@ -23,7 +190,7 @@ Feito:
 - `npx tsc --noEmit`, `npm run build` e `npm test` (417/417) limpos.
 Próximo passo:
 - Usuário testar no navegador (os dois atalhos em cada campo, inclusive nos cards do canvas; criar/mover/apagar pasta nas duas listas; gatilho de link nascendo com código e QR baixando).
-- Aplicar as migrations: projeto da Vercel está sem 0007, 0008, 0009 e 0010; o da Cloudflare, sem 0008 em diante (verificado por REST no da Vercel; o da Cloudflare não dá pra checar daqui, sem a chave).
+- Aplicar as migrations: projeto da Vercel está sem 0007, 0008, 0014 e 0015; o da Cloudflare, sem 0008 em diante (verificado por REST no da Vercel; o da Cloudflare não dá pra checar daqui, sem a chave).
 - Preencher OPENROUTER_API_KEY onde quiser o botão de IA.
 - Deploy na Cloudflare só depois do teste, sempre na pasta principal.
 Arquivos tocados: src/lib/ai/* (novo), src/lib/presets/* (novo), src/lib/folders/* (novo), src/lib/db/* (novo), src/lib/meta/triggers.ts, src/lib/sequences/graph.ts, src/components/fields/* (novo), src/components/folders/* (novo), src/components/sequences/ref-link-dialog.tsx (novo), src/components/sequences/sequence-nodes.tsx, src/components/sequences/sequence-editor.tsx, src/components/sequences/sequences-manager.tsx, src/components/sequences/automation/automation-rules-context.tsx, src/components/sequences/data/collect-input-form.tsx, src/components/rules/rules-manager.tsx, src/components/rules/responder-{comentario,dm}-builder.tsx, src/components/rules/variants/variant-list.tsx, src/components/rules/follow-gate/follow-gate-field.tsx, src/app/(dashboard)/layout.tsx, src/app/(dashboard)/rules/{page,actions}.tsx, src/app/(dashboard)/rules/{ai,presets,folders}-actions.ts (novos), src/app/(dashboard)/rules/sequencias/{page,[id]/page,nova/page}.tsx, src/types/{database,sequence}.ts, supabase/migrations/0014_message_presets.sql e 0015_folders.sql (novos), README.md, .env.example, package.json (qrcode).

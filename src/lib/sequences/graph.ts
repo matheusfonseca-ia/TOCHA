@@ -11,10 +11,12 @@ import {
   randomizerHandle,
   type AutomationNodeData,
   type ButtonsNodeData,
+  type ConditionNodeData,
   type DelayNodeData,
   type DelayUnit,
   type GoToSequenceNodeData,
   type MessageNodeData,
+  type MoveToStageNodeData,
   type QuickRepliesNodeData,
   type RandomizerNodeData,
   type Sequence,
@@ -126,6 +128,22 @@ export function goToSequenceIdsOf(graph: SequenceGraph): string[] {
     .filter((n) => n.type === "goToSequence")
     .map((n) => (n.data as GoToSequenceNodeData).sequenceId)
     .filter((id): id is string => !!id?.trim());
+  return Array.from(new Set(ids));
+}
+
+/** Etapa do funil que o nó referencia: "Mover para etapa" ou Condição "está na etapa". */
+function stageIdOf(node: SequenceGraphNode): string | null {
+  if (node.type === "moveToStage") return (node.data as MoveToStageNodeData).stageId?.trim() || null;
+  if (node.type === "condition") {
+    const data = node.data as ConditionNodeData;
+    return data.operator === "inStage" ? data.value?.trim() || null : null;
+  }
+  return null;
+}
+
+/** Ids (únicos) das etapas referenciadas pelo grafo (mover para etapa e condição de etapa). */
+export function stageIdsOf(graph: SequenceGraph): string[] {
+  const ids = graph.nodes.map(stageIdOf).filter((id): id is string => !!id);
   return Array.from(new Set(ids));
 }
 
@@ -412,6 +430,11 @@ function validateNode(node: SequenceGraphNode): string | null {
       }
       return null;
     }
+    case "moveToStage": {
+      const data = node.data as MoveToStageNodeData;
+      if (!data.stageId?.trim()) return "Mover para etapa: escolha a etapa de destino.";
+      return null;
+    }
   }
 }
 
@@ -444,6 +467,8 @@ export interface GraphValidationContext {
   sequencesById?: Map<string, Pick<Sequence, "id" | "account_id">>;
   /** Id da própria sequência sendo validada — barra apontar pra si mesma. */
   selfSequenceId?: string;
+  /** O que a validação do nó "Mover para etapa" precisa saber de cada etapa referenciada. Fase 6. */
+  stagesById?: Map<string, { id: string; account_id: string }>;
 }
 
 /**
@@ -472,6 +497,30 @@ function validateGoToSequenceNodes(
     }
     if (ctx.accountId && target.account_id !== ctx.accountId) {
       return "Ir para workflow: o workflow de destino é de outra conta do Instagram.";
+    }
+  }
+  return null;
+}
+
+/**
+ * Nós que apontam para uma etapa ("Mover para etapa" e Condição "está na
+ * etapa"): quando o contexto traz as etapas (a `saveSequence` busca por
+ * `stageIdsOf`), a etapa precisa existir e ser da mesma conta. Sem
+ * `stagesById` (validação rápida no editor), só o campo vazio é checado (já
+ * em `validateNode`).
+ */
+function validateStageRefs(graph: SequenceGraph, ctx: GraphValidationContext): string | null {
+  if (!ctx.stagesById) return null;
+  for (const node of graph.nodes) {
+    const stageId = stageIdOf(node);
+    if (!stageId) continue; // vazio já reportado por validateNode
+    const label = node.type === "moveToStage" ? "Mover para etapa" : "Condição";
+    const stage = ctx.stagesById.get(stageId);
+    if (!stage) {
+      return `${label}: a etapa escolhida não existe mais.`;
+    }
+    if (ctx.accountId && stage.account_id !== ctx.accountId) {
+      return `${label}: a etapa escolhida é de outra conta do Instagram.`;
     }
   }
   return null;
@@ -608,6 +657,9 @@ export function validateSequenceGraph(
 
   const goToSequenceError = validateGoToSequenceNodes(graph, ctx);
   if (goToSequenceError) return goToSequenceError;
+
+  const stageError = validateStageRefs(graph, ctx);
+  if (stageError) return stageError;
 
   // Ciclo com espera (resposta, botão, atraso) é permitido; sem espera ele
   // dispararia mensagens em laço. O editor destaca os nós com

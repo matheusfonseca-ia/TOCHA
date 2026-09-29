@@ -6,6 +6,7 @@ import {
   GitBranch,
   Hourglass,
   Image as ImageIcon,
+  Kanban,
   Link2,
   ListChecks,
   MessageSquareText,
@@ -42,6 +43,7 @@ import {
 } from "@/components/sequences/extras";
 import { suggestRefCode } from "@/lib/meta/triggers";
 import { useNodeDataChange } from "@/components/sequences/node-data-context";
+import { MoveToStageNodeContent } from "@/modules/crm/pipeline/components/workflow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -81,6 +83,7 @@ import {
   type DelayNodeData,
   type GoToSequenceNodeData,
   type MessageNodeData,
+  type MoveToStageNodeData,
   type QuickRepliesNodeData,
   type RandomizerBranch,
   type RandomizerNodeData,
@@ -1142,6 +1145,22 @@ export function StopAutomationNode({ id, data, selected }: NodeProps) {
   );
 }
 
+export function MoveToStageNode({ id, data, selected }: NodeProps) {
+  const d = data as unknown as MoveToStageNodeData;
+  return (
+    <NodeFrame
+      id={id}
+      icon={Kanban}
+      chipClass="bg-secondary text-foreground/70"
+      title="Mover para etapa"
+      selected={selected}
+      hasOut
+    >
+      <MoveToStageNodeContent id={id} data={d} selected={selected} />
+    </NodeFrame>
+  );
+}
+
 export const sequenceNodeTypes = {
   trigger: TriggerNode,
   message: MessageNode,
@@ -1156,4 +1175,5 @@ export const sequenceNodeTypes = {
   randomizer: RandomizerNode,
   goToSequence: GoToSequenceNode,
   stopAutomation: StopAutomationNode,
+  moveToStage: MoveToStageNode,
 };

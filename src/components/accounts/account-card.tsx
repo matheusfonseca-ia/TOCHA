@@ -10,6 +10,7 @@ import { disconnectAccount } from "@/app/(dashboard)/accounts/actions";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { ImportHistoryButton } from "@/modules/crm/history-import/components/import-history-button";
 import type { AccountStatus } from "@/types/database";
 
 interface AccountCardProps {
@@ -80,6 +81,8 @@ export function AccountCard({ account, index = 0 }: AccountCardProps) {
             })}
           </p>
         </div>
+
+        {account.status === "active" && <ImportHistoryButton accountId={account.id} />}
 
         {account.status !== "disconnected" && (
           <Button

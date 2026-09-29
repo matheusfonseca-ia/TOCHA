@@ -68,6 +68,7 @@ const NODE_TYPE_LABELS: Record<SequenceNodeType, string> = {
   randomizer: "Aleatório",
   goToSequence: "Ir para workflow",
   stopAutomation: "Pausar automações",
+  moveToStage: "Mover para etapa",
 };
 
 const STATUS_FILTERS: { value: SequenceRunStatus | ""; label: string }[] = [

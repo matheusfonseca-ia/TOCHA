@@ -15,4 +15,5 @@ export {
 } from "./labels";
 export { SetFieldForm } from "./set-field-form";
 export { SetFieldNodeContent } from "./set-field-node";
+export { TagNameInput, TagsCatalogProvider, useTagsCatalog } from "./tags-catalog-context";
 export { TemplateHint } from "./template-hint";

@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  MessagesSquare,
   ScrollText,
   Users,
   X,
@@ -22,13 +23,21 @@ import { signOut } from "@/app/login/actions";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/crm", label: "Conversas", icon: MessagesSquare },
   { href: "/rules", label: "Automação", icon: Zap },
   { href: "/contatos", label: "Contatos", icon: Users },
   { href: "/accounts", label: "Contas", icon: Instagram },
   { href: "/logs", label: "Logs", icon: ScrollText },
 ];
 
-export function Sidebar({ userEmail }: { userEmail: string }) {
+export function Sidebar({
+  userEmail,
+  crmUnread = 0,
+}: {
+  userEmail: string;
+  /** Mensagens não lidas no Inbox do CRM (badge do item CRM). */
+  crmUnread?: number;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const navRef = useRef<HTMLElement>(null);
@@ -156,6 +165,14 @@ export function Sidebar({ userEmail }: { userEmail: string }) {
                   )}
                 />
                 {label}
+                {href === "/crm" && crmUnread > 0 && (
+                  <span
+                    className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-semibold text-primary-foreground"
+                    aria-label={`${crmUnread} não lidas`}
+                  >
+                    {crmUnread > 99 ? "99+" : crmUnread}
+                  </span>
+                )}
               </Link>
             );
           })}

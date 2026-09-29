@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import type { ReplyButton } from "@/types/database";
 
 /**
@@ -68,12 +70,46 @@ async function graphGet(
 
 type Recipient = { id: string } | { comment_id: string };
 
-function sendMessage(
+export interface SentMessage {
+  /** Corpo enviado à Send API ({recipient, message, ...}). */
+  body: Record<string, unknown>;
+  /** Resposta da Meta ({recipient_id, message_id}). */
+  response: Record<string, unknown>;
+}
+
+type SendObserver = (sent: SentMessage) => Promise<void>;
+
+const sendObserver = new AsyncLocalStorage<SendObserver>();
+
+/**
+ * Roda `fn` avisando `observer` a cada mensagem enviada com sucesso dentro
+ * dela, inclusive em chamadas aninhadas (o observador mais interno vence).
+ * É assim que o CRM grava os envios com a origem certa sem que cada ponto de
+ * envio precise saber que ele existe. Falha do observador nunca derruba o envio.
+ */
+export function observeSends<T>(observer: SendObserver, fn: () => Promise<T>): Promise<T> {
+  return sendObserver.run(observer, fn);
+}
+
+/** Citar uma mensagem ao responder (Fase 0 do CRM, 28/09/2026): confirmado
+ *  que `reply_to` só funciona no TOPO do corpo, ao lado de `recipient`
+ *  (dentro de `message` a Graph API devolve 400 "Invalid keys"). */
+export interface SendOptions {
+  replyToMid?: string | null;
+}
+
+async function sendMessage(
   igToken: string,
   recipient: Recipient,
-  message: Record<string, unknown>
+  message: Record<string, unknown>,
+  opts?: SendOptions
 ) {
-  return graphPost("me/messages", igToken, { recipient, message });
+  const body: Record<string, unknown> = { recipient, message };
+  if (opts?.replyToMid) body.reply_to = { mid: opts.replyToMid };
+  const response = await graphPost("me/messages", igToken, body);
+  const observer = sendObserver.getStore();
+  if (observer) await observer({ body, response }).catch(() => {});
+  return response;
 }
 
 function textBody(text: string): Record<string, unknown> {
@@ -131,9 +167,10 @@ function postbackButtonBody(
 export function sendTextMessage(
   igToken: string,
   recipientId: string,
-  text: string
+  text: string,
+  opts?: SendOptions
 ) {
-  return sendMessage(igToken, { id: recipientId }, textBody(text));
+  return sendMessage(igToken, { id: recipientId }, textBody(text), opts);
 }
 
 export function sendImageMessage(
@@ -143,6 +180,57 @@ export function sendImageMessage(
 ) {
   return sendMessage(igToken, { id: recipientId }, {
     attachment: { type: "image", payload: { url: imageUrl } },
+  });
+}
+
+export type AttachmentKind = "image" | "audio" | "video" | "file";
+
+/**
+ * Anexo por URL pública (composer do painel, Fase 3 do CRM): a Meta baixa o
+ * arquivo da URL informada, então precisa ser pública (bucket `crm-uploads`
+ * do Supabase Storage). Tipo "file" cobre PDF e outros documentos.
+ */
+export function sendAttachmentMessage(
+  igToken: string,
+  recipientId: string,
+  kind: AttachmentKind,
+  url: string,
+  opts?: SendOptions
+) {
+  return sendMessage(
+    igToken,
+    { id: recipientId },
+    { attachment: { type: kind, payload: { url } } },
+    opts
+  );
+}
+
+/**
+ * Figurinha de coração ("❤️", like_heart), o mesmo efeito de dar duplo
+ * toque numa mensagem no app do Instagram. Confirmado na Fase 0: chega ao
+ * lead como `attachment: {type: "like_heart"}` e o eco confirma o envio.
+ */
+export function sendLikeHeartSticker(
+  igToken: string,
+  recipientId: string,
+  opts?: SendOptions
+) {
+  return sendMessage(
+    igToken,
+    { id: recipientId },
+    { attachment: { type: "like_heart" } },
+    opts
+  );
+}
+
+/**
+ * Marca as mensagens do lead como vistas (equivalente ao "✓✓" azul). Não é
+ * uma mensagem: não passa por `observeSends`, igual ao indicador de digitando.
+ */
+export function sendMarkSeen(igToken: string, recipientId: string) {
+  return graphPost("me/messages", igToken, {
+    recipient: { id: recipientId },
+    sender_action: "mark_seen",
   });
 }
 
@@ -255,11 +343,23 @@ export function sendTypingAction(igToken: string, recipientId: string) {
 /**
  * Inscreve a conta profissional nos eventos necessários para o webhook:
  * mensagens, toques em botão postback (fluxos de comentário e sequências),
- * comentários e aberturas por link ig.me?ref= (gatilho "Link de referência").
+ * comentários, aberturas por link ig.me?ref= (gatilho "Link de referência")
+ * e, para o CRM, reação, visto e edição do lead (os três confirmados com
+ * conta real na Fase 0 do CRM, 28/09/2026).
  */
+export const WEBHOOK_FIELDS = [
+  "messages",
+  "messaging_postbacks",
+  "messaging_referral",
+  "comments",
+  "message_reactions",
+  "messaging_seen",
+  "message_edit",
+] as const;
+
 export function subscribeAccountToWebhooks(igToken: string) {
   return graphPost("me/subscribed_apps", igToken, {
-    subscribed_fields: "messages,messaging_postbacks,messaging_referral,comments",
+    subscribed_fields: WEBHOOK_FIELDS.join(","),
   });
 }
 
@@ -296,6 +396,105 @@ export async function getFollowsBusiness(
     throw new GraphApiError("Resposta sem is_user_follow_business");
   }
   return json.is_user_follow_business;
+}
+
+/** Perfil completo de quem conversa com a conta, para a ficha do lead do CRM. */
+export interface UserProfileDetails {
+  username: string | null;
+  name: string | null;
+  profilePicUrl: string | null;
+  followerCount: number | null;
+  followsBusiness: boolean | null;
+  isVerified: boolean | null;
+}
+
+/**
+ * Perfil completo (User Profile API): nome, @, foto, seguidores, se segue a
+ * conta e se é verificado. Mesma regra de consentimento do `getUserProfile`
+ * (só depois de DM ou toque em botão da conta). Campo ausente na resposta
+ * vira null em vez de derrubar a chamada inteira.
+ */
+export async function getFullUserProfile(
+  igToken: string,
+  igScopedId: string
+): Promise<UserProfileDetails> {
+  const json = await graphGet(encodeURIComponent(igScopedId), igToken, {
+    fields: "name,username,profile_pic,follower_count,is_user_follow_business,is_verified_user",
+  });
+  return {
+    username: typeof json.username === "string" ? json.username : null,
+    name: typeof json.name === "string" ? json.name : null,
+    profilePicUrl: typeof json.profile_pic === "string" ? json.profile_pic : null,
+    followerCount: typeof json.follower_count === "number" ? json.follower_count : null,
+    followsBusiness:
+      typeof json.is_user_follow_business === "boolean" ? json.is_user_follow_business : null,
+    isVerified: typeof json.is_verified_user === "boolean" ? json.is_verified_user : null,
+  };
+}
+
+/** Uma conversa listada pela Conversations API (histórico anterior ao CRM). */
+export interface IgConversationSummary {
+  id: string;
+  participants: { data: { id: string; username?: string }[] };
+}
+
+/**
+ * Página de conversas da conta (Conversations API). Usada só na importação
+ * do histórico: o webhook em tempo real não precisa disto. `limit` pequeno
+ * porque cada conversa da página ainda gasta 1 chamada extra para as
+ * mensagens dela, e o Worker tem tempo de execução limitado.
+ */
+export async function listConversationsPage(
+  igToken: string,
+  after?: string,
+  limit = 5
+): Promise<{ conversations: IgConversationSummary[]; nextAfter: string | null }> {
+  const params: Record<string, string> = {
+    platform: "instagram",
+    fields: "id,participants",
+    limit: String(limit),
+  };
+  if (after) params.after = after;
+  const json = await graphGet("me/conversations", igToken, params);
+  const conversations = (json.data as IgConversationSummary[] | undefined) ?? [];
+  const paging = json.paging as { cursors?: { after?: string }; next?: string } | undefined;
+  const nextAfter = paging?.next && paging.cursors?.after ? paging.cursors.after : null;
+  return { conversations, nextAfter };
+}
+
+/** Um anexo de mensagem devolvido pela Conversations API. */
+export interface IgConversationAttachment {
+  mime_type?: string;
+  image_data?: { url?: string };
+  video_data?: { url?: string };
+  file_url?: string;
+}
+
+/** Uma mensagem de dentro de uma conversa (Conversations API). */
+export interface IgConversationMessage {
+  id: string;
+  created_time: string;
+  from?: { id: string; username?: string };
+  to?: { data?: { id: string; username?: string }[] };
+  message?: string;
+  attachments?: { data?: IgConversationAttachment[] };
+  reply_to?: { id?: string };
+}
+
+/**
+ * As mensagens de uma conversa (Conversations API). A Meta só devolve as 20
+ * mais recentes por conversa, sem paginação possível além disso (confirmado
+ * na Fase 0 do CRM, 28/09/2026).
+ */
+export async function getConversationMessages(
+  igToken: string,
+  conversationId: string
+): Promise<IgConversationMessage[]> {
+  const json = await graphGet(conversationId, igToken, {
+    fields: "messages{id,created_time,from,to,message,attachments,reply_to}",
+  });
+  const messages = json.messages as { data?: IgConversationMessage[] } | undefined;
+  return messages?.data ?? [];
 }
 
 export interface IgMedia {

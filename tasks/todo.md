@@ -1,3 +1,490 @@
+# Falow: CRM de conversas (Inbox estilo WhatsApp + Funil Kanban)
+
+Planejado em 2026-09-28. Status: **Fases 0 a 9 em produção em 28/09/2026** (Worker fd0cae14,
+migrations 0009 a 0013 aplicadas e conferidas no catálogo). Fases 3 a 9 feitas por 4 agentes
+Sonnet em worktrees, com merge, revisão e deploy pelo Claude principal.
+
+## Status final (28/09/2026)
+
+Entregue e conferido logado em produção (conta de teste @ion_comunnity):
+- Captura (Fase 1), Inbox ao vivo (2), responder pelo painel com texto/imagem/PDF/citação,
+  assumir e devolver ao bot, respostas rápidas, mark_seen (3; composer testado de ponta a ponta:
+  mensagem gravada como agent com mid, takeover automático, devolvido depois), tags com cor,
+  filtro, em massa e dados editáveis (4), funil kanban com arrastar, entrada automática e etapas
+  (5), nó "Mover para etapa", condição "Está na etapa" e workflow ao entrar na etapa (6), menu da
+  mensagem, apagar para mim, notas internas, concluir/reabrir (7), importar histórico na página
+  Contas (8), LGPD e privacidade (9), foto e cartão de perfil do lead com "Abrir no Instagram"
+  (pedido do usuário). 59/59 perfis preenchidos (55 com foto).
+- 492 testes, tsc e build limpos.
+- Bugs achados na revisão/QA e corrigidos: fila de atrasos travada por conversa assumida,
+  entrada automática devolvendo o lead para "Novos" a cada DM, upload barrado pelo limite de 1MB
+  das server actions, áudio importado rotulado como botões, perfil nunca buscado para leads que
+  já tinham @, prefetch em massa derrubando o Worker (503), canal ao vivo como anon, layout
+  espremido em 768/1280 e botões do funil fora da tela.
+
+Pendente (do usuário):
+- [ ] Aplicar 0009 a 0013 no Supabase da Vercel antes do próximo `! git push tocha main:main`
+      (check-db-schema barra o build de lá sem elas).
+- [ ] Decidir se clica em "Trazer conversas existentes" no Funil (cria lead para as 59 conversas).
+- [ ] Testar com uso real: reação/edição do lead aparecendo no balão, anexo pelo composer.
+- [ ] Fechar a aba do SQL Editor no Chrome ("Sair" no aviso).
+Fora do escopo (limites da Meta): HUMAN_AGENT (App Review), reagir pela conta, editar ou
+desfazer envio no Instagram, histórico além das 20 últimas mensagens por conversa.
+Validação: 8 agentes Sonnet em paralelo, um por feature, só pesquisa (doc oficial da
+Meta e da Supabase + leitura do código).
+
+## Pedido
+
+CRM dentro do Falow, no estilo Kommo: ver as DMs em duas visões, (1) painel de conversa
+estilo WhatsApp e (2) kanban de leads por etapa. Com tags, excluir mensagens, editar, etc.
+Arquitetura `modular-arch`.
+
+## Ponto de partida (o que existe hoje)
+
+- **Nenhuma mensagem é guardada.** `conversations` só controla a janela de 24h
+  (`last_inbound_at`) e a pausa (`automation_paused_until`); `interactions` loga só as
+  mensagens recebidas que passaram pelas automações. Envios não são gravados e os ecos
+  (`is_echo`) são descartados em `src/lib/meta/process.ts:187`.
+- `contacts` existe (`fields jsonb`, `tags text[]`), mas só ganha linha quando um workflow
+  coleta dado ou define tag.
+- Um usuário por conta (`ig_accounts.user_id`), sem equipe: "responsável pelo lead" fica
+  fora deste plano.
+- Não há client do Supabase para o navegador (`src/lib/supabase` só tem `server.ts` e `admin.ts`).
+- `handleSequenceReply` (passo 4a) roda antes da checagem de `automation_paused_until`
+  (passo 4a-bis) em `processMessagingEvent`. Hoje é intencional (quem está no meio do fluxo
+  continua), mas para "Assumir conversa" o bot engoliria a resposta do lead: o takeover do
+  CRM precisa de checagem própria antes do 4a.
+
+## Matriz de viabilidade (resultado dos agentes)
+
+| Feature | Veredito | Base |
+|---|---|---|
+| Guardar mensagens recebidas (texto, mídia, story, reel) | Viável | webhook `messages` já assinado |
+| Guardar mensagens enviadas (automação, workflow, painel) | Viável | envio devolve `message_id`; eco (`is_echo`) chega para tudo que a conta envia |
+| Mensagens enviadas pelo app do Instagram no celular | Viável com limitação | chegam como eco; separar app de API pelo payload não é documentado no Instagram Login (Fase 0) |
+| Histórico anterior ao CRM | Viável com limitação | Conversations API: só as 20 mensagens mais recentes por conversa |
+| Mídia recebida | Viável com limitação | URL da CDN expira; copiar para Storage próprio já reprovou app no App Review (caso público do Chatwoot): guardar só a URL |
+| Responder pelo painel (texto, imagem, áudio, vídeo, PDF, ❤️) | Viável | janela de 24h, anexo por URL pública |
+| Responder até 7 dias (tag `HUMAN_AGENT`) | **Inviável sem App Review** | Fase 0: 403 "must be reviewed and approved by Facebook" |
+| Tags com cor, filtro, aplicar e remover | Viável | catálogo novo + `contacts.tags` atual, zero mudança no runtime do workflow |
+| Excluir mensagem: "Apagar para mim" (só no Falow) | Viável | soft delete local |
+| Desfazer envio no Instagram / apagar conversa | **Inviável** | a API não tem endpoint |
+| Lead apagou uma mensagem | Viável | evento `messages` com `is_deleted: true` |
+| Editar mensagem enviada | **Inviável** | a API não tem endpoint |
+| Lead editou uma mensagem | Viável (Fase 0) | `message_edit: {mid, text, num_edit}` chega no Instagram Login |
+| Alternativas de "editar" | Viável | rascunho, respostas rápidas, notas internas e dados do contato, todos editáveis |
+| Reação do lead | Viável | assinar `message_reactions` |
+| Reagir pela conta | **Inviável hoje** | Fase 0: "wow" = 400, "love"/"😂" = 500 em 5 tentativas |
+| Lead respondeu citando | Viável | `message.reply_to.mid` |
+| Responder citando pela conta | Viável (Fase 0) | `reply_to: {mid}` no topo da requisição; eco confirma a citação |
+| "Visto" pelo lead | Viável | assinar `messaging_seen` |
+| Marcar como lida / digitando | Viável (Fase 0) | `mark_seen`, `typing_on/off` = 200 |
+| Kanban com arrastar | Viável | `@dnd-kit/core` + `sortable` (teclado, toque, scroll entre colunas) |
+| Atualização ao vivo | Viável | Supabase Realtime: WebSocket do navegador direto na Supabase, não passa pelo Worker |
+| Responsável / equipe | Fora do escopo | schema é 1 usuário por conta |
+
+## Decisões para aprovar (default proposto)
+
+- [x] **D1 Navegação**: item novo "CRM" na sidebar com duas abas, **Conversas** e **Funil**.
+      A página Contatos continua como está (pode migrar para dentro do CRM depois).
+- [x] **D2 Entrada no funil**: quem manda a 1ª DM entra sozinho no funil padrão, etapa
+      "Novos". Desligável por funil (`auto_enroll`). Funil padrão: Novos, Em conversa,
+      Negociando, Ganho, Perdido (tudo editável).
+- [x] **D3 Humano x bot**: responder pelo painel **assume a conversa**: automações e
+      workflows param para aquela pessoa (inclusive fluxo esperando resposta e atraso
+      agendado) até clicar em "Devolver ao bot". Botão "Assumir" também existe sem responder.
+- [x] **D4 Mídia**: guardar só o link da Meta, sem copiar o arquivo (política da Meta).
+      Mídia expirada aparece como "Mídia indisponível, abrir no Instagram".
+
+Restrições da API que viram UX (não são decisões): "Apagar para mim" com aviso de que o
+contato continua vendo; não existe "Editar mensagem enviada", reação enviada pela conta nem
+resposta fora das 24h (esta exige App Review do `HUMAN_AGENT`).
+
+## Arquitetura (modular-arch)
+
+Tudo que é do CRM mora em `src/modules/crm/`, cada sub-feature numa vertical própria
+(UI + hooks + dados + tipos). Rotas em `src/app` só montam a página e chamam o módulo pela
+API pública (`src/modules/crm/index.ts`). Fora do módulo entram só peças agnósticas:
+`src/lib/supabase/client.ts` (client do navegador), primitivos shadcn novos em
+`src/components/ui/` (popover, scroll-area, avatar, command) e funções de envio novas em
+`src/lib/meta/graph.ts` (camada da Graph API, sem regra de CRM).
+
+```
+src/modules/crm/
+├── index.ts                     # API pública do módulo (única porta de entrada)
+├── shared/
+│   ├── types/                   # Conversation, Message, Lead, Stage, Tag
+│   └── utils/                   # messaging-window.ts (24h / 7d), message-preview.ts
+├── capture/                     # sem UI: webhook e envios gravam por aqui
+│   ├── server/capture-event.ts  # entrada única chamada por process.ts (best effort)
+│   ├── server/record-inbound.ts # mensagem do lead + contato + lead no funil
+│   ├── server/record-outbound.ts# upsert por mid (envio e eco convergem)
+│   ├── server/apply-signals.ts  # is_deleted, reação, visto, edição
+│   ├── utils/parse-event.ts     # payload da Meta -> rascunho de mensagem (função pura)
+│   └── __tests__/
+├── inbox/
+│   ├── components/              # inbox-shell, conversation-list(-item), conversation-filters,
+│   │                            # thread, message-bubble, message-actions-menu, composer,
+│   │                            # window-indicator, handoff-toggle, contact-panel, notes-panel
+│   ├── hooks/                   # use-inbox-realtime, use-thread, use-composer-draft
+│   └── services/                # inbox.queries.ts (server) e inbox.actions.ts ("use server")
+├── handoff/
+│   ├── server/takeover.ts       # assumir / devolver; lido pelo webhook e pelo runtime
+│   └── __tests__/
+├── tags/
+│   ├── components/              # tag-badge, tag-picker, tag-manager-dialog, tag-filter
+│   ├── services/                # tags.queries.ts, tags.actions.ts
+│   └── utils/normalize-tag.ts   # mesma normalização da Condição do workflow
+├── pipeline/
+│   ├── components/              # board, board-column, lead-card, lead-drawer,
+│   │                            # pipeline-switcher, stage-settings-dialog
+│   ├── components/workflow/     # move-to-stage-node + form (registrados no editor)
+│   ├── hooks/use-board-dnd.ts
+│   ├── services/                # pipeline.queries.ts, pipeline.actions.ts
+│   ├── server/                  # enroll-lead.ts, move-lead.ts (painel e runtime usam o mesmo)
+│   └── utils/fractional-index.ts
+├── quick-replies/               # respostas rápidas ("/" no composer)
+└── history-import/              # Conversations API (últimas 20 por conversa)
+```
+
+Rotas (finas):
+
+```
+src/app/(dashboard)/crm/layout.tsx           # abas Conversas | Funil
+src/app/(dashboard)/crm/page.tsx             # redireciona para /crm/conversas
+src/app/(dashboard)/crm/conversas/page.tsx   # ?c=<conversa>&conta=&tag=&filtro=
+src/app/(dashboard)/crm/funil/page.tsx       # ?funil=<id>
+```
+
+Tela cheia igual ao editor do Workflow (`sequence-editor.tsx:898`,
+`fixed inset-y-0 md:left-60`). No celular, lista, conversa e ficha viram telas separadas.
+
+Pontos de contato com código existente (só chamadas novas, sem refatorar):
+
+- `src/lib/meta/process.ts`: 1 chamada `captureMessagingEvent(...)` no topo de
+  `processMessagingEvent` (antes do `return` do eco), em try/catch. **Falha no CRM nunca
+  derruba automação.** Checagem de takeover antes do passo 4a.
+- `src/lib/meta/graph.ts`: `subscribed_fields` + `message_reactions,messaging_seen`
+  + `message_edit` (confirmados na Fase 0); envio de anexo, ❤️, `mark_seen`, `reply_to` e
+  `messaging_type`/`tag`.
+- `src/lib/sequences/runtime.ts` e `processDueRuns`: respeitar takeover; nó `moveToStage`.
+- Pontos de envio (process.ts, runtime de sequências, follow-gate): gravar a mensagem
+  enviada com a origem certa.
+- `src/components/layout/sidebar.tsx`: item CRM + badge de não lidas.
+
+## Modelo de dados
+
+`0009_crm_inbox.sql` (idempotente, padrão das anteriores):
+
+```sql
+create table if not exists public.messages (
+  id              uuid primary key default gen_random_uuid(),
+  account_id      uuid not null references public.ig_accounts (id) on delete cascade,
+  conversation_id uuid not null references public.conversations (id) on delete cascade,
+  ig_sender_id    text not null,          -- sempre o lead (o outro lado da conversa)
+  direction       text not null check (direction in ('inbound', 'outbound')),
+  source          text not null check (source in
+                  ('contact', 'automation', 'workflow', 'agent', 'instagram_app', 'import')),
+  mid             text,                   -- id da Meta (nulo só em envio que falhou)
+  kind            text not null default 'text',  -- text, image, video, audio, file, sticker,
+                                          -- share, story_reply, story_mention, reel, postback
+  text            text,
+  attachments     jsonb,                  -- [{type, url}]: só a URL da CDN (D4)
+  meta            jsonb,                  -- quick_reply, postback, botões enviados
+  reply_to_mid    text,                   -- citação (do lead ou da conta)
+  reaction_emoji  text,                   -- reação do lead (campo `emoji`)
+  sent_by         uuid references auth.users (id),
+  status          text not null default 'sent' check (status in ('sent', 'failed')),
+  error_detail    text,
+  deleted_by_contact_at timestamptz,      -- lead apagou (is_deleted)
+  edited_at       timestamptz,            -- lead editou (message_edit)
+  edit_count      int not null default 0,
+  original_text   text,                   -- texto antes da 1ª edição
+  hidden_at       timestamptz,            -- "Apagar para mim"
+  created_at      timestamptz not null    -- horário do evento na Meta
+);
+-- unique (account_id, mid) where mid is not null · index (conversation_id, created_at desc)
+
+alter table public.conversations
+  add column if not exists contact_id uuid references public.contacts (id) on delete set null,
+  add column if not exists last_message_at timestamptz,
+  add column if not exists last_message_text text,  -- a tela monta a prévia pelo kind
+  add column if not exists last_message_kind text,
+  add column if not exists last_message_direction text,
+  add column if not exists unread_count int not null default 0,
+  add column if not exists contact_seen_at timestamptz,   -- messaging_seen
+  add column if not exists human_takeover_at timestamptz, -- D3
+  add column if not exists status text not null default 'open';  -- open | done
+```
+
+- Trigger `after insert` em `messages` atualiza `last_message_*` e soma `unread_count` nas
+  recebidas (lista ordenada e contagem sem query pesada).
+- RLS: `messages` select do dono (update só via server action); `conversations` ganha
+  policy de update do dono.
+- `alter publication supabase_realtime add table public.messages, public.conversations;`
+- `message_signals_pending`: reação / edição / apagado que chegam antes da mensagem
+  (Fase 0 provou que acontece).
+- `crm_notes` (notas internas por contato) e `quick_replies` (atalho + texto).
+
+`0010_crm_tags.sql`: `crm_tags (account_id, name, color)` +
+`create unique index ... on crm_tags (account_id, lower(name))` + índice GIN em
+`contacts.tags`. `contacts.tags text[]` continua sendo a fonte da verdade (runtime do
+workflow e testes intactos).
+
+`0011_crm_pipeline.sql`: `pipelines` (account_id, name, is_default, auto_enroll),
+`pipeline_stages` (position numeric, color, stage_type open/won/lost,
+on_enter_sequence_id), `leads` (contact_id, stage_id, value, position numeric,
+entered_stage_at, closed_at; 1 lead aberto por funil e contato via índice único parcial),
+`lead_stage_events` (from, to, source manual/automation/system). RLS no padrão
+`account_id in (select id from ig_accounts where user_id = auth.uid())`. `leads` na
+publicação do Realtime.
+
+## Fases
+
+Cada fase fecha com `npx tsc --noEmit`, `npm test` e `npm run build` limpos, migration
+aplicada e teste manual logado antes da próxima. Deploy manual ao fim de cada fase entregue.
+
+### Fase 0: spike com conta real (antes de codar a captura)
+
+O usuário faz as ações no celular com a conta de teste; o Claude lê os eventos via
+`wrangler tail` (log temporário do payload bruto, removido no fim).
+
+- [x] Mensagem enviada pela API e pelo app do Instagram: o eco traz algo que separe os dois
+      (`app_id`?) e o `mid` do eco é igual ao `message_id` devolvido no envio?
+- [x] Assinar `message_reactions`, `messaging_seen` e `message_edit` na conta de teste; o lead
+      reage, visualiza, edita e apaga uma mensagem. Registrar o que chega e o formato.
+- [x] Reação com emoji diferente de ❤️, `mark_seen` e 1 envio com `HUMAN_AGENT` fora das 24h.
+- [x] Resultado anotado aqui; ajusta os itens "conforme Fase 0" das fases seguintes.
+- [x] Limpeza: secret `WEBHOOK_DEBUG_IG_IDS` apagado (log parou), 0 sessões de tail
+      abertas, payloads capturados apagados do scratchpad. O `console.log` temporário em
+      `route.ts` sai no commit da Fase 1.
+
+**Resultados (28/09, conta @euheliomonteiro + lead de teste @ion_comunnity, IGSID
+4181139912021434).** Log temporário em produção (commit a99af2c, secret
+`WEBHOOK_DEBUG_IG_IDS`), lido pelo `wrangler tail`; scripts em scratchpad `crm-spike/`.
+
+- Assinatura por conta aceitou `message_reactions`, `messaging_seen` e `message_edit`
+  (200). A conta estava sem `messaging_referral` (conectada antes desse campo entrar no
+  OAuth): reassinado junto. **Contas conectadas antes de 23/09 podem estar sem o gatilho
+  "Link de referência" funcionando**; o script de reassinatura da Fase 1 resolve.
+- Eco: `mid` do eco == `message_id` devolvido pelo envio (confirmado). O payload do eco
+  é só `{mid, text, is_echo}`: **nada separa API de app**. Decisão: a origem é gravada no
+  envio; eco sem registro vira `instagram_app`.
+- Eco chegou ~7s depois do envio: o envio grava antes na maioria dos casos, mas o upsert
+  precisa funcionar nas duas ordens.
+- `messaging_seen` chega (`read: {mid}`), e o `mid` pode ser o da própria mensagem do lead:
+  "Visto" deve ser calculado por horário (`contact_seen_at`), não por mid.
+- Resposta a story chega com `reply_to.story {id, url}` e `url` em `lookaside.fbsbx.com`.
+- `typing_on`, `typing_off` e `mark_seen`: 200.
+- **`HUMAN_AGENT`: 403, exige App Review** ("must be reviewed and approved by Facebook").
+  Fora do MVP; indicador de janela mostra só "aberta" / "fechada".
+- **Reagir pela conta: não funciona.** "wow" = 400 "Reação inválida"; "love" e "😂" = 500
+  transitório em 5 tentativas. Fora do MVP.
+- Eco de mensagem enviada pelo **app do Instagram**: `{mid, text, is_echo}`, idêntico ao eco
+  da API (confirma a regra "eco sem registro = `instagram_app`").
+- **Reação do lead chega**: `reaction: {mid, action: "react", reaction: "like", emoji: "👍"}`.
+  Guardar o `emoji` (a categoria `reaction` é genérica).
+- **Edição do lead chega** (`message_edit` funciona no Instagram Login, ao contrário do que
+  a doc sugeria): `message_edit: {mid, text, num_edit}`. "Editada" no balão entra no MVP.
+- **Desfazer envio do lead**: `message: {mid, is_deleted: true}`, sem texto.
+- **Citação do lead**: `message.reply_to: {mid, is_self_reply}`. Eco de citação feita pelo
+  app da conta também traz `reply_to`.
+- **Citar pela API FUNCIONA** com `reply_to: {mid}` no TOPO da requisição (junto de
+  `recipient`), não dentro de `message` (esse dá 400 "Invalid keys"). Confirmado pelo eco
+  com `reply_to`. "Responder citando" entra no composer.
+- Foto e áudio: `attachments: [{type: "image" | "audio", payload: {url}}]`, sem texto, URL
+  em `lookaside.fbsbx.com/ig_messaging_cdn`.
+- **Eventos chegam fora de ordem**: a reação e a edição chegaram ANTES da mensagem a que
+  se referem. A captura precisa de fila de sinais pendentes (ver Fase 1).
+- Conversations API funciona no Instagram Login; mensagens com botões (template) voltam
+  com `message: ""` no histórico, então a importação não recupera o conteúdo delas.
+
+### Fase 1: captura de mensagens (fundação, sem UI)
+
+Desenho da captura (a partir da Fase 0):
+- Enviadas: `graph.ts` ganha um observador opcional por contexto assíncrono
+  (`AsyncLocalStorage`, suportado no Worker com `nodejs_compat` e já usado pelo OpenNext).
+  `graph.ts` continua sem saber de CRM: só avisa "mensagem enviada" a quem estiver
+  observando. O módulo CRM expõe `observeOutbound(accountId, source, fn)`; `process.ts`
+  envolve regras (`automation`) e o runtime envolve workflows (`workflow`). Nenhum
+  ponto de envio muda de assinatura.
+- Envio grava com upsert que corrige a origem; eco faz insert que ignora duplicado.
+- Sinais (reação, edição, apagado, visto) que chegam antes da mensagem vão para
+  `message_signals_pending (account_id, mid, type, payload, created_at)`; ao gravar uma
+  mensagem, a captura aplica e remove os pendentes daquele `mid`. Pendentes com mais de
+  7 dias são descartados quando um sinal novo entra na fila.
+- Resposta privada a comentário cria conversa sem mensagem do lead: `last_inbound_at`
+  passa a aceitar nulo (janela fechada) e `touchConversation` precisa tratar nulo no
+  `.lt(...)` (hoje `null < at` não atualiza). `runtime.ts:1184` já trata ausência como
+  janela fechada.
+
+- [x] Migration 0009 escrita (`supabase/migrations/0009_crm_inbox.sql`); **falta aplicar**
+- [x] `capture/utils/parse-event.ts` (pura) + testes: texto, quick reply, postback, anexos,
+      story reply, story mention, eco, `is_deleted`, reação, visto, `reply_to`
+- [x] `captureMessagingEvent` em `process.ts` (best effort, em paralelo com a automação).
+      Mudança: NÃO cria linha em `contacts` para todo lead (inundaria a página Contatos, D1);
+      `conversations.contact_id` fica para a Fase 2/5 decidir
+- [x] Enviadas: envio e eco convergem por upsert em `(account_id, mid)`. O envio grava a
+      origem (automation / workflow / agent); eco sem registro vira `instagram_app`
+      (Fase 0: o eco não traz nada que separe app de API)
+- [x] Toque em botão (postback) gravado como mensagem do lead com o título do botão
+- [x] `subscribed_fields` novos em `WEBHOOK_FIELDS` (graph.ts) para contas novas; a única
+      conta conectada já foi reassinada na Fase 0, então o script de reassinatura não foi necessário
+- [x] Testes de integração em `process.test.ts`: automação responde igual com e sem CRM;
+      erro ao gravar em `messages` não muda a resposta; eco repetido não duplica
+
+- [x] Verificação: `tsc` limpo, vitest 400/400 (45 novos: parse-event 18, parse-sent 8,
+      capture 16, process 3), `npm run build` ok, zero travessão em `src/modules`
+- [x] `scripts/check-db-schema.mjs` exige a 0009 (bloqueia o build da Vercel sem ela)
+- [x] 0009 aplicada no Supabase de produção (Cloudflare) em 28/09 pelo SQL Editor, antes do
+      deploy. Conferido no catálogo: `last_inbound_at` nullable e sem default, trigger,
+      unique, realtime (conversations, messages), policy; 58 conversas intactas
+- [ ] Aplicar 0009 também no Supabase da Vercel antes do próximo push para o `tocha`
+- [x] Deploy (Worker 760d67ac, 28/09). 1ª captura real: resposta pelo app da conta a um lead,
+      citando, gravada como `outbound/instagram_app` com `reply_to_mid`
+- [ ] E2E com o lead de teste: DM, resposta de automação (origem `automation`), reação e
+      edição conferidas no banco
+
+### Fase 2: Inbox (leitura, ao vivo)
+
+- [x] `design-taste-frontend` carregada; leitura: tela de produto para quem atende DMs, linguagem
+      calma de chat (WhatsApp/Kommo), tokens e ícones que o Falow já usa; dials 3/3/6. A skill se
+      declara fora de escopo para dashboard: aplicado o que cabe (zero travessão, 1 acento verde,
+      raio único, estados vazio/erro, claro/escuro)
+- [x] `src/lib/supabase/client.ts` (createBrowserClient, só para o Realtime)
+- [x] Sidebar com "CRM" + badge de não lidas (layout soma `unread_count`). Sem abas por enquanto:
+      "Funil" entra como aba quando a Fase 5 existir (sem tela placeholder)
+- [x] Lista: iniciais do @ (foto da Meta expira), prévia por tipo, horário, não lidas; filtros
+      conta (Select, só com 2+ contas) e Todas/Não lidas; busca por @ e texto (debounce, no servidor)
+- [x] Conversa: balão por tipo (texto, foto, vídeo, áudio, story com miniatura, menção,
+      compartilhamento/reel/arquivo como link, botões e respostas rápidas enviadas, toque em botão,
+      não suportada), separador por dia, origem da enviada, "Visto", "Mensagem apagada pelo
+      contato", citação, reação, "editada" (original no title), mídia expirada vira aviso
+- [x] Ficha lateral: perfil, pausa de automações, workflows em andamento, tags, dados coletados,
+      primeiro contato. **Campos ainda só leitura** (edição entra junto com as tags, Fase 4)
+- [x] Realtime (postgres_changes em conversations e messages → `router.refresh` com debounce) +
+      refresh ao voltar para a aba
+- [x] Abrir a conversa zera `unread_count` (server action, posse conferida pelo RLS)
+- [x] Horários sempre no fuso de Brasília (evita divergência servidor UTC x navegador na hidratação)
+- [x] @ do lead: buscado na captura, na 1ª DM (consentimento garantido); 58 conversas antigas
+      preenchidas uma vez por script (58/58)
+- [x] Testes bloqueiam a rede por padrão (`vitest.setup.ts`); 410/410, tsc e build ok
+- [x] Conferido logado em produção (1280 real + iframes de 375 e 768, porque o Chrome não
+      redimensiona a área interna). 3 bugs achados e corrigidos na hora:
+      1. **Prefetch em massa**: 60 links da lista pré-renderizados no servidor → Worker em 503
+         (inclusive /rules e /logs). `prefetch={false}` nos links do Inbox.
+      2. **Ao vivo mudo**: o canal entrava como `anon` (`realtime.subscription.claims_role`),
+         porque o supabase-js 2.110 só repassa o token em SIGNED_IN/TOKEN_REFRESHED e a sessão
+         vem dos cookies (INITIAL_SESSION). Corrigido com `realtime.setAuth` antes do
+         subscribe; "Teste 3" apareceu na tela sem recarregar.
+      3. **768px espremido**: sidebar fixa + lista deixavam ~200px para a conversa. Lista e
+         conversa lado a lado só a partir de 1024px; debounce do ao vivo 400ms → 1s (1 mensagem
+         gerava 6 refresh).
+- [x] Rodapé da conversa avisa que responder pelo Falow chega na Fase 3
+- [ ] Usuário confere no próprio uso (abrir conversa real zera as não lidas: não abri as dele)
+
+### Fase 3: responder e passar para o humano
+
+- [ ] `graph.ts`: envio de anexo (imagem, áudio, vídeo, arquivo), ❤️, `mark_seen`,
+      `messaging_type` + `tag`
+- [ ] Composer: texto (limite de 1000 com contador), imagem e arquivo (upload para o bucket
+      `crm-uploads` do Supabase Storage com URL pública; é arquivo do usuário, não da Meta),
+      Enter envia e Shift+Enter quebra linha, rascunho por conversa, envio otimista com
+      "Falhou, tentar de novo"
+- [ ] Responder citando: "Responder" no menu da mensagem mostra a citação no composer e
+      envia `reply_to: {mid}` no topo da requisição (Fase 0)
+- [ ] Indicador de janela: "Janela aberta, fecha em 5h" / "Janela fechada: aguarde o lead
+      escrever" (sem `HUMAN_AGENT`: exige App Review, Fase 0); composer desabilitado fora da janela
+- [ ] Erro de janela fechada da Meta vira aviso claro no balão
+- [ ] Handoff (D3): `human_takeover_at` checado antes do passo 4a em process.ts, no postback,
+      no comentário e em `processDueRuns`; runs em espera ficam parados e só retomam depois
+      de "Devolver ao bot"
+- [ ] Respostas rápidas: criar, editar, excluir + "/" no composer
+- [ ] `mark_seen` ao abrir a conversa (confirmado na Fase 0)
+- [ ] Testes: takeover bloqueia regra, workflow novo, retomada por resposta e atraso;
+      devolver ao bot volta ao normal
+
+### Fase 4: Tags
+
+- [ ] Migration 0010
+- [ ] Gerenciar tags (nome + cor de uma paleta fixa com contraste AA); as tags que já
+      existem nos contatos entram no catálogo na 1ª abertura, sem duplicar por maiúscula/acento
+- [ ] Aplicar/remover na ficha, no card do funil e em massa na lista (seleção múltipla)
+- [ ] Filtro por tag na lista de conversas e no funil (GIN)
+- [ ] Renomear/excluir propaga em `contacts.tags` e avisa "N workflows usam esta tag" com
+      link (reescrever o grafo dos workflows automaticamente fica para depois)
+- [ ] Nós "Definir campo ou tag" e "Condição" ganham autocomplete do catálogo (texto livre
+      continua aceito)
+
+### Fase 5: Funil (Kanban)
+
+- [ ] Migration 0011; funil padrão criado na 1ª visita (D2)
+- [ ] Entrada automática na captura da 1ª mensagem; conversas antigas entram pelo botão
+      "Trazer conversas existentes"
+- [ ] `@dnd-kit`: arrastar entre colunas e dentro da coluna, teclado e toque; ordem por
+      fractional index (`position numeric`), atualização otimista + server action, reindex
+      só quando o intervalo fica pequeno demais
+- [ ] Card: foto, @, prévia da última mensagem, tags, valor, tempo na etapa, não lidas;
+      clique abre o drawer com ficha + conversa (reaproveita componentes do inbox)
+- [ ] Coluna: contagem e soma de valor (query agregada), 50 cards + "Carregar mais"
+- [ ] Ganho / Perdido fecham o lead (`closed_at`), com motivo opcional
+- [ ] Histórico de movimentação (`lead_stage_events`) na ficha
+- [ ] Gerenciar funis e etapas (criar, renomear, cor, reordenar, excluir escolhendo o
+      destino dos leads)
+- [ ] Realtime em `leads`
+
+### Fase 6: integração com Workflow (lição do projeto: um sistema só)
+
+- [ ] Nó "Mover para etapa" (`moveToStage`), grupo "CRM" do BlockMenu, edição dentro do card
+      (padrão atual); runtime usa o mesmo `move-lead.ts` do painel com `source = automation`
+- [ ] Operador "Está na etapa" no nó Condição
+- [ ] "Ao entrar nesta etapa, iniciar workflow" nas configurações da etapa
+      (`on_enter_sequence_id`, reaproveita `startSequenceFromGoTo`), com trava anti-loop
+- [ ] Testes de integração regra -> workflow -> CRM (lead movido, evento gravado, workflow
+      da etapa disparado 1 vez)
+
+### Fase 7: ações por mensagem e notas
+
+- [ ] Menu da mensagem: Copiar, Apagar para mim (com aviso "o contato continua vendo no
+      Instagram"), Responder (citando). Reagir pela conta fica fora (a API falhou na Fase 0)
+- [ ] Notas internas por contato (criar, editar, excluir; nunca vão para o Instagram), na
+      ficha e intercaladas na conversa com estilo próprio
+- [ ] "Editada" no balão quando o lead editar (`message_edit`, confirmado na Fase 0), com
+      o texto original acessível
+- [ ] Concluir / reabrir conversa
+
+### Fase 8: importar histórico
+
+- [ ] "Importar histórico" por conta: Conversations API, últimas 20 mensagens por conversa,
+      `source = import`, dedupe por `mid`, respeitando rate limit, com progresso na tela
+- [ ] Aviso honesto: "O Instagram só libera as 20 mensagens mais recentes de cada conversa"
+
+### Fase 9: fechamento
+
+- [ ] Exclusão de dados (LGPD): o fluxo existente passa a apagar `messages`, `crm_notes` e
+      `leads` da pessoa (hard delete); Política de Privacidade cita o armazenamento de mensagens
+- [ ] Revisão enxuta: 1 verificador nas partes críticas (captura e handoff)
+- [ ] Handoff + deploy
+
+## Riscos
+
+- Captura no webhook: erro do CRM não pode atrasar nem quebrar automação (try/catch +
+  teste de regressão). Custo extra: 1 a 3 queries por evento.
+- `messages` cresce rápido: índices por conversa; retenção configurável depois.
+- Realtime com RLS por subquery serve no volume atual; migrar para Broadcast se escalar.
+  Limites: 200 conexões no Free, 500 no Pro.
+- Mídia expira e não pode ser copiada: mídia antiga não aparece.
+- `HUMAN_AGENT` exige App Review (confirmado): fora das 24h o painel não responde.
+- Conta que falhar ao reassinar os webhooks fica sem reação/visto até reconectar.
+- `mark_seen` mostra "Visto" para o lead no Instagram: ligado por padrão, com opção de desligar.
+
+## Dependências novas
+
+`@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`; primitivos shadcn (popover,
+scroll-area, avatar, command) conforme a necessidade.
+
+---
+
 # Falow: servidor MCP (rodada 2)
 
 Planejado em 2026-09-28. Status: **spec e plano prontos, implementacao engatilhada**.
@@ -45,7 +532,7 @@ o teste de isolamento testa hipotese, nao caso real.
 # Falow: campo inteligente, pastas e deeplink automatico
 
 Planejado e implementado em 2026-09-27. Status: **codigo pronto, aguardando teste
-manual do usuario e as migrations 0009 e 0010**.
+manual do usuario e as migrations 0014 e 0015**.
 
 ## Pedido
 
@@ -94,9 +581,10 @@ MCP ficou pra rodada 2, com spec propria.
 
 ## Pendente
 
-- [ ] **Aplicar as migrations**: 0007 e 0008 seguem pendentes de antes; 0009 e
-      0010 entram agora. No projeto da Vercel faltam as quatro; no da Cloudflare,
-      da 0008 em diante. Sem elas o painel funciona, so sem os recursos novos.
+- [ ] **Aplicar as migrations**: 0007 e 0008 seguem pendentes de antes; 0014 e
+      0015 entram agora (renumeradas: o CRM ja usava 0009 a 0013). No projeto da
+      Vercel faltam as quatro; no da Cloudflare, da 0008 em diante. Sem elas o
+      painel funciona, so sem os recursos novos.
 - [ ] **Preencher `OPENROUTER_API_KEY`** onde quiser o botao de IA (local, Vercel
       e Cloudflare sao tres lugares).
 - [ ] **Teste manual no navegador**: os dois atalhos em cada tipo de campo,
@@ -105,6 +593,9 @@ MCP ficou pra rodada 2, com spec propria.
       nasce preenchido, com QR baixando certo.
 - [ ] Deploy na Cloudflare (`npm run build:cloudflare && npx wrangler deploy`) so
       depois do teste, e sempre na pasta principal (ver tasks/lessons.md).
+
+---
+
 
 ---
 

@@ -38,6 +38,8 @@ import { FlowData } from "@/lib/sequences/flow-data";
 import { fetchAndStoreUsername } from "@/lib/contacts/profile";
 import { pickBranch } from "@/lib/sequences/randomizer";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { moveLead } from "@/modules/crm/pipeline/server/move-lead";
+import { isTakenOver, observeOutbound } from "@/modules/crm/server";
 import { sleep } from "@/lib/utils";
 import type { IgAccount, InteractionStatus, Rule } from "@/types/database";
 import {
@@ -66,6 +68,7 @@ import {
   YES_HANDLE,
   type CollectInputNodeData,
   type ConditionNodeData,
+  type MoveToStageNodeData,
   type SetFieldNodeData,
 } from "@/types/sequence";
 
@@ -264,12 +267,18 @@ export async function startSequenceFromRule(
  * unique (sequence_id, ig_sender_id) barra e `insertRun` devolve
  * `duplicate_skip`, registrado normalmente pelo chamador.
  */
-async function startSequenceFromGoTo(
+/**
+ * Exportada também para o Funil (Fase 6): entrar numa etapa com "ao entrar,
+ * iniciar workflow" configurado usa exatamente este mesmo caminho (o nó
+ * "Mover para etapa" chama por dentro do runtime; o board chama daqui, do
+ * server action de mover o card).
+ */
+export async function startSequenceFromGoTo(
   admin: AdminClient,
   account: IgAccount,
   senderId: string,
   targetSequenceId: string,
-  deadline: number
+  deadline = invocationDeadline()
 ): Promise<SequenceOutcome | null> {
   const { data: target } = await admin
     .from("sequences")
@@ -291,6 +300,22 @@ async function startSequenceFromGoTo(
     discardRunIfNothingSent: true,
     deadline,
   });
+}
+
+/**
+ * "Ao entrar na etapa, iniciar workflow" (Fase 6): caminho único do board e
+ * do nó "Mover para etapa". É um workflow NOVO, então respeita o "Assumir
+ * conversa" (D3): com atendente na conversa, não inicia.
+ */
+export async function startStageEnterSequence(
+  admin: AdminClient,
+  account: IgAccount,
+  senderId: string,
+  sequenceId: string,
+  deadline = invocationDeadline()
+): Promise<SequenceOutcome | null> {
+  if (await isTakenOver(admin, account.id, senderId)) return null;
+  return startSequenceFromGoTo(admin, account, senderId, sequenceId, deadline);
 }
 
 /**
@@ -591,6 +616,9 @@ async function resumeFromHandle(
  * pela rota de cron e, oportunisticamente, ao fim de cada webhook. Faz o
  * próprio log em `interactions`. Retorna quantos runs processou.
  */
+// Conversa assumida: de quanto em quanto tempo o atraso vencido é conferido de novo.
+const TAKEOVER_RECHECK_MS = 15 * 60 * 1000;
+
 export async function processDueRuns(
   limit = 5,
   deadline = invocationDeadline()
@@ -621,6 +649,21 @@ export async function processDueRuns(
     // (o run é apagado em cascata com ela) e ativa.
     const sequence = row.sequences;
     if (!sequence || !sequence.is_active) continue;
+
+    // Conversa assumida por um atendente (D3): o atraso agendado não
+    // dispara enquanto isso. O run não é reivindicado nem marcado como erro:
+    // continua `waiting_delay`, com a retomada adiada para sair do topo da
+    // fila (senão ocuparia o `limit` a cada tick e nenhum outro atraso
+    // rodaria, o mesmo problema das sequências pausadas acima). Depois de
+    // "Devolver ao bot", retoma em até TAKEOVER_RECHECK_MS.
+    if (await isTakenOver(admin, row.account_id, row.ig_sender_id)) {
+      await admin
+        .from("sequence_runs")
+        .update({ next_run_at: new Date(Date.now() + TAKEOVER_RECHECK_MS).toISOString() })
+        .eq("id", row.id)
+        .eq("status", "waiting_delay");
+      continue;
+    }
 
     const claimed = await claimRun(admin, row.id, "waiting_delay");
     if (!claimed) continue;
@@ -778,8 +821,18 @@ export async function processDueRunsSafe(
  * mensagem sair, o run é apagado em vez de ficar como `error`. Sem isso o
  * unique (sequence_id, ig_sender_id) impediria a pessoa de entrar de novo por
  * causa de uma falha que ela nem viu.
+ *
+ * CRM: tudo que o fluxo enviar fica gravado como "workflow", inclusive quando
+ * ele foi iniciado por uma regra (o contexto mais interno vence).
  */
-async function executeFrom(
+function executeFrom(
+  ...args: Parameters<typeof runNodes>
+): Promise<SequenceOutcome> {
+  const [, account] = args;
+  return observeOutbound({ accountId: account.id, source: "workflow" }, () => runNodes(...args));
+}
+
+async function runNodes(
   admin: AdminClient,
   account: IgAccount,
   sequence: Sequence,
@@ -1084,6 +1137,50 @@ async function executeFrom(
           }
           await persistRun(admin, run, "completed", { steps_executed: steps });
           return handoff;
+        }
+
+        // ── CRM (Fase 6) ────────────────────────────────────────────────
+        case "moveToStage": {
+          const { stageId } = node.data as MoveToStageNodeData;
+          const { data: conversation } = await admin
+            .from("conversations")
+            .select("id")
+            .eq("account_id", account.id)
+            .eq("ig_sender_id", run.ig_sender_id)
+            .maybeSingle<{ id: string }>();
+          if (!conversation) {
+            throw new Error("Mover para etapa: conversa não encontrada para este contato.");
+          }
+
+          // Trava anti-loop: já estar na etapa (inclusive quando este mesmo
+          // nó acabou de colocar a pessoa nela) não repete o histórico nem
+          // dispara de novo o workflow de entrada. Um segundo disparo do
+          // MESMO workflow de entrada some sozinho: `insertRun` já barra a
+          // pessoa de entrar duas vezes na mesma sequência.
+          const result = await moveLead(admin, {
+            accountId: account.id,
+            toStageId: stageId,
+            source: "automation",
+            conversationId: conversation.id,
+            igSenderId: run.ig_sender_id,
+          });
+          if (result.changed && result.targetStage.on_enter_sequence_id) {
+            try {
+              await startStageEnterSequence(
+                admin,
+                account,
+                run.ig_sender_id,
+                result.targetStage.on_enter_sequence_id,
+                deadline
+              );
+            } catch (err) {
+              // O workflow "ao entrar" é um bônus da etapa: uma falha nele
+              // nunca desfaz o "Mover para etapa" nem quebra este fluxo.
+              console.error("[crm] workflow de entrada da etapa falhou:", err instanceof Error ? err.message : err);
+            }
+          }
+          nodeId = targetOf(graph, node.id, OUT_HANDLE);
+          break;
         }
       }
     }

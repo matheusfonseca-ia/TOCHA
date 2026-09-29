@@ -29,7 +29,16 @@ export type TableName =
   | "conversations"
   | "interactions"
   | "processed_events"
-  | "contacts";
+  | "contacts"
+  | "messages"
+  | "message_signals_pending"
+  | "crm_tags"
+  | "quick_replies"
+  | "crm_notes"
+  | "pipelines"
+  | "pipeline_stages"
+  | "leads"
+  | "lead_stage_events";
 
 export interface FakeError {
   message: string;
@@ -41,7 +50,7 @@ export interface QueryResult<T = Row> {
   error: FakeError | null;
 }
 
-type FilterOp = "eq" | "neq" | "in" | "lt" | "lte" | "gt" | "gte" | "is";
+type FilterOp = "eq" | "neq" | "in" | "lt" | "lte" | "gt" | "gte" | "is" | "contains";
 
 interface Filter {
   column: string;
@@ -69,6 +78,18 @@ const UNIQUE_CONSTRAINTS: Partial<Record<TableName, string[][]>> = {
   sequence_runs: [["sequence_id", "ig_sender_id"]],
   rule_triggers: [["rule_id", "ig_sender_id"]],
   contacts: [["account_id", "ig_sender_id"]],
+  messages: [["account_id", "mid"]],
+};
+
+// Únicos parciais (`where ...` no índice real): só conflitam quando o
+// predicado também bate na linha existente E na nova.
+const PARTIAL_UNIQUE_CONSTRAINTS: Partial<
+  Record<TableName, { cols: string[]; predicate: (row: Row) => boolean }[]>
+> = {
+  // pipelines_one_default_per_account
+  pipelines: [{ cols: ["account_id"], predicate: (r) => !!r.is_default }],
+  // leads_open_per_pipeline_conversation
+  leads: [{ cols: ["pipeline_id", "conversation_id"], predicate: (r) => r.closed_at == null }],
 };
 
 const PG_UNIQUE_VIOLATION = "23505";
@@ -90,12 +111,56 @@ function defaultsFor(table: TableName): Row {
     case "rule_triggers":
       return { link_delivered_at: null, follow_gate_sent_at: null, created_at: now };
     case "conversations":
-      return { ig_sender_username: null, created_at: now };
+      return {
+        ig_sender_username: null,
+        created_at: now,
+        ig_profile_pic_url: null,
+        ig_profile_name: null,
+        ig_follower_count: null,
+        ig_follows_business: null,
+        ig_is_verified: null,
+        ig_profile_fetched_at: null,
+        human_takeover_at: null,
+        status: "open",
+      };
+    case "quick_replies":
+    case "crm_notes":
+      return { created_at: now, updated_at: now };
     case "contacts":
       return { ig_username: null, fields: {}, tags: [], created_at: now, updated_at: now };
+    case "messages":
+      return {
+        reaction_emoji: null,
+        sent_by: null,
+        status: "sent",
+        error_detail: null,
+        deleted_by_contact_at: null,
+        edited_at: null,
+        edit_count: 0,
+        original_text: null,
+        hidden_at: null,
+      };
+    case "crm_tags":
+      return { color: "green", created_at: now };
     case "interactions":
     case "processed_events":
+    case "message_signals_pending":
       return { created_at: now };
+    case "pipelines":
+      return { is_default: false, auto_enroll: true, created_at: now, updated_at: now };
+    case "pipeline_stages":
+      return { color: "#22c55e", stage_type: "open", on_enter_sequence_id: null, created_at: now, updated_at: now };
+    case "leads":
+      return {
+        value: null,
+        entered_stage_at: now,
+        closed_at: null,
+        lost_reason: null,
+        created_at: now,
+        updated_at: now,
+      };
+    case "lead_stage_events":
+      return { from_stage_id: null, to_stage_id: null, moved_by: null, moved_at: now };
     default:
       return {};
   }
@@ -103,7 +168,21 @@ function defaultsFor(table: TableName): Row {
 
 function hasUniqueConflict(table: TableName, item: Row, rows: Row[]): boolean {
   const constraints = UNIQUE_CONSTRAINTS[table] ?? [];
-  return constraints.some((cols) => rows.some((r) => cols.every((c) => r[c] === item[c])));
+  // Como no Postgres: nulo nunca conflita (ex.: messages.mid de envio que falhou).
+  const plainConflict = constraints.some(
+    (cols) =>
+      cols.every((c) => item[c] != null) &&
+      rows.some((r) => cols.every((c) => r[c] === item[c]))
+  );
+  if (plainConflict) return true;
+
+  const partials = PARTIAL_UNIQUE_CONSTRAINTS[table] ?? [];
+  return partials.some(
+    ({ cols, predicate }) =>
+      predicate(item) &&
+      cols.every((c) => item[c] != null) &&
+      rows.some((r) => predicate(r) && cols.every((c) => r[c] === item[c]))
+  );
 }
 
 function resolveValue(row: Row, column: string, table: TableName, db: FakeSupabase): any {
@@ -139,6 +218,8 @@ function matchesFilters(row: Row, filters: Filter[], table: TableName, db: FakeS
         return val != null && val >= f.value;
       case "is":
         return (val ?? null) === f.value;
+      case "contains":
+        return Array.isArray(val) && Array.isArray(f.value) && f.value.every((v) => val.includes(v));
       default:
         return true;
     }
@@ -214,6 +295,10 @@ class FakeQueryBuilder implements PromiseLike<QueryResult> {
   }
   is(column: string, value: any): this {
     this.filters.push({ column, op: "is", value });
+    return this;
+  }
+  contains(column: string, value: any[]): this {
+    this.filters.push({ column, op: "contains", value });
     return this;
   }
   order(column: string, opts: { ascending?: boolean } = {}): this {
@@ -369,15 +454,66 @@ export class FakeSupabase {
     interactions: [],
     processed_events: [],
     contacts: [],
+    messages: [],
+    message_signals_pending: [],
+    crm_tags: [],
+    quick_replies: [],
+    crm_notes: [],
+    pipelines: [],
+    pipeline_stages: [],
+    leads: [],
+    lead_stage_events: [],
   };
 
   from(table: TableName): FakeQueryBuilder {
     return new FakeQueryBuilder(this, table);
   }
 
+  /**
+   * Espelha `crm_tag_rename` / `crm_tag_remove` (migration 0012_crm_tags.sql)
+   * em JS, só o suficiente para os testes de propagação do catálogo de tags.
+   */
+  async rpc(fn: string, params: Record<string, any>): Promise<QueryResult<number>> {
+    const lower = (s: string) => s.toLowerCase();
+    const now = new Date().toISOString();
+
+    if (fn === "crm_tag_rename") {
+      const { p_account_id, p_old_name, p_new_name } = params;
+      let count = 0;
+      for (const row of this.tables.contacts) {
+        const tags: string[] = row.tags ?? [];
+        if (row.account_id !== p_account_id || !tags.some((t) => lower(t) === lower(p_old_name))) continue;
+        const mapped = tags.map((t) => (lower(t) === lower(p_old_name) ? p_new_name : t));
+        const seen = new Set<string>();
+        row.tags = mapped.filter((t) => (seen.has(lower(t)) ? false : (seen.add(lower(t)), true)));
+        row.updated_at = now;
+        count += 1;
+      }
+      return { data: count as any, error: null };
+    }
+
+    if (fn === "crm_tag_remove") {
+      const { p_account_id, p_tag_name } = params;
+      let count = 0;
+      for (const row of this.tables.contacts) {
+        const tags: string[] = row.tags ?? [];
+        if (row.account_id !== p_account_id || !tags.some((t) => lower(t) === lower(p_tag_name))) continue;
+        row.tags = tags.filter((t) => lower(t) !== lower(p_tag_name));
+        row.updated_at = now;
+        count += 1;
+      }
+      return { data: count as any, error: null };
+    }
+
+    return { data: null, error: { message: `rpc desconhecida no fake: ${fn}` } };
+  }
+
   /** Passa a valer como `ReturnType<typeof createAdminClient>` nos testes (cast no chamador). */
-  get client(): { from: (table: TableName) => FakeQueryBuilder } {
-    return { from: (table: TableName) => this.from(table) };
+  get client(): {
+    from: (table: TableName) => FakeQueryBuilder;
+    rpc: (fn: string, params: Record<string, any>) => Promise<QueryResult<number>>;
+  } {
+    return { from: (table: TableName) => this.from(table), rpc: (fn, params) => this.rpc(fn, params) };
   }
 }
 
