@@ -1,9 +1,27 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260928-223357-claude"
-Status: concluído (pendências do usuário abaixo)
-Resumo: CRM completo (Fases 0 a 9 + foto/perfil do lead) EM PRODUÇÃO no Worker fd0cae14, migrations 0009 a 0013 aplicadas e conferidas no Supabase de produção, 492 testes. Pendências do usuário: aplicar 0009 a 0013 no Supabase da Vercel antes de `! git push tocha main:main`; decidir "Trazer conversas existentes" no Funil; fechar a aba do SQL Editor. Pendências anteriores: migration 0008 e conferência visual do Workflow.
+Última tag: "HANDOFF-falow-20260929-003527-claude"
+Status: concluído
+Resumo: CRM completo em produção (Worker 1b6c473c) + envio de áudio pelo painel (gravar no microfone ou anexar M4A/WAV). Push para o tocha feito pelo usuário (7e69b18..fc85046); o commit do áudio (b4976c7) ainda não foi pro tocha. Vercel NÃO é do usuário (sócio do TOCHA): ignorar build e banco dela. Pendências do usuário: "Trazer conversas existentes" no Funil; fechar as 2 abas do SQL Editor; testar o microfone de verdade (permissão do navegador).
+
+---
+
+## [HANDOFF · falow · 2026-09-29T00:35:27-03:00 · claude]
+Status: concluído
+Objetivo: enviar áudio pelo painel do CRM.
+Feito:
+- Spike com conta real: a Meta aceita M4A (AAC), MP4 de áudio e WAV; recusa MP3 e WebM ("formato de anexo não é aceito"). O MediaRecorder do Chrome grava WebM, então o gravador captura PCM com Web Audio e gera WAV 16 kHz mono (`inbox/utils/wav.ts`, `inbox/hooks/use-voice-recorder.ts`, limite 5 min).
+- `inbox/utils/attachment-types.ts` (`classifyUpload`): imagem 8MB, PDF 25MB, áudio M4A/WAV 25MB, MP3 recusado com explicação. Upload e envio (`composer.actions.ts`, `use-composer.ts`) aceitam kind audio. Composer com botão de microfone e barra de gravação (tempo, cancelar, enviar áudio).
+- 499 testes (7 novos em `inbox/__tests__/audio.test.ts`), tsc e build ok; deploy 1b6c473c.
+- Teste real: WAV anexado pelo composer na conversa de teste chegou pela Meta (gravado como agent/audio com URL do bucket e mid); conversa devolvida ao bot depois.
+- Vercel: o 2º projeto Supabase da conta é de outro sistema (print jobs), não é o Falow; nada aplicado. Usuário disse que a Vercel é de um sócio: ignorar.
+Próximo passo:
+- Usuário testa gravar pelo microfone (permissão do navegador) e decide "Trazer conversas existentes".
+- Push do b4976c7 para o tocha quando quiser (`! git push tocha main:main`).
+Arquivos tocados: src/modules/crm/inbox/{utils/attachment-types.ts,utils/wav.ts,hooks/use-voice-recorder.ts,hooks/use-composer.ts,services/composer.actions.ts,components/composer.tsx,__tests__/audio.test.ts}, tasks/lessons.md, tasks/ai-handoff.md
+Decisões/contexto: gravação não testada ao vivo (prompt de permissão do microfone não é automatizável); a cadeia upload + envio + captura foi testada com WAV real gerado na página.
+Tag: "HANDOFF-falow-20260929-003527-claude"
 
 ---
 
