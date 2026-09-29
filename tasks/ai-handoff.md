@@ -3,7 +3,7 @@
 ## Estado atual
 Última tag: "HANDOFF-falow-20260929-003527-claude"
 Status: concluído
-Resumo: CRM completo em produção (Worker 1b6c473c) + envio de áudio pelo painel (gravar no microfone ou anexar M4A/WAV). Push para o tocha feito pelo usuário (7e69b18..fc85046); o commit do áudio (b4976c7) ainda não foi pro tocha. Vercel NÃO é do usuário (sócio do TOCHA): ignorar build e banco dela. Pendências do usuário: "Trazer conversas existentes" no Funil; fechar as 2 abas do SQL Editor; testar o microfone de verdade (permissão do navegador).
+Resumo: CRM completo em produção (Worker 1826cebb: composer alinhado, item do menu renomeado de CRM para Conversas, commit fc9ecc4) + envio de áudio pelo painel (gravar no microfone ou anexar M4A/WAV). Push para o tocha feito pelo usuário (7e69b18..fc85046); o commit do áudio (b4976c7) ainda não foi pro tocha. Vercel NÃO é do usuário (sócio do TOCHA): ignorar build e banco dela. Pendências do usuário: "Trazer conversas existentes" no Funil; fechar as 2 abas do SQL Editor; testar o microfone de verdade (permissão do navegador).
 
 ---
 
