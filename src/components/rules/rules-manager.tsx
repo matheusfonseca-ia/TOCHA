@@ -7,6 +7,7 @@ import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Copy,
+  FolderInput,
   Image as ImageIcon,
   MessageCircle,
   MessageSquareText,
@@ -22,9 +23,15 @@ import {
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/empty-state";
+import { FolderRail, UNFILED } from "@/components/folders/folder-rail";
+import {
+  MoveToFolderDialog,
+  type MoveTarget,
+} from "@/components/folders/move-to-folder-dialog";
 import { ExpiryBadge } from "@/components/expiry/expiry-badge";
 import { ExpiryDialog, type ExpiryTarget } from "@/components/expiry/expiry-dialog";
 import { ExpiryField } from "@/components/expiry/expiry-field";
+import type { Folder } from "@/lib/folders/folders";
 import { canEditInBuilder } from "@/lib/rules/edit-rule";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -219,10 +226,13 @@ export function RulesManager({
   rules,
   accounts,
   executionCounts,
+  folders = [],
 }: {
   rules: RuleWithAccount[];
   accounts: AccountOption[];
   executionCounts: Record<string, number>;
+  /** Vazio quando a migration 0010 ainda não foi aplicada: a coluna some. */
+  folders?: Folder[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -240,14 +250,22 @@ export function RulesManager({
   const [editUsage, setEditUsage] = useState<string[]>([]);
   const editRequestRef = useRef<string | null>(null);
   const [expiryTarget, setExpiryTarget] = useState<ExpiryTarget | null>(null);
+  /** null = todas; "" = sem pasta; id = a pasta. */
+  const [folder, setFolder] = useState<string | null>(null);
+  const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
 
   const filteredRules = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rules;
-    return rules.filter((rule) =>
-      [rule.name, rule.keyword].some((v) => v?.toLowerCase().includes(q))
-    );
-  }, [rules, query]);
+    const known = new Set(folders.map((f) => f.id));
+    return rules.filter((rule) => {
+      if (q && ![rule.name, rule.keyword].some((v) => v?.toLowerCase().includes(q))) {
+        return false;
+      }
+      if (folder === null) return true;
+      const current = rule.folder_id && known.has(rule.folder_id) ? rule.folder_id : UNFILED;
+      return current === folder;
+    });
+  }, [rules, query, folder, folders]);
 
   const patch = (partial: Partial<FormState>) =>
     setForm((f) => ({ ...f, ...partial }));
@@ -390,10 +408,21 @@ export function RulesManager({
         </Button>
       </div>
 
+      <div className="flex flex-col gap-4 sm:flex-row">
+        {folders.length > 0 || accounts.length > 0 ? (
+          <FolderRail
+            folders={folders}
+            items={rules}
+            accountId={accounts[0]?.id}
+            selected={folder}
+            onSelect={setFolder}
+          />
+        ) : null}
+        <div className="min-w-0 flex-1">
       {filteredRules.length === 0 ? (
         <Card className="animate-fade-up">
           <p className="px-6 py-16 text-center text-sm text-muted-foreground">
-            Nenhuma automação encontrada para &ldquo;{query}&rdquo;.
+            Nenhuma automação encontrada aqui.
           </p>
         </Card>
       ) : (
@@ -523,6 +552,21 @@ export function RulesManager({
                             <Copy />
                             Duplicar
                           </DropdownMenuItem>
+                          {folders.length > 0 && (
+                            <DropdownMenuItem
+                              onClick={() =>
+                                setMoveTarget({
+                                  kind: "rule",
+                                  id: rule.id,
+                                  name: title,
+                                  folderId: rule.folder_id ?? null,
+                                })
+                              }
+                            >
+                              <FolderInput />
+                              Mover para pasta
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem
                             onClick={() =>
                               setExpiryTarget({
@@ -555,6 +599,14 @@ export function RulesManager({
           </Table>
         </Card>
       )}
+        </div>
+      </div>
+
+      <MoveToFolderDialog
+        target={moveTarget}
+        folders={folders}
+        onClose={() => setMoveTarget(null)}
+      />
 
       {/* ── Dialog de criação/edição ─────────────────────────────────── */}
       <Dialog open={open} onOpenChange={setOpen}>

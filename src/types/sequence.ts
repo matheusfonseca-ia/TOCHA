@@ -244,6 +244,8 @@ export interface Sequence {
   expire_action?: "delete" | "pause";
   /** Pausado pelo sweep de expiração, não pelo usuário. Migration 0003. */
   paused_by_expiry?: boolean;
+  /** Pasta de organização, compartilhada com as automações; nulo = "Sem pasta". Migration 0010. */
+  folder_id?: string | null;
   created_at: string;
   updated_at: string;
 }

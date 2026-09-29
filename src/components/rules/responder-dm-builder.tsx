@@ -19,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+import { SmartTextField } from "@/components/fields/smart-text-field";
 import { ExpiryField } from "@/components/expiry/expiry-field";
 import { expiryFormFrom, resolveExpiryForm } from "@/lib/expiry/expiry";
 import {
@@ -68,6 +68,12 @@ export function ResponderDmBuilder({
 
   const selectedAccount =
     accounts.find((a) => a.id === accountId) ?? accounts[0];
+  // Contexto que o botao de IA usa pra escrever no tom certo desta automacao.
+  const promptContext = {
+    ruleName: rule?.name ?? null,
+    keyword: keywordInput,
+    accountUsername: selectedAccount.ig_username,
+  };
 
   const keywordTerms = useMemo(
     () =>
@@ -273,6 +279,7 @@ export function ResponderDmBuilder({
               <FollowGateField
                 value={followGate}
                 onChange={setFollowGate}
+                accountId={accountId}
                 username={selectedAccount.ig_username}
                 label="Só responder para quem segue seu perfil"
                 contentName="a resposta"
@@ -292,12 +299,15 @@ export function ResponderDmBuilder({
                 <Label htmlFor="message">
                   {links.length > 0 ? "uma DM contendo um link" : "sua mensagem"}
                 </Label>
-                <Textarea
+                <SmartTextField
                   id="message"
+                  field="replyText"
                   placeholder="Escreva uma mensagem"
                   rows={4}
                   value={message}
-                  onChange={(e) => setMessage(e.target.value)}
+                  onChange={setMessage}
+                  accountId={accountId}
+                  context={promptContext}
                 />
               </div>
 

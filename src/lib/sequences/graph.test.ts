@@ -5,6 +5,7 @@ import {
   entryRuleIdOf,
   findCyclesWithoutWait,
   goToSequenceIdsOf,
+  refCodeOf,
   sourceHandlesOf,
   triggerSourceOf,
   triggerSummary,
@@ -539,5 +540,38 @@ describe("validateSequenceGraph: nó Pausar automações", () => {
       edges: [edge("t", "s")],
     };
     expect(validateSequenceGraph(acima)).toMatch(/de 1 a 72 horas/);
+  });
+});
+
+describe("refCodeOf", () => {
+  it("devolve o código quando o gatilho é link de referência", () => {
+    const graph: SequenceGraph = {
+      nodes: [trigger({ source: "refLink", refCode: "promo10" })],
+      edges: [],
+    };
+
+    expect(refCodeOf(graph)).toBe("promo10");
+  });
+
+  it("gatilho de link sem código ainda preenchido devolve nulo", () => {
+    const graph: SequenceGraph = {
+      nodes: [trigger({ source: "refLink", refCode: "  " })],
+      edges: [],
+    };
+
+    expect(refCodeOf(graph)).toBeNull();
+  });
+
+  it("gatilho de outro tipo devolve nulo, mesmo com código sobrando no nó", () => {
+    const graph: SequenceGraph = {
+      nodes: [trigger({ source: "dm", refCode: "promo10" })],
+      edges: [],
+    };
+
+    expect(refCodeOf(graph)).toBeNull();
+  });
+
+  it("grafo sem gatilho devolve nulo", () => {
+    expect(refCodeOf({ nodes: [], edges: [] })).toBeNull();
   });
 });

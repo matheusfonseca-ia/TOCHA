@@ -7,6 +7,7 @@ import {
   type RuleWithAccount,
 } from "@/components/rules/rules-manager";
 import { Button } from "@/components/ui/button";
+import { listFolders } from "@/app/(dashboard)/rules/folders-actions";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function RulesPage() {
@@ -27,6 +28,7 @@ export default async function RulesPage() {
 
   const accounts = accountsRes.data ?? [];
   const rules = (rulesRes.data ?? []) as RuleWithAccount[];
+  const folders = await listFolders();
 
   if (accounts.length === 0) {
     return (
@@ -64,6 +66,7 @@ export default async function RulesPage() {
       rules={rules}
       accounts={accounts}
       executionCounts={Object.fromEntries(executionCounts)}
+      folders={folders}
     />
   );
 }

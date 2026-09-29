@@ -9,6 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { SmartTextField } from "@/components/fields/smart-text-field";
 import { Textarea } from "@/components/ui/textarea";
 import {
   COLLECT_MAX_ATTEMPTS,
@@ -58,13 +59,14 @@ export function CollectInputForm({
     <div className="space-y-4">
       <div className="space-y-2">
         <Label htmlFor="collect-question">Pergunta</Label>
-        <Textarea
+        <SmartTextField
           id="collect-question"
+          field="collectQuestion"
           placeholder="ex.: Qual é o seu melhor e-mail?"
           rows={3}
-          maxLength={COLLECT_QUESTION_MAX}
           value={data.question}
-          onChange={(e) => onChange({ ...data, question: e.target.value })}
+          onChange={(question) => onChange({ ...data, question })}
+          hideCounter
         />
         <TemplateHint />
       </div>

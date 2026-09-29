@@ -112,6 +112,37 @@ export function triggerMatchesInbound(
   return keywordMatches(event.text, data.keyword, data.matchType);
 }
 
+/** Teto do código do link: cabe em QR code pequeno e em legenda de story. */
+export const REF_CODE_MAX = 40;
+
+/**
+ * Código do link de referência nascido do nome do fluxo, pra ninguém precisar
+ * inventar um: "Aula de n8n Grátis" vira "aula-de-n8n-gratis". Se o código já
+ * estiver em uso por outro fluxo da conta, desempata com número.
+ *
+ * O resultado só tem [a-z0-9-], então entra na URL sem escapar nada.
+ */
+export function suggestRefCode(name: string, taken: string[]): string {
+  const base =
+    name
+      .normalize("NFD")
+      .replace(/[̀-ͯ]/g, "")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, REF_CODE_MAX)
+      .replace(/-+$/g, "") || "fluxo";
+
+  const used = new Set(taken);
+  if (!used.has(base)) return base;
+
+  for (let n = 2; ; n++) {
+    const suffix = `-${n}`;
+    const candidate = `${base.slice(0, REF_CODE_MAX - suffix.length).replace(/-+$/g, "")}${suffix}`;
+    if (!used.has(candidate)) return candidate;
+  }
+}
+
 /** URL pronta pra copiar do gatilho "Link de referência", pro editor mostrar. */
 export function refLinkUrl(username: string, code: string): string {
   const user = username.trim() || "sua_conta";

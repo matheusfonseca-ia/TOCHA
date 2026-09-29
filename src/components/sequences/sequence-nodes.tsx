@@ -40,6 +40,7 @@ import {
   RefLinkFields,
   StopAutomationForm,
 } from "@/components/sequences/extras";
+import { suggestRefCode } from "@/lib/meta/triggers";
 import { useNodeDataChange } from "@/components/sequences/node-data-context";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SmartTextField } from "@/components/fields/smart-text-field";
 import { Textarea } from "@/components/ui/textarea";
 import {
   BUTTON_TITLE_MAX,
@@ -234,6 +236,7 @@ function TriggerForm({
   accountUsername?: string;
 }) {
   const when = triggerWhenOf(data);
+  const { sequenceName, takenRefCodes } = useAutomationRules();
 
   // Trocar de modo limpa o que só fazia sentido no modo anterior: ruleId
   // residual contaria como uso da automação e anyMessage/keyword residuais
@@ -254,8 +257,17 @@ function TriggerForm({
         patch({ ...base, source: value });
         break;
       case "storyMention":
-      case "refLink":
         patch({ ...base, source: value, keyword: "" });
+        break;
+      case "refLink":
+        // O código nasce pronto a partir do nome do workflow: ninguém precisa
+        // inventar um. Continua editável no campo logo abaixo.
+        patch({
+          ...base,
+          source: value,
+          keyword: "",
+          refCode: data.refCode?.trim() || suggestRefCode(sequenceName, takenRefCodes),
+        });
         break;
     }
   }
@@ -472,16 +484,13 @@ function MessageForm({
       </Tabs>
       {data.kind === "text" ? (
         <div className="space-y-2">
-          <Textarea
+          <SmartTextField
+            field="messageNode"
             placeholder="Escreva a mensagem…"
             rows={5}
-            maxLength={TEXT_MAX}
             value={data.text}
-            onChange={(e) => patch({ ...data, text: e.target.value })}
+            onChange={(text) => patch({ ...data, text })}
           />
-          <p className="text-right text-xs text-muted-foreground">
-            {data.text.length}/{TEXT_MAX}
-          </p>
           <TemplateHint />
         </div>
       ) : (
@@ -560,12 +569,13 @@ export function ButtonsNode({ id, data, selected }: NodeProps) {
     >
       <div className="space-y-1.5">
         {selected ? (
-          <Textarea
+          <SmartTextField
+            field="welcomeText"
             placeholder="Texto que acompanha os botões…"
             rows={3}
-            maxLength={BUTTONS_TEXT_MAX}
             value={d.text}
-            onChange={(e) => patch({ ...d, text: e.target.value })}
+            onChange={(text) => patch({ ...d, text })}
+            hideCounter
           />
         ) : d.text.trim() ? (
           <p className="line-clamp-2 break-words text-xs text-muted-foreground">
@@ -705,12 +715,13 @@ export function QuickRepliesNode({ id, data, selected }: NodeProps) {
     >
       <div className="space-y-1.5">
         {selected ? (
-          <Textarea
+          <SmartTextField
+            field="messageNode"
             placeholder="ex.: Qual desses assuntos te interessa mais?"
             rows={3}
-            maxLength={TEXT_MAX}
             value={d.text}
-            onChange={(e) => patch({ ...d, text: e.target.value })}
+            onChange={(text) => patch({ ...d, text })}
+            hideCounter
           />
         ) : d.text.trim() ? (
           <p className="line-clamp-2 break-words text-xs text-muted-foreground">

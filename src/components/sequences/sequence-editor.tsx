@@ -89,6 +89,7 @@ import {
   sourceHandlesOf,
   targetOf,
   triggerSourceOf,
+  refCodeOf,
   validateSequenceGraph,
 } from "@/lib/sequences/graph";
 import { dataNodesWarning, fieldKeysOf } from "@/lib/sequences/fields";
@@ -323,6 +324,8 @@ export interface SequenceOption {
   id: string;
   account_id: string;
   name: string;
+  /** Só pra saber quais códigos de link já estão em uso ao sugerir um novo. */
+  graph?: SequenceGraph;
 }
 
 export function SequenceEditor(props: {
@@ -373,6 +376,15 @@ function EditorInner({
   );
 
   const [name, setName] = useState(sequence?.name ?? "");
+  // Códigos de link já usados nos outros workflows, pra sugerir um inédito.
+  const takenRefCodes = useMemo(
+    () =>
+      sequences
+        .filter((option) => option.id !== sequence?.id)
+        .map((option) => (option.graph ? refCodeOf(option.graph) : null))
+        .filter((code): code is string => Boolean(code)),
+    [sequences, sequence?.id]
+  );
   const [isActive, setIsActive] = useState(sequence?.is_active ?? true);
   const [accountId, setAccountId] = useState(
     sequence?.account_id ?? accounts[0]?.id ?? ""
@@ -1036,6 +1048,8 @@ function EditorInner({
             <NodeDataProvider onChange={handleDataChange}>
             <DataFieldsProvider fields={fieldKeysOf(liveGraph)}>
             <AutomationRulesProvider
+              sequenceName={name}
+              takenRefCodes={takenRefCodes}
               rules={accountRules}
               entryRuleId={entryRuleIdOf(liveGraph)}
               entryNodeId={entryNodeId}

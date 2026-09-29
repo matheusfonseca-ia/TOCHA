@@ -33,6 +33,10 @@ interface AutomationRulesValue {
   triggerSource: TriggerSource;
   /** Troca o source do gatilho (chamado pelo próprio gatilho ou por um bloco Automação em posição de entrada). */
   onTriggerSourceChange: (source: TriggerSource) => void;
+  /** Nome do workflow: vira o código sugerido do link de referência. */
+  sequenceName: string;
+  /** Códigos de link já usados nos outros workflows, pro sugerido nascer inédito. */
+  takenRefCodes: string[];
 }
 
 function noopTriggerSourceChange() {}
@@ -45,6 +49,8 @@ const AutomationRulesContext = createContext<AutomationRulesValue>({
   account: null,
   triggerSource: "unset",
   onTriggerSourceChange: noopTriggerSourceChange,
+  sequenceName: "",
+  takenRefCodes: [],
 });
 
 export function AutomationRulesProvider({
@@ -54,6 +60,8 @@ export function AutomationRulesProvider({
   account = null,
   triggerSource = "unset",
   onTriggerSourceChange = noopTriggerSourceChange,
+  sequenceName = "",
+  takenRefCodes = [],
   children,
 }: {
   rules: Rule[];
@@ -62,6 +70,8 @@ export function AutomationRulesProvider({
   account?: AutomationPreviewAccount | null;
   triggerSource?: TriggerSource;
   onTriggerSourceChange?: (source: TriggerSource) => void;
+  sequenceName?: string;
+  takenRefCodes?: string[];
   children: React.ReactNode;
 }) {
   const value = useMemo(
@@ -73,8 +83,19 @@ export function AutomationRulesProvider({
       account,
       triggerSource,
       onTriggerSourceChange,
+      sequenceName,
+      takenRefCodes,
     }),
-    [rules, entryRuleId, entryNodeId, account, triggerSource, onTriggerSourceChange]
+    [
+      rules,
+      entryRuleId,
+      entryNodeId,
+      account,
+      triggerSource,
+      onTriggerSourceChange,
+      sequenceName,
+      takenRefCodes,
+    ]
   );
   return (
     <AutomationRulesContext.Provider value={value}>

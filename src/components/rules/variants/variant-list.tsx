@@ -2,8 +2,11 @@
 
 import { Check, Plus, X } from "lucide-react";
 
+import { SmartTextField } from "@/components/fields/smart-text-field";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import type { AiFieldKind } from "@/lib/ai/fields";
+import type { FieldPromptContext } from "@/lib/ai/prompt";
 import { addVariant, allVariants } from "@/lib/rules/variants";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +26,13 @@ interface VariantListProps {
   rows?: number;
   /** Textos prontos que o usuário cadastra como variante com um clique. */
   presets?: readonly string[];
+  /**
+   * Liga os atalhos do campo (textos salvos e IA). Com ele, gerar pode
+   * cadastrar as sugestões todas de uma vez como variantes.
+   */
+  field?: AiFieldKind;
+  accountId?: string | null;
+  context?: FieldPromptContext;
 }
 
 /**
@@ -43,6 +53,9 @@ export function VariantList({
   placeholder,
   rows = 3,
   presets,
+  field,
+  accountId,
+  context,
 }: VariantListProps) {
   const canAddMore = extras.length + 1 < MAX_VARIANTS;
   const current = allVariants(primary, extras);
@@ -80,17 +93,33 @@ export function VariantList({
             Variante 1
           </p>
         )}
-        <Textarea
-          id={idPrefix}
-          placeholder={placeholder}
-          rows={rows}
-          maxLength={maxLength}
-          value={primary}
-          onChange={(e) => onPrimaryChange(e.target.value)}
-        />
-        <p className="text-right text-xs text-muted-foreground">
-          {primary.length}/{maxLength}
-        </p>
+        {field ? (
+          <SmartTextField
+            id={idPrefix}
+            field={field}
+            value={primary}
+            onChange={onPrimaryChange}
+            placeholder={placeholder}
+            rows={rows}
+            accountId={accountId}
+            context={context}
+            onGenerateMany={applyPresets}
+          />
+        ) : (
+          <>
+            <Textarea
+              id={idPrefix}
+              placeholder={placeholder}
+              rows={rows}
+              maxLength={maxLength}
+              value={primary}
+              onChange={(e) => onPrimaryChange(e.target.value)}
+            />
+            <p className="text-right text-xs text-muted-foreground">
+              {primary.length}/{maxLength}
+            </p>
+          </>
+        )}
       </div>
 
       {extras.map((extra, index) => (
@@ -108,17 +137,32 @@ export function VariantList({
               <X className="h-3.5 w-3.5" />
             </button>
           </div>
-          <Textarea
-            id={`${idPrefix}-variant-${index}`}
-            placeholder={placeholder}
-            rows={rows}
-            maxLength={maxLength}
-            value={extra}
-            onChange={(e) => updateVariant(index, e.target.value)}
-          />
-          <p className="text-right text-xs text-muted-foreground">
-            {extra.length}/{maxLength}
-          </p>
+          {field ? (
+            <SmartTextField
+              id={`${idPrefix}-variant-${index}`}
+              field={field}
+              value={extra}
+              onChange={(value) => updateVariant(index, value)}
+              placeholder={placeholder}
+              rows={rows}
+              accountId={accountId}
+              context={context}
+            />
+          ) : (
+            <>
+              <Textarea
+                id={`${idPrefix}-variant-${index}`}
+                placeholder={placeholder}
+                rows={rows}
+                maxLength={maxLength}
+                value={extra}
+                onChange={(e) => updateVariant(index, e.target.value)}
+              />
+              <p className="text-right text-xs text-muted-foreground">
+                {extra.length}/{maxLength}
+              </p>
+            </>
+          )}
         </div>
       ))}
 

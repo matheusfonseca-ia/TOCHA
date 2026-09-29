@@ -85,7 +85,7 @@ MCP ficou pra rodada 2, com spec propria.
       mensagem entregue nas duas telas de automacao, os dois textos do portao de
       seguidor, mensagem / botoes / respostas rapidas do canvas e a pergunta do
       Coletar dado.
-- [x] Migrations `0009_message_presets.sql` e `0010_folders.sql`, as duas
+- [x] Migrations `0014_message_presets.sql` e `0015_folders.sql`, as duas
       idempotentes e seguras com a versao anterior do app no ar.
 - [x] `.env.example` e README com `OPENROUTER_API_KEY` / `OPENROUTER_MODEL`, e a
       promessa de privacidade ajustada: nenhum dado de seguidor vai pra IA, so o

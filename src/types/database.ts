@@ -82,6 +82,8 @@ export interface Rule {
   follow_gate_follow_label?: string | null;
   follow_gate_confirm_label?: string | null;
   follow_gate_retry_text?: string | null;
+  /** Pasta de organização; nulo = "Sem pasta". Migration 0010. */
+  folder_id?: string | null;
   created_at: string;
   updated_at: string;
 }

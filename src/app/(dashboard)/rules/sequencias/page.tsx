@@ -8,6 +8,7 @@ import {
   type SequenceWithAccount,
 } from "@/components/sequences/sequences-manager";
 import { Button } from "@/components/ui/button";
+import { listFolders } from "@/app/(dashboard)/rules/folders-actions";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function SequenciasPage() {
@@ -40,6 +41,7 @@ export default async function SequenciasPage() {
   }
 
   const sequences = (sequencesRes.data ?? []) as SequenceWithAccount[];
+  const folders = await listFolders();
 
   const stats: Record<string, SequenceStats> = {};
   if (sequences.length > 0) {
@@ -62,5 +64,12 @@ export default async function SequenciasPage() {
     }
   }
 
-  return <SequencesManager sequences={sequences} stats={stats} />;
+  return (
+    <SequencesManager
+      sequences={sequences}
+      stats={stats}
+      folders={folders}
+      accountId={accountsRes.data?.[0]?.id}
+    />
+  );
 }

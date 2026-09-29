@@ -10,6 +10,7 @@ import { CommentPhonePreview } from "@/components/rules/comment-phone-preview";
 import { FollowGateField } from "@/components/rules/follow-gate/follow-gate-field";
 import { MediaPicker } from "@/components/rules/media-picker";
 import { PUBLIC_REPLY_PRESETS } from "@/components/rules/variants/public-reply-presets";
+import { SmartTextField } from "@/components/fields/smart-text-field";
 import { VariantList } from "@/components/rules/variants/variant-list";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -161,6 +162,12 @@ export function ResponderComentarioBuilder({
 
   const selectedAccount =
     accounts.find((a) => a.id === accountId) ?? accounts[0];
+  // Contexto que o botao de IA usa pra escrever no tom certo desta automacao.
+  const promptContext = {
+    ruleName: rule?.name ?? null,
+    keyword: keywordInput,
+    accountUsername: selectedAccount.ig_username,
+  };
   const pickerMedia = rule
     ? mergeSelectedMedia(selectedAccount.media, rule.media_refs)
     : selectedAccount.media;
@@ -442,6 +449,9 @@ export function ResponderComentarioBuilder({
                     rows={2}
                     placeholder="Ex.: Te chamei no direct! 📩"
                     presets={PUBLIC_REPLY_PRESETS}
+                    field="publicReply"
+                    accountId={accountId}
+                    context={promptContext}
                   />
                 </div>
               )}
@@ -497,6 +507,9 @@ export function ResponderComentarioBuilder({
                   maxLength={WELCOME_TEXT_MAX}
                   rows={4}
                   placeholder="Olá! Muito obrigado pelo seu interesse 😊 Clique abaixo e eu te mando o link em um segundo ✨"
+                  field="welcomeText"
+                  accountId={accountId}
+                  context={promptContext}
                 />
                 <Input
                   placeholder="Me envie o link"
@@ -514,6 +527,7 @@ export function ResponderComentarioBuilder({
                 <FollowGateField
                   value={followGate}
                   onChange={setFollowGate}
+                  accountId={accountId}
                   username={selectedAccount.ig_username}
                   label="uma DM solicitando que sigam seu perfil antes de receberem o link"
                   contentName="o link"
@@ -535,12 +549,15 @@ export function ResponderComentarioBuilder({
                 <Label htmlFor="message">
                   {links.length > 0 ? "uma DM contendo um link" : "sua mensagem"}
                 </Label>
-                <Textarea
+                <SmartTextField
                   id="message"
+                  field="replyText"
                   placeholder="Escreva uma mensagem"
                   rows={4}
                   value={message}
-                  onChange={(e) => setMessage(e.target.value)}
+                  onChange={setMessage}
+                  accountId={accountId}
+                  context={promptContext}
                 />
               </div>
 

@@ -6,7 +6,13 @@ Você conecta sua conta do Instagram, cria regras do tipo *"se receber **preço*
 
 E quando uma resposta só não basta, as **Sequências** entram em cena: um canvas visual (estilo n8n/ManyChat) onde você conecta blocos — mensagens, botões, respostas rápidas, atrasos, esperas — e monta fluxos de conversa inteiros que rodam sozinhos na DM.
 
-Cada instalação é **sua**: seu banco (Supabase, grátis), seu app Meta, sua hospedagem. Nenhum dado passa por servidores de terceiros — e, por usar o **Login do Instagram** no seu próprio app Meta, funciona com a sua conta **sem App Review** e sem precisar de Página do Facebook.
+Cada instalação é **sua**: seu banco (Supabase, grátis), seu app Meta, sua hospedagem. Nenhum dado de quem fala com você passa por servidores de terceiros — e, por usar o **Login do Instagram** no seu próprio app Meta, funciona com a sua conta **sem App Review** e sem precisar de Página do Facebook.
+
+> A única exceção é opcional e fica desligada por padrão: se você preencher
+> `OPENROUTER_API_KEY`, os campos de texto do painel ganham um botão de escrever
+> com IA, e o que **você** digita nesse botão vai para o provedor escolhido.
+> Nenhuma mensagem de seguidor é enviada para a IA. Sem a chave, o botão nem
+> aparece.
 
 > 📕 **Siga o guia ilustrado:** [docs/guia-configuracao-falow.pdf](docs/guia-configuracao-falow.pdf) — o passo a passo completo, com links e telas de onde tirar cada credencial.
 
@@ -69,6 +75,8 @@ e use a URL gerada em `NEXT_PUBLIC_APP_URL`, no OAuth Redirect URI e no webhook 
 | `TOKEN_ENCRYPTION_KEY` | Criptografa tokens no banco | `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `CRON_SECRET` | Senha do tick das Sequências (você inventa) | Veja "Sequências" abaixo |
 | `NEXT_PUBLIC_CONTACT_EMAIL` | E-mail de contato das páginas públicas (opcional) | Veja "Páginas públicas" abaixo |
+| `OPENROUTER_API_KEY` | Liga o botão de escrever com IA nos campos (opcional) ⚠️ segredo | [openrouter.ai/keys](https://openrouter.ai/keys) |
+| `OPENROUTER_MODEL` | Modelo usado por esse botão (opcional) | Padrão: `anthropic/claude-sonnet-4.5` |
 
 ## Páginas públicas
 

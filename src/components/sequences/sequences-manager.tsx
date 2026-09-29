@@ -7,6 +7,8 @@ import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Copy,
+  FolderInput,
+  Link as LinkIcon,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -23,6 +25,15 @@ import {
   toggleSequence,
 } from "@/app/(dashboard)/rules/sequencias/actions";
 import { EmptyState } from "@/components/empty-state";
+import { FolderRail, UNFILED } from "@/components/folders/folder-rail";
+import {
+  MoveToFolderDialog,
+  type MoveTarget,
+} from "@/components/folders/move-to-folder-dialog";
+import {
+  RefLinkDialog,
+  type RefLinkTarget,
+} from "@/components/sequences/ref-link-dialog";
 import { ExpiryBadge } from "@/components/expiry/expiry-badge";
 import { ExpiryDialog, type ExpiryTarget } from "@/components/expiry/expiry-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -52,7 +63,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { triggerSummary } from "@/lib/sequences/graph";
+import type { Folder } from "@/lib/folders/folders";
+import { refCodeOf, triggerSummary } from "@/lib/sequences/graph";
 import type { Sequence } from "@/types/sequence";
 
 export type SequenceWithAccount = Sequence & {
@@ -69,9 +81,14 @@ export interface SequenceStats {
 export function SequencesManager({
   sequences,
   stats,
+  folders = [],
+  accountId,
 }: {
   sequences: SequenceWithAccount[];
   stats: Record<string, SequenceStats>;
+  /** Vazio quando a migration 0010 ainda não foi aplicada: a coluna some. */
+  folders?: Folder[];
+  accountId?: string | null;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -80,12 +97,21 @@ export function SequencesManager({
     null
   );
   const [expiryTarget, setExpiryTarget] = useState<ExpiryTarget | null>(null);
+  /** null = todas; "" = sem pasta; id = a pasta. */
+  const [folder, setFolder] = useState<string | null>(null);
+  const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
+  const [refTarget, setRefTarget] = useState<RefLinkTarget | null>(null);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return sequences;
-    return sequences.filter((s) => s.name.toLowerCase().includes(q));
-  }, [sequences, query]);
+    const known = new Set(folders.map((f) => f.id));
+    return sequences.filter((s) => {
+      if (q && !s.name.toLowerCase().includes(q)) return false;
+      if (folder === null) return true;
+      const current = s.folder_id && known.has(s.folder_id) ? s.folder_id : UNFILED;
+      return current === folder;
+    });
+  }, [sequences, query, folder, folders]);
 
   function handleToggle(sequence: SequenceWithAccount, next: boolean) {
     startTransition(async () => {
@@ -153,10 +179,19 @@ export function SequencesManager({
         </Button>
       </div>
 
+      <div className="flex flex-col gap-4 sm:flex-row">
+        <FolderRail
+          folders={folders}
+          items={sequences}
+          accountId={accountId}
+          selected={folder}
+          onSelect={setFolder}
+        />
+        <div className="min-w-0 flex-1">
       {filtered.length === 0 ? (
         <Card className="animate-fade-up">
           <p className="px-6 py-16 text-center text-sm text-muted-foreground">
-            Nenhum workflow encontrado para &ldquo;{query}&rdquo;.
+            Nenhum workflow encontrado aqui.
           </p>
         </Card>
       ) : (
@@ -178,6 +213,7 @@ export function SequencesManager({
                 const stat = stats[sequence.id] ?? { total: 0, inFlow: 0 };
                 // -1: o gatilho não conta como passo do fluxo
                 const blockCount = Math.max(sequence.graph.nodes.length - 1, 0);
+                const refCode = refCodeOf(sequence.graph);
                 return (
                   <TableRow
                     key={sequence.id}
@@ -260,6 +296,38 @@ export function SequencesManager({
                             <Copy />
                             Duplicar
                           </DropdownMenuItem>
+                          {refCode && sequence.ig_accounts?.ig_username && (
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setRefTarget({
+                                  name: sequence.name,
+                                  code: refCode,
+                                  username: sequence.ig_accounts!.ig_username,
+                                  entries: stat.total,
+                                });
+                              }}
+                            >
+                              <LinkIcon />
+                              Link e QR code
+                            </DropdownMenuItem>
+                          )}
+                          {folders.length > 0 && (
+                            <DropdownMenuItem
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setMoveTarget({
+                                  kind: "sequence",
+                                  id: sequence.id,
+                                  name: sequence.name,
+                                  folderId: sequence.folder_id ?? null,
+                                });
+                              }}
+                            >
+                              <FolderInput />
+                              Mover para pasta
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem
                             onClick={(e) => {
                               e.stopPropagation();
@@ -296,6 +364,16 @@ export function SequencesManager({
           </Table>
         </Card>
       )}
+        </div>
+      </div>
+
+      <MoveToFolderDialog
+        target={moveTarget}
+        folders={folders}
+        onClose={() => setMoveTarget(null)}
+      />
+
+      <RefLinkDialog target={refTarget} onClose={() => setRefTarget(null)} />
 
       <ExpiryDialog
         kind="sequence"

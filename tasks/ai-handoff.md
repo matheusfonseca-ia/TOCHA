@@ -1,9 +1,34 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260927-152416-claude"
+Última tag: "HANDOFF-falow-20260927-234000-claude"
 Status: em andamento
-Resumo: edição de blocos do Workflow passou a acontecer DENTRO DO CARD (estilo ManyChat), sem painel lateral; adicionado histórico de versões (`sequence_versions`, migration 0008) com painel "Histórico" e restaurar. tsc/build/vitest (355) limpos, commitado localmente. Falta: usuário testar de verdade no navegador (tentativa de sessão descartável via generateLink+verifyOtp foi bloqueada pelo classificador do auto mode nesta sessão — "Credential Materialization" — não contornado) e aplicar a migration 0008 antes do deploy. Push para `tocha` o usuário roda com `!`.
+Resumo: rodada 1 das ideias novas implementada — campo de texto inteligente (textos salvos + escrever com IA), pastas de um nível compartilhadas entre Automações e Workflow, e deeplink automático com QR code na lista. tsc/build/vitest (417) limpos. Falta: usuário testar no navegador, aplicar as migrations (0007 e 0008 seguem pendentes; 0009 e 0010 entram agora) e, se quiser o botão de IA, preencher OPENROUTER_API_KEY. MCP ficou pra rodada 2, com spec própria.
+
+---
+
+## [HANDOFF · falow · 2026-09-27T23:40:00-03:00 · claude]
+Status: em andamento
+Objetivo: rodada 1 das features novas — lembrar mensagens padrão, Modo IA nos campos, pastas e deeplink automático.
+Feito:
+- Brainstorming primeiro: das seis ideias do usuário, "duplicar automações" já existia (menu "..." de cada linha, `duplicateRule`/`duplicateSequence`) e saiu da lista; "Modo IA" foi recortado pelo usuário como geração do conteúdo do campo, não atendente de DM; "MCP" ficou definido como o Falow virar servidor MCP, pra rodada 2.
+- Mensagens padrão e Modo IA viraram UM componente (`SmartTextField`): dois botões no canto do textarea. O tipo do campo (`AiFieldKind`) carrega limite e papel, então o prompt nasce pronto e os presets que não cabem no limite somem da lista.
+- Módulos puros com teste primeiro: `lib/ai/{fields,prompt,parse,provider}`, `lib/presets/presets`, `lib/folders/folders`, `lib/db/missing`, `suggestRefCode`/`refCodeOf`. 62 testes novos (355 -> 417).
+- `parse.ts` é tolerante de propósito (JSON, bloco de código, lista numerada, preâmbulo, aspas) e DESCARTA sugestão acima do limite em vez de cortar no meio.
+- `lib/db/missing.ts` generaliza o truque da 0007: sem as migrations 0009/0010 as features novas somem sozinhas (lista vazia), o painel não quebra. Payloads de erro colhidos do Supabase real do projeto da Vercel.
+- Pastas são compartilhadas entre as duas telas de propósito (lessons.md: o usuário espera workflow e automação como um sistema só). `on delete set null`: apagar pasta não apaga nada dentro.
+- Deeplink: `suggestRefCode` roda no `selectWhen` do gatilho, então o código nasce preenchido ao escolher "Link de referência"; a lista ganhou "Link e QR code" com o PNG gerado no navegador (dep nova `qrcode`, nenhum serviço externo de QR).
+- `VariantList` ganhou `field`: com ele, gerar com IA pede 5 e oferece "cadastrar as 5 como variantes", que reaproveita o `applyPresets` que já existia.
+- Privacidade: README dizia "nenhum dado passa por servidores de terceiros". Ajustado pra "nenhum dado de quem fala com você", com nota de que a IA do painel é opcional, desligada sem chave, e recebe só o que o dono digita.
+- `npx tsc --noEmit`, `npm run build` e `npm test` (417/417) limpos.
+Próximo passo:
+- Usuário testar no navegador (os dois atalhos em cada campo, inclusive nos cards do canvas; criar/mover/apagar pasta nas duas listas; gatilho de link nascendo com código e QR baixando).
+- Aplicar as migrations: projeto da Vercel está sem 0007, 0008, 0009 e 0010; o da Cloudflare, sem 0008 em diante (verificado por REST no da Vercel; o da Cloudflare não dá pra checar daqui, sem a chave).
+- Preencher OPENROUTER_API_KEY onde quiser o botão de IA.
+- Deploy na Cloudflare só depois do teste, sempre na pasta principal.
+Arquivos tocados: src/lib/ai/* (novo), src/lib/presets/* (novo), src/lib/folders/* (novo), src/lib/db/* (novo), src/lib/meta/triggers.ts, src/lib/sequences/graph.ts, src/components/fields/* (novo), src/components/folders/* (novo), src/components/sequences/ref-link-dialog.tsx (novo), src/components/sequences/sequence-nodes.tsx, src/components/sequences/sequence-editor.tsx, src/components/sequences/sequences-manager.tsx, src/components/sequences/automation/automation-rules-context.tsx, src/components/sequences/data/collect-input-form.tsx, src/components/rules/rules-manager.tsx, src/components/rules/responder-{comentario,dm}-builder.tsx, src/components/rules/variants/variant-list.tsx, src/components/rules/follow-gate/follow-gate-field.tsx, src/app/(dashboard)/layout.tsx, src/app/(dashboard)/rules/{page,actions}.tsx, src/app/(dashboard)/rules/{ai,presets,folders}-actions.ts (novos), src/app/(dashboard)/rules/sequencias/{page,[id]/page,nova/page}.tsx, src/types/{database,sequence}.ts, supabase/migrations/0014_message_presets.sql e 0015_folders.sql (novos), README.md, .env.example, package.json (qrcode).
+Decisões/contexto: provedor é OpenRouter (uma chave, qualquer modelo) porque combina com um produto que cada um hospeda; preset é cópia e não referência; pasta de um nível só; o diálogo de IA é Dialog e não popover porque também vive dentro dos cards do canvas, onde camada flutuante seria cortada. Incidente sem consequência: um script Python meu truncou variant-list.tsx (abriu em "w" e falhou no encode antes de escrever) — restaurado do git e refeito com encode antes de abrir o arquivo.
+Tag: "HANDOFF-falow-20260927-234000-claude"
 
 ---
 

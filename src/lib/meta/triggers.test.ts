@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  REF_CODE_MAX,
   classifyInboundEvent,
   refLinkUrl,
+  suggestRefCode,
   triggerMatchesInbound,
 } from "@/lib/meta/triggers";
 import type { TriggerNodeData } from "@/types/sequence";
@@ -157,5 +159,43 @@ describe("refLinkUrl", () => {
 
   it("usa placeholders quando usuário/código ainda não foram preenchidos", () => {
     expect(refLinkUrl("", "")).toBe("https://ig.me/m/sua_conta?ref=codigo");
+  });
+});
+
+describe("suggestRefCode", () => {
+  it("vira slug do nome do fluxo: minúsculas, sem acento, hífen no lugar do espaço", () => {
+    expect(suggestRefCode("Aula de n8n Grátis", [])).toBe("aula-de-n8n-gratis");
+  });
+
+  it("descarta pontuação que quebraria o link", () => {
+    expect(suggestRefCode("Promo 50%! (últimas vagas)", [])).toBe(
+      "promo-50-ultimas-vagas"
+    );
+  });
+
+  it("desempata com número quando o código já está em uso", () => {
+    expect(suggestRefCode("Aula", ["aula"])).toBe("aula-2");
+    expect(suggestRefCode("Aula", ["aula", "aula-2"])).toBe("aula-3");
+  });
+
+  it("nome sem nenhuma letra aproveitável cai num código genérico", () => {
+    expect(suggestRefCode("!!!", [])).toBe("fluxo");
+    expect(suggestRefCode("", [])).toBe("fluxo");
+  });
+
+  it("corta nome gigante pra caber num link curto", () => {
+    const code = suggestRefCode("palavra ".repeat(20), []);
+
+    expect(code.length).toBeLessThanOrEqual(REF_CODE_MAX);
+    expect(code.endsWith("-")).toBe(false);
+  });
+
+  it("o código gerado sempre serve pra montar a URL sem escapar nada", () => {
+    const code = suggestRefCode("Aula de n8n Grátis", []);
+
+    expect(refLinkUrl("conta", code)).toBe(
+      `https://ig.me/m/conta?ref=${code}`
+    );
+    expect(encodeURIComponent(code)).toBe(code);
   });
 });

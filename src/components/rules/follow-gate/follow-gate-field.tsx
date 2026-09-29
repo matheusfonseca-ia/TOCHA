@@ -1,5 +1,6 @@
 "use client";
 
+import { SmartTextField } from "@/components/fields/smart-text-field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
@@ -18,6 +19,7 @@ export function FollowGateField({
   username,
   label,
   contentName,
+  accountId,
 }: {
   value: FollowGateForm;
   onChange: (next: FollowGateForm) => void;
@@ -26,6 +28,8 @@ export function FollowGateField({
   label: string;
   /** Como a tela chama o que fica retido ("o link", "a resposta"). */
   contentName: string;
+  /** Conta dona dos textos salvos a partir daqui. */
+  accountId?: string | null;
 }) {
   const set = (patch: Partial<FollowGateForm>) => onChange({ ...value, ...patch });
 
@@ -48,13 +52,15 @@ export function FollowGateField({
             <Label htmlFor="follow-gate-text" className="text-xs text-muted-foreground">
               Mensagem para quem ainda não segue
             </Label>
-            <Textarea
+            <SmartTextField
               id="follow-gate-text"
+              field="followGateText"
               rows={3}
-              maxLength={FOLLOW_GATE_LIMITS.text}
               placeholder={FOLLOW_GATE_DEFAULTS.text}
               value={value.text}
-              onChange={(e) => set({ text: e.target.value })}
+              onChange={(text) => set({ text })}
+              accountId={accountId}
+              hideCounter
             />
             <CharCount value={value.text} />
           </div>
@@ -90,13 +96,15 @@ export function FollowGateField({
             <Label htmlFor="follow-gate-retry" className="text-xs text-muted-foreground">
               Se tocarem na confirmação sem seguir
             </Label>
-            <Textarea
+            <SmartTextField
               id="follow-gate-retry"
+              field="followGateRetry"
               rows={2}
-              maxLength={FOLLOW_GATE_LIMITS.text}
               placeholder={FOLLOW_GATE_DEFAULTS.retryText}
               value={value.retryText}
-              onChange={(e) => set({ retryText: e.target.value })}
+              onChange={(retryText) => set({ retryText })}
+              accountId={accountId}
+              hideCounter
             />
             <CharCount value={value.retryText} />
           </div>

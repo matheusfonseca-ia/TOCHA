@@ -38,7 +38,7 @@ export default async function EditarSequenciaPage({
     // Automações para o nó "Automação" e o gatilho do editor (RLS idem)
     supabase.from("rules").select("*").order("created_at"),
     // Workflows para o nó "Ir para workflow" (RLS idem)
-    supabase.from("sequences").select("id, account_id, name").order("name"),
+    supabase.from("sequences").select("id, account_id, name, graph").order("name"),
     // Últimas versões salvas pro painel de Histórico do editor (RLS idem)
     supabase
       .from("sequence_versions")

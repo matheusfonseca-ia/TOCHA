@@ -619,6 +619,18 @@ export function validateSequenceGraph(
   return null;
 }
 
+/**
+ * Código do link de referência do gatilho, quando é esse o gatilho do fluxo.
+ * A lista usa pra mostrar o link pronto (ig.me) sem abrir o editor.
+ */
+export function refCodeOf(graph: SequenceGraph): string | null {
+  const trigger = findTriggerNode(graph);
+  if (!trigger) return null;
+  const data = trigger.data as TriggerNodeData;
+  if (data.source !== "refLink") return null;
+  return data.refCode?.trim() || null;
+}
+
 /** Resumo do gatilho para listas ("preço, link", "Qualquer mensagem" ou por automação). */
 export function triggerSummary(graph: SequenceGraph): string {
   const trigger = findTriggerNode(graph);

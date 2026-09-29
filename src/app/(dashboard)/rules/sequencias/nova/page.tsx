@@ -20,7 +20,7 @@ export default async function NovaSequenciaPage() {
     // Automações para o nó "Automação" e o gatilho do editor (RLS limita ao usuário)
     supabase.from("rules").select("*").order("created_at"),
     // Workflows para o nó "Ir para workflow" (RLS idem)
-    supabase.from("sequences").select("id, account_id, name").order("name"),
+    supabase.from("sequences").select("id, account_id, name, graph").order("name"),
   ]);
 
   // O @ pode ter mudado no Instagram: o link ig.me de referência usa o atual.
