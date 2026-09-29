@@ -38,6 +38,24 @@ describe("parseSentMessage", () => {
     expect(draft).toMatchObject({ kind: "image", text: null, attachments: [{ type: "image", url: "https://x/a.png" }] });
   });
 
+  it("anexo de arquivo (PDF) pelo composer do painel", () => {
+    const draft = parseSentMessage(
+      { recipient: { id: "lead-1" }, message: { attachment: { type: "file", payload: { url: "https://x/a.pdf" } } } },
+      ok,
+      NOW
+    );
+    expect(draft).toMatchObject({ kind: "file", text: null, attachments: [{ type: "file", url: "https://x/a.pdf" }] });
+  });
+
+  it("figurinha de coração (like_heart): sem anexo, o balão mostra o emoji", () => {
+    const draft = parseSentMessage(
+      { recipient: { id: "lead-1" }, message: { attachment: { type: "like_heart" } } },
+      ok,
+      NOW
+    );
+    expect(draft).toMatchObject({ kind: "sticker", text: null, attachments: null });
+  });
+
   it("button template (portão de seguidor, nós de botões)", () => {
     const draft = parseSentMessage(
       {

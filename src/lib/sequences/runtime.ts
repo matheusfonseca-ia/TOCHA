@@ -38,7 +38,7 @@ import { FlowData } from "@/lib/sequences/flow-data";
 import { fetchAndStoreUsername } from "@/lib/contacts/profile";
 import { pickBranch } from "@/lib/sequences/randomizer";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { observeOutbound } from "@/modules/crm/server";
+import { isTakenOver, observeOutbound } from "@/modules/crm/server";
 import { sleep } from "@/lib/utils";
 import type { IgAccount, InteractionStatus, Rule } from "@/types/database";
 import {
@@ -622,6 +622,12 @@ export async function processDueRuns(
     // (o run é apagado em cascata com ela) e ativa.
     const sequence = row.sequences;
     if (!sequence || !sequence.is_active) continue;
+
+    // Conversa assumida por um atendente (D3): o atraso agendado não
+    // dispara enquanto isso. O run não é reivindicado nem marcado como
+    // erro: continua `waiting_delay` e retoma sozinho depois de "Devolver
+    // ao bot" (no próprio tick seguinte, já que a data de retomada já venceu).
+    if (await isTakenOver(admin, row.account_id, row.ig_sender_id)) continue;
 
     const claimed = await claimRun(admin, row.id, "waiting_delay");
     if (!claimed) continue;

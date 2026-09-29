@@ -57,9 +57,10 @@ describe("rótulos", () => {
 
 describe("inboxHref", () => {
   it("mantém os filtros e abre a conversa", () => {
-    expect(inboxHref({ accountId: "", unreadOnly: false, q: "" })).toBe("/crm/conversas");
-    expect(inboxHref({ accountId: "a1", unreadOnly: true, q: "ion" }, "c9")).toBe(
+    expect(inboxHref({ accountId: "", status: "open", q: "" })).toBe("/crm/conversas");
+    expect(inboxHref({ accountId: "a1", status: "unread", q: "ion" }, "c9")).toBe(
       "/crm/conversas?conta=a1&filtro=nao-lidas&q=ion&c=c9"
     );
+    expect(inboxHref({ accountId: "", status: "done", q: "" })).toBe("/crm/conversas?filtro=concluidas");
   });
 });

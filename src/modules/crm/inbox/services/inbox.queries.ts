@@ -4,9 +4,11 @@ import type { SequenceRunStatus } from "@/types/sequence";
 import type { MessageRow } from "../../shared/types/message";
 import type {
   ContactPanelData,
+  CrmNote,
   InboxConversation,
   InboxFilters,
   InboxThread,
+  QuickReply,
 } from "../../shared/types/conversation";
 
 /**
@@ -21,7 +23,7 @@ const THREAD_LIMIT = 100;
 const ACTIVE_RUN_STATUSES: SequenceRunStatus[] = ["running", "waiting_reply", "waiting_postback", "waiting_delay"];
 
 const CONVERSATION_COLUMNS =
-  "id, account_id, ig_sender_id, ig_sender_username, last_message_at, last_message_text, last_message_kind, last_message_direction, last_inbound_at, unread_count, contact_seen_at, automation_paused_until, created_at, ig_accounts(ig_username)";
+  "id, account_id, ig_sender_id, ig_sender_username, last_message_at, last_message_text, last_message_kind, last_message_direction, last_inbound_at, unread_count, contact_seen_at, automation_paused_until, human_takeover_at, status, created_at, ig_accounts(ig_username)";
 
 type ConversationRow = Omit<InboxConversation, "account_username"> & {
   ig_accounts: { ig_username: string } | null;
@@ -48,7 +50,9 @@ export async function listConversations(
     .order("last_inbound_at", { ascending: false, nullsFirst: false })
     .limit(LIST_LIMIT);
   if (filters.accountId) query = query.eq("account_id", filters.accountId);
-  if (filters.unreadOnly) query = query.gt("unread_count", 0);
+  if (filters.status === "unread") query = query.gt("unread_count", 0);
+  else if (filters.status === "done") query = query.eq("status", "done");
+  else query = query.eq("status", "open");
   const q = sanitizeSearch(filters.q);
   if (q) query = query.or(`ig_sender_username.ilike.%${q}%,last_message_text.ilike.%${q}%`);
 
@@ -66,7 +70,7 @@ export async function getThread(supabase: UserClient, conversationId: string): P
   if (!row) return null;
   const conversation = toInboxConversation(row as unknown as ConversationRow);
 
-  const [messagesRes, contactRes, runsRes] = await Promise.all([
+  const [messagesRes, contactRes, runsRes, notesRes, quickRepliesRes] = await Promise.all([
     supabase
       .from("messages")
       .select("*")
@@ -87,6 +91,17 @@ export async function getThread(supabase: UserClient, conversationId: string): P
       .eq("ig_sender_id", conversation.ig_sender_id)
       .in("status", ACTIVE_RUN_STATUSES)
       .order("updated_at", { ascending: false }),
+    supabase
+      .from("crm_notes")
+      .select("*")
+      .eq("account_id", conversation.account_id)
+      .eq("ig_sender_id", conversation.ig_sender_id)
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("quick_replies")
+      .select("*")
+      .eq("account_id", conversation.account_id)
+      .order("title", { ascending: true }),
   ]);
 
   const rows = (messagesRes.data ?? []) as MessageRow[];
@@ -111,6 +126,8 @@ export async function getThread(supabase: UserClient, conversationId: string): P
     messages: rows.slice(0, THREAD_LIMIT).reverse(),
     hasOlder: rows.length > THREAD_LIMIT,
     panel,
+    notes: (notesRes.data ?? []) as CrmNote[],
+    quickReplies: (quickRepliesRes.data ?? []) as QuickReply[],
   };
 }
 

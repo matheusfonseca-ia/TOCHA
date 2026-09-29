@@ -86,18 +86,21 @@ export function ConversationList({
         </label>
 
         <div className="inline-flex items-center gap-0.5 rounded-lg border border-border/70 bg-card p-1">
-          {[
-            { label: "Todas", unreadOnly: false },
-            { label: "Não lidas", unreadOnly: true },
-          ].map((o) => (
+          {(
+            [
+              { label: "Abertas", status: "open" },
+              { label: "Não lidas", status: "unread" },
+              { label: "Concluídas", status: "done" },
+            ] as const
+          ).map((o) => (
             <Link
               key={o.label}
-              href={inboxHref({ ...filters, unreadOnly: o.unreadOnly }, selectedId)}
+              href={inboxHref({ ...filters, status: o.status }, selectedId)}
               replace
               prefetch={false}
               className={cn(
-                "rounded-md px-3 py-1 text-xs font-medium transition-colors",
-                filters.unreadOnly === o.unreadOnly
+                "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                filters.status === o.status
                   ? "bg-secondary text-foreground shadow-[0_1px_2px_0_rgb(0_0_0/0.3)]"
                   : "text-muted-foreground hover:text-foreground"
               )}
@@ -117,11 +120,11 @@ export function ConversationList({
           <div className="flex flex-col items-center px-6 py-14 text-center">
             <MessagesSquare className="h-5 w-5 text-muted-foreground" />
             <p className="mt-3 text-sm font-medium">
-              {filters.q || filters.unreadOnly ? "Nada encontrado" : "Nenhuma conversa ainda"}
+              {filters.q || filters.status !== "open" ? "Nada encontrado" : "Nenhuma conversa ainda"}
             </p>
             <p className="mt-1 max-w-[240px] text-[13px] leading-relaxed text-muted-foreground">
-              {filters.q || filters.unreadOnly
-                ? "Tente outra busca ou volte para todas as conversas."
+              {filters.q || filters.status !== "open"
+                ? "Tente outra busca ou outro filtro."
                 : "Quando alguém mandar DM para a sua conta, a conversa aparece aqui."}
             </p>
           </div>

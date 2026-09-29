@@ -31,7 +31,9 @@ export type TableName =
   | "processed_events"
   | "contacts"
   | "messages"
-  | "message_signals_pending";
+  | "message_signals_pending"
+  | "quick_replies"
+  | "crm_notes";
 
 export interface FakeError {
   message: string;
@@ -93,7 +95,10 @@ function defaultsFor(table: TableName): Row {
     case "rule_triggers":
       return { link_delivered_at: null, follow_gate_sent_at: null, created_at: now };
     case "conversations":
-      return { ig_sender_username: null, created_at: now };
+      return { ig_sender_username: null, human_takeover_at: null, status: "open", created_at: now };
+    case "quick_replies":
+    case "crm_notes":
+      return { created_at: now, updated_at: now };
     case "contacts":
       return { ig_username: null, fields: {}, tags: [], created_at: now, updated_at: now };
     case "messages":
@@ -392,6 +397,8 @@ export class FakeSupabase {
     contacts: [],
     messages: [],
     message_signals_pending: [],
+    quick_replies: [],
+    crm_notes: [],
   };
 
   from(table: TableName): FakeQueryBuilder {

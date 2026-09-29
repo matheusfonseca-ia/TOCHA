@@ -12,6 +12,7 @@ import {
   messageNode,
   row,
   triggerNode,
+  waitReplyNode,
 } from "@/lib/sequences/__tests__/fixtures";
 import { FOLLOW_GATE_DEFAULTS } from "@/lib/follow-gate/copy";
 import { GraphApiError } from "@/lib/meta/graph";
@@ -793,6 +794,150 @@ describe("processWebhookPayload — nó Pausar automações", () => {
 
     expect(sendPrivateReplyWithButtonMock).not.toHaveBeenCalled();
     expect(fake.tables.interactions[0].error_detail).toContain("pausadas");
+  });
+});
+
+describe("processWebhookPayload: Assumir conversa (D3)", () => {
+  it("conversa assumida bloqueia a automação de DM (regra)", async () => {
+    const account = makeAccount();
+    const rule = makeRule({
+      account_id: account.id,
+      trigger_type: "dm",
+      keyword: "oi",
+      reply_type: "text",
+      reply_text: "Oi!",
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(rule);
+    fake.tables.conversations.push(
+      row({
+        account_id: account.id,
+        ig_sender_id: "sender-40",
+        last_inbound_at: new Date().toISOString(),
+        human_takeover_at: new Date().toISOString(),
+      })
+    );
+
+    await processWebhookPayload({
+      object: "instagram",
+      entry: [
+        {
+          id: account.ig_user_id,
+          messaging: [
+            {
+              sender: { id: "sender-40" },
+              recipient: { id: account.ig_user_id },
+              timestamp: Date.now(),
+              message: { mid: "mid-40", text: "oi", is_echo: false },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(sendRuleReplyMock).not.toHaveBeenCalled();
+    expect(fake.tables.interactions).toHaveLength(1);
+    expect(fake.tables.interactions[0].status).toBe("no_match");
+    expect(fake.tables.interactions[0].error_detail).toBe("Conversa assumida por atendente");
+  });
+
+  it("conversa assumida bloqueia um workflow novo por palavra-chave", async () => {
+    const account = makeAccount();
+    const sequence = makeSequence({
+      account_id: account.id,
+      graph: { nodes: [triggerNode({ keyword: "cadastro" }), messageNode("m1", "Oi!")], edges: [edge("trigger", "m1")] },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+    fake.tables.conversations.push(
+      row({
+        account_id: account.id,
+        ig_sender_id: "sender-41",
+        last_inbound_at: new Date().toISOString(),
+        human_takeover_at: new Date().toISOString(),
+      })
+    );
+
+    await processWebhookPayload({
+      object: "instagram",
+      entry: [
+        {
+          id: account.ig_user_id,
+          messaging: [
+            {
+              sender: { id: "sender-41" },
+              recipient: { id: account.ig_user_id },
+              timestamp: Date.now(),
+              message: { mid: "mid-41", text: "cadastro", is_echo: false },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(sendTextMessageMock).not.toHaveBeenCalled();
+    expect(fake.tables.sequence_runs).toHaveLength(0);
+    expect(fake.tables.interactions[0].error_detail).toBe("Conversa assumida por atendente");
+  });
+
+  it("conversa assumida trava a retomada de um workflow esperando resposta; devolver ao bot volta ao normal", async () => {
+    const account = makeAccount();
+    const sequence = makeSequence({
+      account_id: account.id,
+      graph: {
+        nodes: [triggerNode({ keyword: "cadastro" }), waitReplyNode("w1"), messageNode("ok", "Valeu!")],
+        edges: [edge("trigger", "w1"), edge("w1", "ok")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+    const conversation = row({
+      account_id: account.id,
+      ig_sender_id: "sender-42",
+      last_inbound_at: new Date().toISOString(),
+      human_takeover_at: new Date().toISOString() as string | null,
+    });
+    fake.tables.conversations.push(conversation);
+    fake.tables.sequence_runs.push(
+      row({
+        sequence_id: sequence.id,
+        account_id: account.id,
+        ig_sender_id: "sender-42",
+        status: "waiting_reply",
+        current_node_id: "w1",
+        next_run_at: null,
+        steps_executed: 1,
+        last_error: null,
+        entry_rule_id: null,
+        variables: {},
+        started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+    );
+
+    const event = {
+      sender: { id: "sender-42" },
+      recipient: { id: account.ig_user_id },
+      timestamp: Date.now(),
+      message: { mid: "mid-42", text: "qualquer coisa", is_echo: false },
+    };
+
+    await processWebhookPayload({ object: "instagram", entry: [{ id: account.ig_user_id, messaging: [event] }] });
+
+    expect(sendTextMessageMock).not.toHaveBeenCalled();
+    expect(fake.tables.sequence_runs[0].status).toBe("waiting_reply");
+    expect(fake.tables.sequence_runs[0].current_node_id).toBe("w1");
+    expect(fake.tables.interactions.at(-1)?.error_detail).toBe("Conversa assumida por atendente");
+
+    // Devolver ao bot: a mesma resposta agora segue o fluxo normalmente.
+    conversation.human_takeover_at = null;
+    await processWebhookPayload({
+      object: "instagram",
+      entry: [{ id: account.ig_user_id, messaging: [{ ...event, message: { ...event.message, mid: "mid-43" } }] }],
+    });
+
+    expect(sendTextMessageMock).toHaveBeenCalledWith(expect.any(String), "sender-42", "Valeu!");
+    expect(fake.tables.sequence_runs[0].status).toBe("completed");
   });
 });
 

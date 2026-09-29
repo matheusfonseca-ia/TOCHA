@@ -24,7 +24,7 @@ import {
 } from "@/lib/sequences/runtime";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { sleep } from "@/lib/utils";
-import { captureMessagingEvent, observeOutbound } from "@/modules/crm/server";
+import { captureMessagingEvent, isTakenOver, observeOutbound } from "@/modules/crm/server";
 import type { IgAccount, InteractionStatus, Rule } from "@/types/database";
 import {
   GraphApiError,
@@ -251,6 +251,22 @@ async function handleMessagingEvent(
 
   // 3. Atualiza a conversa (janela de 24h conta a partir da última inbound)
   await touchConversation(admin, account.id, senderId, event.timestamp);
+
+  // 3-bis. Conversa assumida por um atendente (D3): nenhuma automação roda
+  // para esta pessoa enquanto isso, nem a continuação de um workflow parado
+  // esperando resposta. Só "Devolver ao bot" no painel libera de novo.
+  if (await isTakenOver(admin, account.id, senderId)) {
+    await admin.from("interactions").insert({
+      account_id: account.id,
+      ig_sender_id: senderId,
+      message_text: classified.text.slice(0, 2000),
+      status: "no_match",
+      reply_type: null,
+      error_detail: "Conversa assumida por atendente",
+      latency_ms: Date.now() - startedAt,
+    });
+    return;
+  }
 
   // 4a. Sequência esperando esta pessoa? Continuação tem prioridade sobre
   // regras/gatilhos novos: quem está no meio de um fluxo não deve ser
@@ -662,6 +678,13 @@ async function processPostbackEvent(
       latency_ms: Date.now() - startedAt,
     });
 
+  // Conversa assumida por um atendente (D3): também vale para o toque no
+  // botão da automação (link do comentário e portão de seguidor).
+  if (await isTakenOver(admin, account.id, senderId)) {
+    await logTap("no_match", "[toque em botão da automação]", "Conversa assumida por atendente");
+    return;
+  }
+
   // "Pausar automações" vale para os toques também, como na DM e no
   // comentário: nada é entregue e o conteúdo continua esperando.
   const pausedUntil = await automationPausedUntil(admin, account.id, senderId);
@@ -777,10 +800,26 @@ async function processSequencePostbackEvent(
     .maybeSingle<IgAccount>();
   if (!account) return;
 
+  const startedAt = Date.now();
+
   // Toque no botão também conta como interação para a janela de 24h.
   await touchConversation(admin, account.id, senderId, eventTimestampMs);
 
-  const startedAt = Date.now();
+  // Conversa assumida por um atendente (D3): o toque num botão de
+  // ramificação do workflow também não retoma nada enquanto isso.
+  if (await isTakenOver(admin, account.id, senderId)) {
+    await admin.from("interactions").insert({
+      account_id: account.id,
+      ig_sender_id: senderId,
+      message_text: "[sequência: botão tocado]",
+      status: "no_match",
+      reply_type: null,
+      error_detail: "Conversa assumida por atendente",
+      latency_ms: Date.now() - startedAt,
+    });
+    return;
+  }
+
   const outcome = await handleSequencePostback(admin, account, senderId, payload);
   if (!outcome) return;
 
@@ -828,6 +867,21 @@ async function processCommentEvent(
   if (senderId === account.ig_user_id) return;
 
   const startedAt = Date.now();
+
+  // Conversa assumida por um atendente (D3): a automação de comentário é a
+  // porta de entrada dos workflows ligados a ela.
+  if (await isTakenOver(admin, account.id, senderId)) {
+    await admin.from("interactions").insert({
+      account_id: account.id,
+      ig_sender_id: senderId,
+      message_text: text.slice(0, 2000),
+      status: "no_match",
+      reply_type: null,
+      error_detail: "Conversa assumida por atendente",
+      latency_ms: Date.now() - startedAt,
+    });
+    return;
+  }
 
   // "Pausar automações" vale para comentário também: a automação de
   // comentário é a porta de entrada dos workflows ligados a ela.
