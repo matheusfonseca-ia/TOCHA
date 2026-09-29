@@ -1,9 +1,33 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260929-003527-claude"
+Última tag: "HANDOFF-falow-20260929-133645-claude"
 Status: concluído
-Resumo: CRM completo em produção (Worker 1826cebb: composer alinhado, item do menu renomeado de CRM para Conversas, commit fc9ecc4) + envio de áudio pelo painel (gravar no microfone ou anexar M4A/WAV). Push para o tocha feito pelo usuário (7e69b18..fc85046); o commit do áudio (b4976c7) ainda não foi pro tocha. Vercel NÃO é do usuário (sócio do TOCHA): ignorar build e banco dela. Pendências do usuário: "Trazer conversas existentes" no Funil; fechar as 2 abas do SQL Editor; testar o microfone de verdade (permissão do navegador).
+Resumo: os 15 achados da revisão do CRM corrigidos e em produção (Worker 3e7de824, commit 0244154): exclusão LGPD, key da conversa no Inbox, condição "está na etapa", lead ganho/perdido como lead da conversa, D3 no workflow de entrada da etapa, excluir/mudar tipo de etapa, seletor de conta no Funil, "Carregar mais" arrastável, legenda com anexo, tags sem diferenciar acento, perfil sem @ 1x por dia, backfill com token único. Push para o tocha pendente (usuário roda). Vercel NÃO é do usuário: ignorar.
+
+---
+
+## [HANDOFF · falow · 2026-09-29T13:36:45-03:00 · claude]
+Status: concluído
+Objetivo: corrigir os 15 achados do /code-review do CRM (origin/main...HEAD, 61 commits) e publicar.
+Feito:
+- LGPD (`exclusao-de-dados`): `lead_stage_events` é apagado via join em `leads` (não tem `ig_sender_id`; o bloco DO abortava inteiro).
+- Inbox: `Thread`/`ContactPanel` com `key={conversation.id}` (pendências, etapa e gravação não vazam para outro lead). Seleção múltipla só zera quando o filtro muda.
+- Condição "está na etapa": `dataNodeError` não pede campo; `stageIdsOf`/`validateStageRefs` (graph.ts) conferem existência e conta da etapa no save (antes só o nó Mover para etapa).
+- Funil: lead ganho/perdido continua sendo o lead da conversa (`currentLeadOf` em move-lead.ts, mais recente por created_at). Board/estatística/"carregar mais" sem filtro de closed_at; captura e "Trazer conversas existentes" não recriam; ficha e condição inStage enxergam o fechado; moveLead por conversa reabre o mesmo card. moveLead recusa etapa de outro funil.
+- `startStageEnterSequence` (runtime.ts): caminho único do "ao entrar na etapa", com `isTakenOver` (D3). Board e nó Mover para etapa usam ele.
+- Excluir etapa: leads vão para o fim da coluna destino com `closingFields` do tipo dela; mudar o tipo da etapa sincroniza closed_at/lost_reason dos leads.
+- Funil com seletor de conta (`PipelineSwitcher`), trocar de funil mantém `conta`. "Carregar mais" por cursor de posição e cards entram no estado do arrastar.
+- Composer: legenda digitada vai com o anexo; se só o texto falhar, `attachmentSent` faz o retry mandar só o texto e a conversa é assumida. Regex `\.(m4a|wav)`; microfone desliga se o setup do Web Audio falhar.
+- Tags: `tagged-contacts.ts` (varredura paginada por id, sem diferenciar maiúscula/acento) usada no filtro do Inbox e no rename/remove (RPC por grafia encontrada); `FlowData.setTag` e cores usam `normalize`.
+- Perfil: `leadNeedsProfile` tenta de novo sem @ no máximo 1x/24h; `backfillLeadProfiles` pega o token 1 vez e roda em lotes de 5.
+- 510 testes (11 novos), tsc ok, build em 2 etapas, deploy 3e7de824. QA logado: Funil, Conversas, ficha da conversa de teste, script novo servido em /exclusao-de-dados, sem erro no console.
+Próximo passo:
+- Usuário: `! git -C "D:/Projetos-vibeocding/eu/falow-instalacaonamaquina" push tocha main:main`.
+- Não feito (opcional): corrida do `is_latest` no trigger `crm_on_message_insert` (precisa migration), importação reabrindo conversas concluídas, `ensureConversation` repetido por mensagem, helpers de posse duplicados, `find-invalid-node.ts` divergente, e mover expiry/follow-gate/contacts de `src/lib`/`src/components` para módulos (modular-arch).
+Arquivos tocados: src/app/(legal)/exclusao-de-dados/page.tsx, src/app/(dashboard)/crm/funil/page.tsx, src/app/(dashboard)/rules/sequencias/actions.ts, src/lib/sequences/{condition,fields,flow-data,graph,runtime}.ts, src/types/sequence.ts, src/modules/crm/{inbox,pipeline,tags,capture,lead-profile}/..., testes em fields/runtime/move-lead/tags.
+Decisões/contexto: sem migration nova (tudo em código). Lead fechado é o lead da conversa; o índice único só cobre abertos, então pode sobrar duplicata antiga (currentLeadOf pega a mais recente). Varredura de tags percorre só contatos com tag, em páginas de 1000.
+Tag: "HANDOFF-falow-20260929-133645-claude"
 
 ---
 
