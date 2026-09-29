@@ -11,3 +11,5 @@ export type {
   MessageRow,
   MessageSource,
 } from "./shared/types/message";
+export { listAllTagNames, listTagCatalog, listTagOptionsForEditor } from "./tags/services/tags.queries";
+export type { CrmTag, TagColor } from "./tags/types";

@@ -12,8 +12,12 @@ export interface ConditionSubject {
   tags: readonly string[];
 }
 
-/** Comparação de texto sem diferenciar maiúsculas, acentos e espaços nas pontas. */
-function normalize(value: string): string {
+/**
+ * Comparação de texto sem diferenciar maiúsculas, acentos e espaços nas
+ * pontas. Exportada para o catálogo de tags do CRM reaproveitar a mesma
+ * normalização usada pela Condição do workflow.
+ */
+export function normalize(value: string): string {
   return value
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "")

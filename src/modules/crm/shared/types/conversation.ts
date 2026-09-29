@@ -1,5 +1,6 @@
 import type { SequenceRunStatus } from "@/types/sequence";
 
+import type { CrmTag } from "../../tags/types";
 import type { MessageDirection, MessageKind, MessageRow } from "./message";
 
 /** Linha da lista do Inbox (conversations + desnormalização da migration 0009). */
@@ -19,6 +20,8 @@ export interface InboxConversation {
   contact_seen_at: string | null;
   automation_paused_until: string | null;
   created_at: string;
+  /** Até 2 tags do lead, para o card da lista (migration 0012). */
+  tags?: { name: string; color: CrmTag["color"] }[];
 }
 
 export interface InboxFilters {
@@ -26,6 +29,8 @@ export interface InboxFilters {
   accountId: string;
   unreadOnly: boolean;
   q: string;
+  /** Nome da tag selecionada no filtro ("" ou ausente = todas). Migration 0012. */
+  tag?: string;
 }
 
 export interface ContactRun {
@@ -40,6 +45,8 @@ export interface ContactPanelData {
   fields: Record<string, unknown>;
   tags: string[];
   runs: ContactRun[];
+  /** Catálogo de tags da conta, para o seletor da ficha (migration 0012). */
+  tagCatalog: CrmTag[];
 }
 
 export interface InboxThread {

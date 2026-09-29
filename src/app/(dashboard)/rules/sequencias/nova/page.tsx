@@ -6,12 +6,13 @@ import { SequenceEditor } from "@/components/sequences/sequence-editor";
 import { Button } from "@/components/ui/button";
 import { withSyncedProfiles } from "@/lib/meta/account-profile";
 import { createClient } from "@/lib/supabase/server";
+import { listTagOptionsForEditor } from "@/modules/crm/server";
 import type { Rule } from "@/types/database";
 
 export default async function NovaSequenciaPage() {
   const supabase = createClient();
 
-  const [{ data: storedAccounts }, { data: rules }, { data: sequences }] = await Promise.all([
+  const [{ data: storedAccounts }, { data: rules }, { data: sequences }, tags] = await Promise.all([
     supabase
       .from("ig_accounts")
       .select("id, ig_username, profile_picture_url, access_token_enc")
@@ -21,6 +22,8 @@ export default async function NovaSequenciaPage() {
     supabase.from("rules").select("*").order("created_at"),
     // Workflows para o nó "Ir para workflow" (RLS idem)
     supabase.from("sequences").select("id, account_id, name").order("name"),
+    // Catálogo de tags do CRM, para o autocomplete dos nós de dados (RLS idem)
+    listTagOptionsForEditor(supabase),
   ]);
 
   // O @ pode ter mudado no Instagram: o link ig.me de referência usa o atual.
@@ -45,6 +48,7 @@ export default async function NovaSequenciaPage() {
       accounts={accounts}
       rules={(rules ?? []) as Rule[]}
       sequences={sequences ?? []}
+      tags={tags}
     />
   );
 }

@@ -1,11 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import { ExternalLink, PauseCircle, Workflow, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
+import { ContactFieldsEditor } from "../../tags/components/contact-fields-editor";
+import { TagManagerDialog } from "../../tags/components/tag-manager-dialog";
+import { TagPicker } from "../../tags/components/tag-picker";
 import type { InboxThread } from "../../shared/types/conversation";
 import { RUN_STATUS_LABEL, leadName } from "../utils/labels";
 import { fullDateTime } from "../utils/time";
@@ -50,6 +53,7 @@ export function ContactPanel({
 
 function PanelBody({ thread }: { thread: InboxThread }) {
   const { conversation: c, panel } = thread;
+  const [managerOpen, setManagerOpen] = useState(false);
   const fields = Object.entries(panel.fields).filter(([key]) => !key.startsWith("__"));
   const pausedUntil =
     c.automation_paused_until && Date.parse(c.automation_paused_until) > Date.now() ? c.automation_paused_until : null;
@@ -98,32 +102,24 @@ function PanelBody({ thread }: { thread: InboxThread }) {
       </PanelSection>
 
       <PanelSection title="Tags">
-        {panel.tags.length === 0 ? (
-          <Empty>Sem tags</Empty>
-        ) : (
-          <div className="flex flex-wrap gap-1.5">
-            {panel.tags.map((t) => (
-              <Badge key={t} variant="muted">
-                {t}
-              </Badge>
-            ))}
-          </div>
-        )}
+        <TagPicker
+          accountId={c.account_id}
+          senderId={c.ig_sender_id}
+          username={c.ig_sender_username}
+          catalog={panel.tagCatalog}
+          tags={panel.tags}
+          onManageTags={() => setManagerOpen(true)}
+        />
       </PanelSection>
+      <TagManagerDialog
+        open={managerOpen}
+        onOpenChange={setManagerOpen}
+        accountId={c.account_id}
+        accountUsername={c.account_username}
+      />
 
       <PanelSection title="Dados coletados">
-        {fields.length === 0 ? (
-          <Empty>Nenhum dado coletado pelos workflows</Empty>
-        ) : (
-          <dl className="space-y-2">
-            {fields.map(([key, value]) => (
-              <div key={key} className="text-[13px]">
-                <dt className="text-[12px] text-muted-foreground">{key}</dt>
-                <dd className="break-words font-medium">{String(value ?? "")}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
+        <ContactFieldsEditor accountId={c.account_id} senderId={c.ig_sender_id} fields={fields} />
       </PanelSection>
 
       <PanelSection title="Conversa">

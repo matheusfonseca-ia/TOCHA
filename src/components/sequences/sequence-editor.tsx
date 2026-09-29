@@ -56,6 +56,7 @@ import {
   defaultCollectInputData,
   defaultConditionData,
   defaultSetFieldData,
+  TagsCatalogProvider,
 } from "@/components/sequences/data";
 import { BlockMenu } from "@/components/sequences/block-menu";
 import {
@@ -325,6 +326,12 @@ export interface SequenceOption {
   name: string;
 }
 
+/** Tag do catálogo do CRM (migration 0012), só o necessário para a sugestão nos nós de dados. */
+export interface TagOption {
+  account_id: string;
+  name: string;
+}
+
 export function SequenceEditor(props: {
   accounts: AccountOption[];
   sequence?: Sequence;
@@ -335,6 +342,8 @@ export function SequenceEditor(props: {
   sequences?: SequenceOption[];
   /** Versões salvas do workflow, para o painel de Histórico. */
   versions?: SequenceVersion[];
+  /** Catálogo de tags de todas as contas, para sugestão nos nós de dados. */
+  tags?: TagOption[];
 }) {
   return (
     <ReactFlowProvider>
@@ -350,6 +359,7 @@ function EditorInner({
   rules = [],
   sequences = [],
   versions = [],
+  tags = [],
 }: {
   accounts: AccountOption[];
   sequence?: Sequence;
@@ -357,6 +367,7 @@ function EditorInner({
   rules?: Rule[];
   sequences?: SequenceOption[];
   versions?: SequenceVersion[];
+  tags?: TagOption[];
 }) {
   const router = useRouter();
   const { resolvedTheme } = useTheme();
@@ -398,6 +409,12 @@ function EditorInner({
     () =>
       sequences.filter((s) => s.account_id === accountId && s.id !== sequence?.id),
     [sequences, accountId, sequence?.id]
+  );
+
+  // ── Catálogo de tags (nós "Definir campo ou tag" em modo tag e "Condição" "tem a tag") ──
+  const accountTags = useMemo(
+    () => tags.filter((t) => t.account_id === accountId).map((t) => t.name),
+    [tags, accountId]
   );
 
   const liveGraph = useMemo(() => serializeGraph(nodes, edges), [nodes, edges]);
@@ -1035,6 +1052,7 @@ function EditorInner({
           <InvalidNodeContext.Provider value={invalidNodeId}>
             <NodeDataProvider onChange={handleDataChange}>
             <DataFieldsProvider fields={fieldKeysOf(liveGraph)}>
+            <TagsCatalogProvider tags={accountTags}>
             <AutomationRulesProvider
               rules={accountRules}
               entryRuleId={entryRuleIdOf(liveGraph)}
@@ -1095,6 +1113,7 @@ function EditorInner({
             </ReactFlow>
             </GoToSequenceProvider>
             </AutomationRulesProvider>
+            </TagsCatalogProvider>
             </DataFieldsProvider>
             </NodeDataProvider>
           </InvalidNodeContext.Provider>
