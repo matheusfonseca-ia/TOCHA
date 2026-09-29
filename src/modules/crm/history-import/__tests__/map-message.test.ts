@@ -73,8 +73,14 @@ describe("mapImportedMessage", () => {
     expect(draft.kind).toBe("video");
   });
 
-  it("mensagem com botões: texto vazio vira kind buttons sem texto", () => {
-    const draft = mapImportedMessage({ ...base, from: { id: LEAD_ID }, message: "" }, ACCOUNT_ID, LEAD_ID);
+  it("mensagem vazia recebida do lead (mídia que a API não devolve) vira anexo", () => {
+    const draft = mapImportedMessage({ id: "m-x", created_time: "2026-09-28T18:06:22+0000", from: { id: "lead-1" }, message: "" }, "conta-1", "lead-1");
+    expect(draft.kind).toBe("attachment");
+    expect(draft.text).toBeNull();
+  });
+
+  it("mensagem com botões enviada pela conta: texto vazio vira kind buttons sem texto", () => {
+    const draft = mapImportedMessage({ ...base, from: { id: ACCOUNT_ID }, message: "" }, ACCOUNT_ID, LEAD_ID);
     expect(draft.kind).toBe("buttons");
     expect(draft.text).toBeNull();
   });

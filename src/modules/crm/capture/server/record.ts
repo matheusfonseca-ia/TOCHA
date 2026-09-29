@@ -34,15 +34,18 @@ export async function findAccountId(admin: AdminClient, igUserId: string): Promi
   return (await findAccount(admin, igUserId))?.id ?? null;
 }
 
-/** A conversa ainda não tem o @ do lead (o webhook de DM não traz o @). */
-export async function leadNeedsUsername(admin: AdminClient, accountId: string, leadId: string): Promise<boolean> {
+/**
+ * O perfil do lead (@, foto) ainda não foi buscado: o webhook de DM não traz
+ * nenhum dos dois. Conversa com @ mas sem perfil (anterior à foto) também conta.
+ */
+export async function leadNeedsProfile(admin: AdminClient, accountId: string, leadId: string): Promise<boolean> {
   const { data } = await admin
     .from("conversations")
-    .select("ig_sender_username")
+    .select("ig_sender_username, ig_profile_fetched_at")
     .eq("account_id", accountId)
     .eq("ig_sender_id", leadId)
-    .maybeSingle<{ ig_sender_username: string | null }>();
-  return Boolean(data) && !data?.ig_sender_username;
+    .maybeSingle<{ ig_sender_username: string | null; ig_profile_fetched_at: string | null }>();
+  return Boolean(data) && (!data?.ig_sender_username || !data?.ig_profile_fetched_at);
 }
 
 /**

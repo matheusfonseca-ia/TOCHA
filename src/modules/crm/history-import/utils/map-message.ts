@@ -46,12 +46,12 @@ export function mapImportedMessage(
     : null;
   const text = raw.message?.trim() || null;
 
-  // A Conversations API devolve mensagem com botões como texto vazio, sem
-  // anexo (confirmado na Fase 0, 28/09/2026): sem forma de recuperar os
-  // botões em si, vira um marcador sem texto em vez de aparecer em branco.
+  // Texto vazio e sem anexo: enviada pela conta é mensagem com botões
+  // (template, Fase 0); recebida do lead é mídia que a API não devolve (o
+  // áudio da Fase 0 veio assim). Vira marcador em vez de balão em branco.
   let kind: MessageKind;
   if (attachments?.length) kind = attachmentKind(rawAttachments[0]);
-  else if (!text) kind = "buttons";
+  else if (!text) kind = direction === "outbound" ? "buttons" : "attachment";
   else kind = "text";
 
   return {
@@ -59,7 +59,7 @@ export function mapImportedMessage(
     direction,
     mid: raw.id,
     kind,
-    text: kind === "buttons" ? null : text,
+    text: kind === "buttons" || kind === "attachment" ? null : text,
     attachments,
     meta: null,
     replyToMid: raw.reply_to?.id ?? null,

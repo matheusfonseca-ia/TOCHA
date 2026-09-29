@@ -2,7 +2,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 
 import { refreshLeadProfile } from "../../lead-profile/server/refresh-profile";
 import { parseMessagingEvent, type IncomingMessagingEvent } from "../utils/parse-event";
-import { findAccount, leadNeedsUsername, markSeen, recordIncoming, recordSignal } from "./record";
+import { findAccount, leadNeedsProfile, markSeen, recordIncoming, recordSignal } from "./record";
 
 /**
  * Entrada do CRM no webhook: grava a mensagem, o eco ou o sinal (reação,
@@ -32,8 +32,8 @@ export async function captureMessagingEvent(
         await recordIncoming(admin, account.id, message, action.echo ? "instagram_app" : "contact");
         // O @ e a foto do lead aparecem no Inbox. Buscados uma vez, na 1ª
         // mensagem dele: é quando a Meta garante o consentimento para ler o
-        // perfil (checa pelo @ ainda vazio, o mesmo critério de antes).
-        if (message.direction === "inbound" && (await leadNeedsUsername(admin, account.id, message.leadId))) {
+        // perfil. Só uma vez: `ig_profile_fetched_at` fica gravado até na falha.
+        if (message.direction === "inbound" && (await leadNeedsProfile(admin, account.id, message.leadId))) {
           await refreshLeadProfile(admin, account, message.leadId);
         }
         return;
