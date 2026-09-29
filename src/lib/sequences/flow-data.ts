@@ -28,6 +28,7 @@ const INTERNAL_PREFIX = "__";
 export class FlowData {
   private contact: ContactSnapshot | null = null;
   private conversationUsername: string | null | undefined;
+  private stageIds: string[] | null = null;
   private readonly variables: RunVariables;
 
   constructor(
@@ -88,11 +89,25 @@ export class FlowData {
     return out;
   }
 
+  /** Etapas (todos os funis) em que o contato tem lead aberto (só a condição "Está na etapa" usa). */
+  private async getStageIds(): Promise<string[]> {
+    if (this.stageIds) return this.stageIds;
+    const { data } = await this.admin
+      .from("leads")
+      .select("stage_id")
+      .eq("account_id", this.accountId)
+      .eq("ig_sender_id", this.run.ig_sender_id)
+      .is("closed_at", null);
+    this.stageIds = ((data ?? []) as { stage_id: string }[]).map((r) => r.stage_id);
+    return this.stageIds;
+  }
+
   async evaluate(condition: ConditionNodeData): Promise<boolean> {
     const contact = await this.getContact();
     return evaluateCondition(condition, {
       fields: await this.values(),
       tags: contact.tags,
+      stageIds: condition.operator === "inStage" ? await this.getStageIds() : undefined,
     });
   }
 

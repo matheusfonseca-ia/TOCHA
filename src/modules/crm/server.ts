@@ -14,3 +14,5 @@ export type {
 } from "./shared/types/message";
 export { listAllTagNames, listTagCatalog, listTagOptionsForEditor } from "./tags/services/tags.queries";
 export type { CrmTag, TagColor } from "./tags/types";
+export { ensureDefaultPipeline } from "./pipeline/server/ensure-default-pipeline";
+export { getBoard, listPipelines } from "./pipeline/services/pipeline.queries";

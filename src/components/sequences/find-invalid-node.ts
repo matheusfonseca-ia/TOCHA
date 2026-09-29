@@ -24,6 +24,7 @@ import {
   type DelayNodeData,
   type GoToSequenceNodeData,
   type MessageNodeData,
+  type MoveToStageNodeData,
   type QuickRepliesNodeData,
   type RandomizerNodeData,
   type SequenceGraph,
@@ -125,6 +126,10 @@ function nodeHasContentError(node: SequenceGraphNode): boolean {
         hours > STOP_AUTOMATION_MAX_HOURS
       );
     }
+    case "moveToStage":
+      // Etapa removida/de outro funil depende de contexto que só graph.ts
+      // recebe; aqui só o campo vazio conta.
+      return !(node.data as MoveToStageNodeData).stageId?.trim();
   }
 }
 

@@ -9,3 +9,5 @@ export type {
   InboxFilters,
   InboxThread,
 } from "./shared/types/conversation";
+export { PipelineBoard } from "./pipeline/components/pipeline-board";
+export type { Board, PipelineOption } from "./pipeline/types";

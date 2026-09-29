@@ -1,8 +1,16 @@
 import { createAdminClient } from "@/lib/supabase/admin";
+import { enrollLeadFromCapture } from "@/modules/crm/pipeline/server/enroll-lead";
 
 import { refreshLeadProfile } from "../../lead-profile/server/refresh-profile";
 import { parseMessagingEvent, type IncomingMessagingEvent } from "../utils/parse-event";
-import { findAccount, leadNeedsProfile, markSeen, recordIncoming, recordSignal } from "./record";
+import {
+  ensureConversation,
+  findAccount,
+  leadNeedsProfile,
+  markSeen,
+  recordIncoming,
+  recordSignal,
+} from "./record";
 
 /**
  * Entrada do CRM no webhook: grava a mensagem, o eco ou o sinal (reação,
@@ -35,6 +43,13 @@ export async function captureMessagingEvent(
         // perfil. Só uma vez: `ig_profile_fetched_at` fica gravado até na falha.
         if (message.direction === "inbound" && (await leadNeedsProfile(admin, account.id, message.leadId))) {
           await refreshLeadProfile(admin, account, message.leadId);
+        }
+        // Entrada automática no funil padrão (D2): só para mensagem do lead
+        // (nunca eco). `moveLead` é idempotente: reentrega do webhook ou
+        // corrida com "Trazer conversas existentes" só bate no 23505.
+        if (message.direction === "inbound") {
+          const conversationId = await ensureConversation(admin, account.id, message.leadId);
+          await enrollLeadFromCapture(admin, account.id, conversationId, message.leadId);
         }
         return;
       }

@@ -29,6 +29,7 @@ import { TagBadge } from "../../tags/components/tag-badge";
 import { TagFilter } from "../../tags/components/tag-filter";
 import { TagManagerDialog } from "../../tags/components/tag-manager-dialog";
 import type { CrmTag } from "../../tags/types";
+import { CrmTabs } from "../../shared/components/crm-tabs";
 import type { InboxAccount, InboxConversation, InboxFilters } from "../../shared/types/conversation";
 import { inboxHref } from "../utils/href";
 import { leadName, messagePreview } from "../utils/labels";
@@ -100,7 +101,7 @@ export function ConversationList({
     <div className="flex h-full min-h-0 flex-col">
       <div className="space-y-3 border-b border-border/70 px-4 pb-3 pt-4">
         <div className="flex items-center justify-between gap-2">
-          <h1 className="font-display text-lg font-semibold">Conversas</h1>
+          <CrmTabs />
           <div className="flex items-center gap-1">
             {conversations.length > 0 && (
               <Button

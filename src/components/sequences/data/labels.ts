@@ -64,6 +64,7 @@ export const OPERATOR_OPTIONS: { value: ConditionOperator; label: string }[] = [
   { value: "gt", label: "é maior que" },
   { value: "lt", label: "é menor que" },
   { value: "hasTag", label: "tem a tag" },
+  { value: "inStage", label: "está na etapa" },
 ];
 
 export function operatorLabel(op: ConditionOperator): string {

@@ -34,7 +34,11 @@ export type TableName =
   | "message_signals_pending"
   | "crm_tags"
   | "quick_replies"
-  | "crm_notes";
+  | "crm_notes"
+  | "pipelines"
+  | "pipeline_stages"
+  | "leads"
+  | "lead_stage_events";
 
 export interface FakeError {
   message: string;
@@ -75,6 +79,17 @@ const UNIQUE_CONSTRAINTS: Partial<Record<TableName, string[][]>> = {
   rule_triggers: [["rule_id", "ig_sender_id"]],
   contacts: [["account_id", "ig_sender_id"]],
   messages: [["account_id", "mid"]],
+};
+
+// Únicos parciais (`where ...` no índice real): só conflitam quando o
+// predicado também bate na linha existente E na nova.
+const PARTIAL_UNIQUE_CONSTRAINTS: Partial<
+  Record<TableName, { cols: string[]; predicate: (row: Row) => boolean }[]>
+> = {
+  // pipelines_one_default_per_account
+  pipelines: [{ cols: ["account_id"], predicate: (r) => !!r.is_default }],
+  // leads_open_per_pipeline_conversation
+  leads: [{ cols: ["pipeline_id", "conversation_id"], predicate: (r) => r.closed_at == null }],
 };
 
 const PG_UNIQUE_VIOLATION = "23505";
@@ -131,6 +146,21 @@ function defaultsFor(table: TableName): Row {
     case "processed_events":
     case "message_signals_pending":
       return { created_at: now };
+    case "pipelines":
+      return { is_default: false, auto_enroll: true, created_at: now, updated_at: now };
+    case "pipeline_stages":
+      return { color: "#22c55e", stage_type: "open", on_enter_sequence_id: null, created_at: now, updated_at: now };
+    case "leads":
+      return {
+        value: null,
+        entered_stage_at: now,
+        closed_at: null,
+        lost_reason: null,
+        created_at: now,
+        updated_at: now,
+      };
+    case "lead_stage_events":
+      return { from_stage_id: null, to_stage_id: null, moved_by: null, moved_at: now };
     default:
       return {};
   }
@@ -139,10 +169,19 @@ function defaultsFor(table: TableName): Row {
 function hasUniqueConflict(table: TableName, item: Row, rows: Row[]): boolean {
   const constraints = UNIQUE_CONSTRAINTS[table] ?? [];
   // Como no Postgres: nulo nunca conflita (ex.: messages.mid de envio que falhou).
-  return constraints.some(
+  const plainConflict = constraints.some(
     (cols) =>
       cols.every((c) => item[c] != null) &&
       rows.some((r) => cols.every((c) => r[c] === item[c]))
+  );
+  if (plainConflict) return true;
+
+  const partials = PARTIAL_UNIQUE_CONSTRAINTS[table] ?? [];
+  return partials.some(
+    ({ cols, predicate }) =>
+      predicate(item) &&
+      cols.every((c) => item[c] != null) &&
+      rows.some((r) => predicate(r) && cols.every((c) => r[c] === item[c]))
   );
 }
 
@@ -420,6 +459,10 @@ export class FakeSupabase {
     crm_tags: [],
     quick_replies: [],
     crm_notes: [],
+    pipelines: [],
+    pipeline_stages: [],
+    leads: [],
+    lead_stage_events: [],
   };
 
   from(table: TableName): FakeQueryBuilder {

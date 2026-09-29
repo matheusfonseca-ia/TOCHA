@@ -38,6 +38,7 @@ import { FlowData } from "@/lib/sequences/flow-data";
 import { fetchAndStoreUsername } from "@/lib/contacts/profile";
 import { pickBranch } from "@/lib/sequences/randomizer";
 import { createAdminClient } from "@/lib/supabase/admin";
+import { moveLead } from "@/modules/crm/pipeline/server/move-lead";
 import { isTakenOver, observeOutbound } from "@/modules/crm/server";
 import { sleep } from "@/lib/utils";
 import type { IgAccount, InteractionStatus, Rule } from "@/types/database";
@@ -67,6 +68,7 @@ import {
   YES_HANDLE,
   type CollectInputNodeData,
   type ConditionNodeData,
+  type MoveToStageNodeData,
   type SetFieldNodeData,
 } from "@/types/sequence";
 
@@ -265,12 +267,18 @@ export async function startSequenceFromRule(
  * unique (sequence_id, ig_sender_id) barra e `insertRun` devolve
  * `duplicate_skip`, registrado normalmente pelo chamador.
  */
-async function startSequenceFromGoTo(
+/**
+ * Exportada também para o Funil (Fase 6): entrar numa etapa com "ao entrar,
+ * iniciar workflow" configurado usa exatamente este mesmo caminho (o nó
+ * "Mover para etapa" chama por dentro do runtime; o board chama daqui, do
+ * server action de mover o card).
+ */
+export async function startSequenceFromGoTo(
   admin: AdminClient,
   account: IgAccount,
   senderId: string,
   targetSequenceId: string,
-  deadline: number
+  deadline = invocationDeadline()
 ): Promise<SequenceOutcome | null> {
   const { data: target } = await admin
     .from("sequences")
@@ -1113,6 +1121,50 @@ async function runNodes(
           }
           await persistRun(admin, run, "completed", { steps_executed: steps });
           return handoff;
+        }
+
+        // ── CRM (Fase 6) ────────────────────────────────────────────────
+        case "moveToStage": {
+          const { stageId } = node.data as MoveToStageNodeData;
+          const { data: conversation } = await admin
+            .from("conversations")
+            .select("id")
+            .eq("account_id", account.id)
+            .eq("ig_sender_id", run.ig_sender_id)
+            .maybeSingle<{ id: string }>();
+          if (!conversation) {
+            throw new Error("Mover para etapa: conversa não encontrada para este contato.");
+          }
+
+          // Trava anti-loop: já estar na etapa (inclusive quando este mesmo
+          // nó acabou de colocar a pessoa nela) não repete o histórico nem
+          // dispara de novo o workflow de entrada. Um segundo disparo do
+          // MESMO workflow de entrada some sozinho: `insertRun` já barra a
+          // pessoa de entrar duas vezes na mesma sequência.
+          const result = await moveLead(admin, {
+            accountId: account.id,
+            toStageId: stageId,
+            source: "automation",
+            conversationId: conversation.id,
+            igSenderId: run.ig_sender_id,
+          });
+          if (result.changed && result.targetStage.on_enter_sequence_id) {
+            try {
+              await startSequenceFromGoTo(
+                admin,
+                account,
+                run.ig_sender_id,
+                result.targetStage.on_enter_sequence_id,
+                deadline
+              );
+            } catch (err) {
+              // O workflow "ao entrar" é um bônus da etapa: uma falha nele
+              // nunca desfaz o "Mover para etapa" nem quebra este fluxo.
+              console.error("[crm] workflow de entrada da etapa falhou:", err instanceof Error ? err.message : err);
+            }
+          }
+          nodeId = targetOf(graph, node.id, OUT_HANDLE);
+          break;
         }
       }
     }

@@ -7,24 +7,28 @@ import { Button } from "@/components/ui/button";
 import { withSyncedProfiles } from "@/lib/meta/account-profile";
 import { createClient } from "@/lib/supabase/server";
 import { listTagOptionsForEditor } from "@/modules/crm/server";
+import { stageOptionsFromRows } from "@/modules/crm/pipeline/services/pipeline.queries";
 import type { Rule } from "@/types/database";
 
 export default async function NovaSequenciaPage() {
   const supabase = createClient();
 
-  const [{ data: storedAccounts }, { data: rules }, { data: sequences }, tags] = await Promise.all([
-    supabase
-      .from("ig_accounts")
-      .select("id, ig_username, profile_picture_url, access_token_enc")
-      .eq("status", "active")
-      .order("connected_at"),
-    // Automações para o nó "Automação" e o gatilho do editor (RLS limita ao usuário)
-    supabase.from("rules").select("*").order("created_at"),
-    // Workflows para o nó "Ir para workflow" (RLS idem)
-    supabase.from("sequences").select("id, account_id, name").order("name"),
-    // Catálogo de tags do CRM, para o autocomplete dos nós de dados (RLS idem)
-    listTagOptionsForEditor(supabase),
-  ]);
+  const [{ data: storedAccounts }, { data: rules }, { data: sequences }, tags, { data: stageRows }] =
+    await Promise.all([
+      supabase
+        .from("ig_accounts")
+        .select("id, ig_username, profile_picture_url, access_token_enc")
+        .eq("status", "active")
+        .order("connected_at"),
+      // Automações para o nó "Automação" e o gatilho do editor (RLS limita ao usuário)
+      supabase.from("rules").select("*").order("created_at"),
+      // Workflows para o nó "Ir para workflow" (RLS idem)
+      supabase.from("sequences").select("id, account_id, name").order("name"),
+      // Catálogo de tags do CRM, para o autocomplete dos nós de dados (RLS idem)
+      listTagOptionsForEditor(supabase),
+      // Etapas dos funis para o nó "Mover para etapa" (RLS idem)
+      supabase.from("pipeline_stages").select("id, name, pipelines(name, account_id)").order("position"),
+    ]);
 
   // O @ pode ter mudado no Instagram: o link ig.me de referência usa o atual.
   const accounts = await withSyncedProfiles(supabase, storedAccounts ?? []);
@@ -49,6 +53,7 @@ export default async function NovaSequenciaPage() {
       rules={(rules ?? []) as Rule[]}
       sequences={sequences ?? []}
       tags={tags}
+      stages={stageOptionsFromRows(stageRows)}
     />
   );
 }

@@ -29,6 +29,7 @@ import {
   ChevronRight,
   HelpCircle,
   Hourglass,
+  Kanban,
   ListChecks,
   MessageSquareText,
   MousePointerClick,
@@ -67,6 +68,10 @@ import {
 import { DELETABLE_EDGE, sequenceEdgeTypes } from "@/components/sequences/edges";
 import { GoToSequenceProvider } from "@/components/sequences/extras";
 import { findFirstInvalidNode } from "@/components/sequences/find-invalid-node";
+import {
+  PipelineStageProvider,
+  type PipelineStageOption,
+} from "@/modules/crm/pipeline/components/workflow";
 import { NodeDataProvider } from "@/components/sequences/node-data-context";
 import { SequenceConfirmDialog } from "@/components/sequences/sequence-confirm-dialog";
 import { InvalidNodeContext, sequenceNodeTypes } from "@/components/sequences/sequence-nodes";
@@ -150,6 +155,7 @@ const PALETTE: {
     icon: PauseOctagon,
     group: "Extras",
   },
+  { type: "moveToStage", label: "Mover para etapa", icon: Kanban, group: "CRM" },
 ];
 
 // Largura fixa dos blocos no canvas (w-60 em sequence-nodes.tsx) e altura
@@ -198,6 +204,8 @@ function defaultDataFor(type: SequenceNodeType): SequenceNodeData {
       return { sequenceId: "" };
     case "stopAutomation":
       return { hours: 24 };
+    case "moveToStage":
+      return { stageId: "" };
   }
 }
 
@@ -344,6 +352,8 @@ export function SequenceEditor(props: {
   versions?: SequenceVersion[];
   /** Catálogo de tags de todas as contas, para sugestão nos nós de dados. */
   tags?: TagOption[];
+  /** Etapas dos funis do usuário, para o nó "Mover para etapa" e a condição "Está na etapa". */
+  stages?: PipelineStageOption[];
 }) {
   return (
     <ReactFlowProvider>
@@ -360,6 +370,7 @@ function EditorInner({
   sequences = [],
   versions = [],
   tags = [],
+  stages = [],
 }: {
   accounts: AccountOption[];
   sequence?: Sequence;
@@ -368,6 +379,7 @@ function EditorInner({
   sequences?: SequenceOption[];
   versions?: SequenceVersion[];
   tags?: TagOption[];
+  stages?: PipelineStageOption[];
 }) {
   const router = useRouter();
   const { resolvedTheme } = useTheme();
@@ -415,6 +427,12 @@ function EditorInner({
   const accountTags = useMemo(
     () => tags.filter((t) => t.account_id === accountId).map((t) => t.name),
     [tags, accountId]
+  );
+
+  // ── Nó "Mover para etapa" e condição "Está na etapa" ────────────────────
+  const accountStages = useMemo(
+    () => stages.filter((s) => s.accountId === accountId),
+    [stages, accountId]
   );
 
   const liveGraph = useMemo(() => serializeGraph(nodes, edges), [nodes, edges]);
@@ -1062,6 +1080,7 @@ function EditorInner({
               onTriggerSourceChange={handleTriggerSourceChange}
             >
             <GoToSequenceProvider sequences={accountSequences}>
+            <PipelineStageProvider stages={accountStages}>
             <ReactFlow
               nodes={nodes}
               edges={edges}
@@ -1111,6 +1130,7 @@ function EditorInner({
                 ariaLabel="Miniatura do fluxo"
               />
             </ReactFlow>
+            </PipelineStageProvider>
             </GoToSequenceProvider>
             </AutomationRulesProvider>
             </TagsCatalogProvider>

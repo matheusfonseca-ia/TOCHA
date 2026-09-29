@@ -55,6 +55,13 @@ export interface ContactRun {
   updatedAt: string;
 }
 
+/** Etapa atual do lead no funil padrão, pra ficha do Inbox mover sem sair da conversa. Fase 6. */
+export interface ContactPipelineSection {
+  leadId: string;
+  currentStageId: string;
+  stages: { id: string; name: string }[];
+}
+
 /** Ficha lateral do lead. */
 export interface ContactPanelData {
   fields: Record<string, unknown>;
@@ -62,6 +69,8 @@ export interface ContactPanelData {
   runs: ContactRun[];
   /** Catálogo de tags da conta, para o seletor da ficha (migration 0012). */
   tagCatalog: CrmTag[];
+  /** Ausente = a conta ainda não tem funil, ou este lead não está em nenhuma etapa aberta. */
+  pipeline?: ContactPipelineSection;
 }
 
 export interface QuickReply {
