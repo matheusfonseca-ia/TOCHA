@@ -52,8 +52,11 @@ export function useVoiceRecorder() {
       setError("Este navegador não permite gravar áudio aqui.");
       return;
     }
+    // Fora do try: se o Web Audio falhar depois da permissão, o microfone
+    // ainda precisa ser desligado (a sessão só existe no fim do setup).
+    let stream: MediaStream | null = null;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      stream = await navigator.mediaDevices.getUserMedia({
         audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true },
       });
       const ctx = new AudioContext();
@@ -80,7 +83,7 @@ export function useVoiceRecorder() {
           ? "Permita o uso do microfone no navegador para gravar áudio."
           : "Não foi possível acessar o microfone."
       );
-      teardown();
+      if (!teardown()) stream?.getTracks().forEach((t) => t.stop());
       setState("idle");
     }
   }, [teardown]);

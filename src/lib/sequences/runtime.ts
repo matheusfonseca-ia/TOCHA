@@ -303,6 +303,22 @@ export async function startSequenceFromGoTo(
 }
 
 /**
+ * "Ao entrar na etapa, iniciar workflow" (Fase 6): caminho único do board e
+ * do nó "Mover para etapa". É um workflow NOVO, então respeita o "Assumir
+ * conversa" (D3): com atendente na conversa, não inicia.
+ */
+export async function startStageEnterSequence(
+  admin: AdminClient,
+  account: IgAccount,
+  senderId: string,
+  sequenceId: string,
+  deadline = invocationDeadline()
+): Promise<SequenceOutcome | null> {
+  if (await isTakenOver(admin, account.id, senderId)) return null;
+  return startSequenceFromGoTo(admin, account, senderId, sequenceId, deadline);
+}
+
+/**
  * Anti-duplicidade: cada pessoa entra no máximo 1x em cada sequência
  * (unique em (sequence_id, ig_sender_id): o insert falha na 2ª vez).
  */
@@ -1150,7 +1166,7 @@ async function runNodes(
           });
           if (result.changed && result.targetStage.on_enter_sequence_id) {
             try {
-              await startSequenceFromGoTo(
+              await startStageEnterSequence(
                 admin,
                 account,
                 run.ig_sender_id,

@@ -4,7 +4,7 @@ import {
   saveContact,
   type ContactSnapshot,
 } from "@/lib/contacts/repository";
-import { evaluateCondition } from "@/lib/sequences/condition";
+import { evaluateCondition, normalize } from "@/lib/sequences/condition";
 import { STORED_FIELD_VALUE_MAX } from "@/lib/sequences/fields";
 import { hasTemplate, renderTemplate } from "@/lib/sequences/template";
 import type { createAdminClient } from "@/lib/supabase/admin";
@@ -89,16 +89,24 @@ export class FlowData {
     return out;
   }
 
-  /** Etapas (todos os funis) em que o contato tem lead aberto (só a condição "Está na etapa" usa). */
+  /**
+   * Etapa atual do contato em cada funil (só a condição "Está na etapa" usa).
+   * Conta lead fechado: "está na etapa Ganho" precisa dar verdadeiro. Por funil
+   * vale o lead mais recente, como no moveLead.
+   */
   private async getStageIds(): Promise<string[]> {
     if (this.stageIds) return this.stageIds;
     const { data } = await this.admin
       .from("leads")
-      .select("stage_id")
+      .select("stage_id, pipeline_id")
       .eq("account_id", this.accountId)
       .eq("ig_sender_id", this.run.ig_sender_id)
-      .is("closed_at", null);
-    this.stageIds = ((data ?? []) as { stage_id: string }[]).map((r) => r.stage_id);
+      .order("created_at", { ascending: false });
+    const byPipeline = new Map<string, string>();
+    for (const r of (data ?? []) as { stage_id: string; pipeline_id: string }[]) {
+      if (!byPipeline.has(r.pipeline_id)) byPipeline.set(r.pipeline_id, r.stage_id);
+    }
+    this.stageIds = Array.from(byPipeline.values());
     return this.stageIds;
   }
 
@@ -129,14 +137,14 @@ export class FlowData {
   async setTag(tag: string, action: "add" | "remove"): Promise<void> {
     const contact = await this.getContact();
     const username = await this.getUsername();
-    const normalized = tag.trim();
-    const others = contact.tags.filter(
-      (t) => t.toLowerCase() !== normalized.toLowerCase()
-    );
+    const name = tag.trim();
+    // Mesma regra do catálogo e da Condição: "Promoção" e "promocao" são a
+    // mesma tag, então remover uma remove a outra e adicionar não duplica.
+    const others = contact.tags.filter((t) => normalize(t) !== normalize(name));
     this.contact = {
       ig_username: username,
       fields: contact.fields,
-      tags: action === "add" ? [...others, normalized] : others,
+      tags: action === "add" ? [...others, name] : others,
     };
     await saveContact(this.admin, this.accountId, this.run.ig_sender_id, this.contact);
   }

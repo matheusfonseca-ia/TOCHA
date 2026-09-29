@@ -34,9 +34,14 @@ export async function findAccountId(admin: AdminClient, igUserId: string): Promi
   return (await findAccount(admin, igUserId))?.id ?? null;
 }
 
+/** Busca que não trouxe o @ (falha ou Meta sem o campo) só tenta de novo depois disto. */
+const PROFILE_RETRY_MS = 24 * 60 * 60 * 1000;
+
 /**
  * O perfil do lead (@, foto) ainda não foi buscado: o webhook de DM não traz
  * nenhum dos dois. Conversa com @ mas sem perfil (anterior à foto) também conta.
+ * Já buscado e ainda sem @: tenta de novo no máximo 1x por dia, senão cada DM
+ * desse lead faria outra chamada à Graph API dentro do webhook.
  */
 export async function leadNeedsProfile(admin: AdminClient, accountId: string, leadId: string): Promise<boolean> {
   const { data } = await admin
@@ -45,7 +50,9 @@ export async function leadNeedsProfile(admin: AdminClient, accountId: string, le
     .eq("account_id", accountId)
     .eq("ig_sender_id", leadId)
     .maybeSingle<{ ig_sender_username: string | null; ig_profile_fetched_at: string | null }>();
-  return Boolean(data) && (!data?.ig_sender_username || !data?.ig_profile_fetched_at);
+  if (!data) return false;
+  if (!data.ig_profile_fetched_at) return true;
+  return !data.ig_sender_username && Date.now() - Date.parse(data.ig_profile_fetched_at) > PROFILE_RETRY_MS;
 }
 
 /**

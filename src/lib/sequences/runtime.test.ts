@@ -88,6 +88,7 @@ import {
   maybeStartSequence,
   processDueRuns,
   startSequenceFromRule,
+  startStageEnterSequence,
 } from "@/lib/sequences/runtime";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -885,5 +886,45 @@ describe("nó Mover para etapa (Fase 6, CRM)", () => {
     expect(sendTextMessageMock).not.toHaveBeenCalledWith(expect.any(String), "sender-32", "Bem-vindo de novo");
     expect(fake.tables.lead_stage_events).toHaveLength(0);
     expect(fake.tables.sequence_runs.filter((r) => r.sequence_id === onEnter.id)).toHaveLength(0);
+  });
+});
+
+describe("startStageEnterSequence: workflow de entrada da etapa (Fase 6)", () => {
+  function setup(senderId: string, takenOver: boolean) {
+    const account = makeAccount();
+    const sequence = makeSequence({
+      account_id: account.id,
+      is_active: true,
+      graph: {
+        nodes: [triggerNode({ keyword: "x" }), messageNode("m", "Bem-vindo à etapa")],
+        edges: [edge("trigger", "m")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+    fake.tables.conversations.push(
+      row({
+        account_id: account.id,
+        ig_sender_id: senderId,
+        last_inbound_at: new Date().toISOString(),
+        human_takeover_at: takenOver ? new Date().toISOString() : null,
+      })
+    );
+    return { account, sequence };
+  }
+
+  it("inicia o workflow da etapa para o lead", async () => {
+    const { account, sequence } = setup("sender-90", false);
+    const outcome = await startStageEnterSequence(admin, account, "sender-90", sequence.id);
+    expect(outcome?.status).toBe("replied");
+    expect(sendTextMessageMock).toHaveBeenCalledWith(expect.any(String), "sender-90", "Bem-vindo à etapa");
+  });
+
+  it("conversa assumida (D3): não inicia nem manda nada", async () => {
+    const { account, sequence } = setup("sender-91", true);
+    const outcome = await startStageEnterSequence(admin, account, "sender-91", sequence.id);
+    expect(outcome).toBeNull();
+    expect(sendTextMessageMock).not.toHaveBeenCalled();
+    expect(fake.tables.sequence_runs).toHaveLength(0);
   });
 });

@@ -17,7 +17,7 @@ import {
   findTriggerNode,
   goToSequenceIdsOf,
   MAX_NODES,
-  moveToStageIdsOf,
+  stageIdsOf,
   triggerSourceOf,
   validateSequenceGraph,
 } from "@/lib/sequences/graph";
@@ -308,9 +308,9 @@ export async function saveSequence(
         .in("id", targetSequenceIds)
     : { data: [] };
 
-  // Etapas referenciadas por nós "Mover para etapa": id + conta do funil
-  // (via join), pra checar existência e posse. Fase 6.
-  const stageIds = moveToStageIdsOf(graph);
+  // Etapas referenciadas ("Mover para etapa" e Condição "está na etapa"):
+  // id + conta do funil (via join), pra checar existência e posse.
+  const stageIds = stageIdsOf(graph);
   const { data: stageRefs } = stageIds.length
     ? await supabase
         .from("pipeline_stages")

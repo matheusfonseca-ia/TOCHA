@@ -12,7 +12,7 @@ function userClient(fake: ReturnType<typeof createFakeAdmin>) {
 const ACCOUNT = "acc-1";
 
 describe("listSenderIdsWithTag", () => {
-  it("filtra pelo nome exato da tag (contains) dentro da conta", async () => {
+  it("filtra pela tag dentro da conta", async () => {
     const fake = createFakeAdmin();
     fake.tables.contacts.push(
       { id: "c1", account_id: ACCOUNT, ig_sender_id: "s1", tags: ["VIP"] },
@@ -33,6 +33,18 @@ describe("listSenderIdsWithTag", () => {
 
     const ids = await listSenderIdsWithTag(userClient(fake), "", "VIP");
     expect(ids.sort()).toEqual(["s1", "s2"]);
+  });
+
+  it("acha a tag em qualquer grafia de maiúscula/acento, como o catálogo", async () => {
+    const fake = createFakeAdmin();
+    fake.tables.contacts.push(
+      { id: "c1", account_id: ACCOUNT, ig_sender_id: "s1", tags: ["vip"] },
+      { id: "c2", account_id: ACCOUNT, ig_sender_id: "s2", tags: ["promocao"] },
+      { id: "c3", account_id: ACCOUNT, ig_sender_id: "s3", tags: [] }
+    );
+
+    expect(await listSenderIdsWithTag(userClient(fake), ACCOUNT, "VIP")).toEqual(["s1"]);
+    expect(await listSenderIdsWithTag(userClient(fake), ACCOUNT, "Promoção")).toEqual(["s2"]);
   });
 });
 

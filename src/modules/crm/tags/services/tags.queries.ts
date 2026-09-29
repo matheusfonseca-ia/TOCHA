@@ -1,6 +1,8 @@
 import type { createClient } from "@/lib/supabase/server";
 import type { InboxConversation } from "../../shared/types/conversation";
+import { findContactsWithTag } from "../server/tagged-contacts";
 import type { CrmTag } from "../types";
+import { normalizeTag } from "../utils/normalize-tag";
 import { findTagWorkflowUsage, type TagWorkflowUsage } from "../utils/tag-usage";
 
 /**
@@ -30,7 +32,7 @@ export async function listAllTagNames(supabase: UserClient): Promise<CrmTag[]> {
   if (error) return [];
   const seen = new Map<string, CrmTag>();
   for (const tag of (data ?? []) as CrmTag[]) {
-    const key = tag.name.toLowerCase();
+    const key = normalizeTag(tag.name);
     if (!seen.has(key)) seen.set(key, tag);
   }
   return Array.from(seen.values());
@@ -57,16 +59,19 @@ export async function listTagOptionsForEditor(
   return (data ?? []) as { account_id: string; name: string }[];
 }
 
-/** IDs de remetente (ig_sender_id) dos contatos com a tag, para filtrar a lista do Inbox. */
+/**
+ * IDs de remetente (ig_sender_id) dos contatos com a tag, para filtrar a
+ * lista do Inbox. Sem diferenciar maiúscula/acento, como o catálogo ("VIP"
+ * acha quem foi marcado "vip" por um workflow), e em todas as contas quando
+ * `accountId` vem vazio.
+ */
 export async function listSenderIdsWithTag(
   supabase: UserClient,
   accountId: string,
   tagName: string
 ): Promise<string[]> {
-  let query = supabase.from("contacts").select("ig_sender_id").contains("tags", [tagName]);
-  if (accountId) query = query.eq("account_id", accountId);
-  const { data } = await query;
-  return ((data ?? []) as { ig_sender_id: string }[]).map((c) => c.ig_sender_id);
+  const contacts = await findContactsWithTag(supabase, accountId, tagName);
+  return contacts.map((c) => c.ig_sender_id);
 }
 
 /**
@@ -91,13 +96,13 @@ export async function attachTagsToConversations(
 
   const colorByName = new Map<string, CrmTag["color"]>();
   for (const t of (tagsRes.data ?? []) as { account_id: string; name: string; color: CrmTag["color"] }[]) {
-    colorByName.set(`${t.account_id}:${t.name.toLowerCase()}`, t.color);
+    colorByName.set(`${t.account_id}:${normalizeTag(t.name)}`, t.color);
   }
 
   for (const c of (contactsRes.data ?? []) as { account_id: string; ig_sender_id: string; tags: string[] | null }[]) {
     const tags = (c.tags ?? []).slice(0, 2).map((name) => ({
       name,
-      color: colorByName.get(`${c.account_id}:${name.toLowerCase()}`) ?? "green",
+      color: colorByName.get(`${c.account_id}:${normalizeTag(name)}`) ?? "green",
     }));
     if (tags.length > 0) map.set(`${c.account_id}:${c.ig_sender_id}`, tags);
   }

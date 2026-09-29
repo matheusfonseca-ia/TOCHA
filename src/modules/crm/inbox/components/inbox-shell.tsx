@@ -72,7 +72,9 @@ export function InboxShell({
 
       <section className={cn("min-h-0 min-w-0 flex-1 flex-col", thread ? "flex" : "hidden lg:flex")}>
         {thread ? (
+          // key: rascunho, envios pendentes e gravação são da conversa, não da tela.
           <Thread
+            key={thread.conversation.id}
             thread={thread}
             backHref={inboxHref(filters)}
             showAccount={accounts.length > 1}
@@ -91,7 +93,14 @@ export function InboxShell({
         )}
       </section>
 
-      {thread && <ContactPanel thread={thread} open={panelOpen} onClose={() => setPanelOpen(false)} />}
+      {thread && (
+        <ContactPanel
+          key={thread.conversation.id}
+          thread={thread}
+          open={panelOpen}
+          onClose={() => setPanelOpen(false)}
+        />
+      )}
     </div>
   );
 }

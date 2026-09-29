@@ -146,7 +146,7 @@ export type ConditionOperator =
   | "gt"
   | "lt"
   | "hasTag"
-  /** Contato tem lead aberto na etapa (`value` = id da etapa). Fase 6. */
+  /** Contato está na etapa, lead aberto ou fechado (`value` = id da etapa). Fase 6. */
   | "inStage";
 
 export interface ConditionNodeData {

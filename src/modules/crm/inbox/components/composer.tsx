@@ -113,11 +113,12 @@ export function Composer({
     if (e.key === "Escape" && pickerOpen) setPickerOpen(false);
   }
 
+  // O texto já digitado vai junto como legenda (enviado logo depois do anexo).
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    onSend({ file, replyToMid: replyTo?.mid ?? null });
+    onSend({ file, text: text.trim() || undefined, replyToMid: replyTo?.mid ?? null });
     reset();
   }
 

@@ -196,8 +196,10 @@ begin
   if to_regclass('public.crm_notes') is not null then
     execute 'delete from public.crm_notes where ig_sender_id = $1' using v_sender_id;
   end if;
+  -- O histórico do funil não guarda o remetente, só o lead: apaga pelo lead.
   if to_regclass('public.lead_stage_events') is not null then
-    execute 'delete from public.lead_stage_events where ig_sender_id = $1' using v_sender_id;
+    execute 'delete from public.lead_stage_events e using public.leads l
+              where l.id = e.lead_id and l.ig_sender_id = $1' using v_sender_id;
   end if;
   if to_regclass('public.leads') is not null then
     execute 'delete from public.leads where ig_sender_id = $1' using v_sender_id;

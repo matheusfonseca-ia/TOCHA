@@ -65,7 +65,11 @@ export interface SendMessageInput {
   heart?: boolean;
 }
 
-export type SendMessageResult = { ok: true } | { error: string };
+/**
+ * `attachmentSent`: o anexo saiu e só o texto que ia junto falhou. O retry
+ * manda só o texto, senão o lead receberia o anexo duas vezes.
+ */
+export type SendMessageResult = { ok: true } | { error: string; attachmentSent?: boolean };
 
 /**
  * Envia uma mensagem pelo painel (texto, anexo e/ou coração, com citação
@@ -95,6 +99,7 @@ export async function sendMessage(
     data: { user },
   } = await createClient().auth.getUser();
 
+  let attachmentSent = false;
   try {
     const token = await getFreshToken(admin, account);
     const opts = { replyToMid: input.replyToMid ?? undefined };
@@ -106,6 +111,7 @@ export async function sendMessage(
           await sendLikeHeartSticker(token, conversation.ig_sender_id, opts);
         } else if (input.attachmentUrl && input.attachmentKind) {
           await sendAttachmentMessage(token, conversation.ig_sender_id, input.attachmentKind, input.attachmentUrl, opts);
+          attachmentSent = true;
           if (text) await sendTextMessage(token, conversation.ig_sender_id, text);
         } else {
           await sendTextMessage(token, conversation.ig_sender_id, text, opts);
@@ -113,7 +119,10 @@ export async function sendMessage(
       }
     );
   } catch (err) {
-    return { error: friendlyError(err) };
+    if (!attachmentSent) return { error: friendlyError(err) };
+    // O anexo já chegou ao lead: a conversa já é do atendente (D3).
+    await setTakeover(admin, conversationId, true);
+    return { error: `O anexo foi enviado, mas o texto não. ${friendlyError(err)}`, attachmentSent: true };
   }
 
   await setTakeover(admin, conversationId, true);

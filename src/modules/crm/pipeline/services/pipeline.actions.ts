@@ -2,13 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 
-import { startSequenceFromGoTo } from "@/lib/sequences/runtime";
+import { startStageEnterSequence } from "@/lib/sequences/runtime";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { IgAccount } from "@/types/database";
 
 import { enrollExistingConversations } from "../server/enroll-lead";
-import { moveLead } from "../server/move-lead";
+import { closingFields, moveLead } from "../server/move-lead";
 import { getLeadDetail, loadMoreStageLeads } from "./pipeline.queries";
 import { positionBetween, reindexPositions, toNumber } from "../utils/fractional-index";
 import type { BoardLeadCard, LeadDetail, StageType } from "../types";
@@ -35,7 +35,7 @@ async function maybeStartStageWorkflow(
   if (!sequenceId) return;
   try {
     const { data: account } = await admin.from("ig_accounts").select("*").eq("id", accountId).maybeSingle<IgAccount>();
-    if (account) await startSequenceFromGoTo(admin, account, senderId, sequenceId);
+    if (account) await startStageEnterSequence(admin, account, senderId, sequenceId);
   } catch (err) {
     console.error("[crm] workflow de entrada da etapa falhou:", err instanceof Error ? err.message : err);
   }
@@ -84,9 +84,9 @@ export async function getLeadDetailAction(leadId: string): Promise<LeadDetail | 
 export async function loadMoreLeadsAction(
   pipelineId: string,
   stageId: string,
-  offset: number
+  afterPosition: number
 ): Promise<{ cards: BoardLeadCard[]; hasMore: boolean }> {
-  return loadMoreStageLeads(createClient(), pipelineId, stageId, offset);
+  return loadMoreStageLeads(createClient(), pipelineId, stageId, afterPosition);
 }
 
 export async function updateLeadValueAction(leadId: string, value: number | null): Promise<ActionResult> {
@@ -155,7 +155,11 @@ export async function updateStageAction(
   patch: { name?: string; color?: string; stageType?: StageType; onEnterSequenceId?: string | null }
 ): Promise<ActionResult> {
   const supabase = createClient();
-  const { data: stage } = await supabase.from("pipeline_stages").select("id").eq("id", stageId).maybeSingle<{ id: string }>();
+  const { data: stage } = await supabase
+    .from("pipeline_stages")
+    .select("id, stage_type")
+    .eq("id", stageId)
+    .maybeSingle<{ id: string; stage_type: StageType }>();
   if (!stage) return { error: "Etapa não encontrada." };
 
   const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
@@ -167,10 +171,29 @@ export async function updateStageAction(
   if (patch.stageType !== undefined) row.stage_type = patch.stageType;
   if (patch.onEnterSequenceId !== undefined) row.on_enter_sequence_id = patch.onEnterSequenceId;
 
-  const { error } = await createAdminClient().from("pipeline_stages").update(row).eq("id", stageId);
+  const admin = createAdminClient();
+  const { error } = await admin.from("pipeline_stages").update(row).eq("id", stageId);
   if (error) return { error: error.message };
+  if (patch.stageType !== undefined && patch.stageType !== stage.stage_type) {
+    await syncStageClosing(admin, stageId, patch.stageType);
+  }
   revalidatePath(FUNIL_PATH);
   return {};
+}
+
+/**
+ * Etapa mudou de tipo: os leads dela passam a valer o tipo novo (fechar em
+ * ganho/perdido, reabrir em aberta), a mesma regra do moveLead.
+ */
+async function syncStageClosing(admin: ReturnType<typeof createAdminClient>, stageId: string, stageType: StageType) {
+  const leads = () => admin.from("leads");
+  const now = new Date().toISOString();
+  if (stageType === "open") {
+    await leads().update({ closed_at: null, lost_reason: null, updated_at: now }).eq("stage_id", stageId);
+    return;
+  }
+  await leads().update({ closed_at: now, updated_at: now }).eq("stage_id", stageId).is("closed_at", null);
+  if (stageType === "won") await leads().update({ lost_reason: null }).eq("stage_id", stageId);
 }
 
 export async function reorderStagesAction(pipelineId: string, orderedStageIds: string[]): Promise<ActionResult> {
@@ -199,19 +222,49 @@ export async function deleteStageAction(stageId: string, moveLeadsToStageId: str
   if (!stage) return { error: "Etapa não encontrada." };
   const { data: destination } = await supabase
     .from("pipeline_stages")
-    .select("id")
+    .select("id, stage_type")
     .eq("id", moveLeadsToStageId)
     .eq("pipeline_id", stage.pipeline_id)
-    .maybeSingle<{ id: string }>();
+    .maybeSingle<{ id: string; stage_type: StageType }>();
   if (!destination) return { error: "Escolha uma etapa de destino do mesmo funil." };
 
   const admin = createAdminClient();
-  const { data: affected } = await admin.from("leads").select("id, account_id").eq("stage_id", stageId);
-  await admin
-    .from("leads")
-    .update({ stage_id: moveLeadsToStageId, entered_stage_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    .eq("stage_id", stageId);
-  const rows = (affected ?? []) as { id: string; account_id: string }[];
+  const [{ data: affected }, { data: last }] = await Promise.all([
+    admin
+      .from("leads")
+      .select("id, account_id, closed_at, lost_reason")
+      .eq("stage_id", stageId)
+      .order("position", { ascending: true }),
+    admin
+      .from("leads")
+      .select("position")
+      .eq("stage_id", moveLeadsToStageId)
+      .order("position", { ascending: false })
+      .limit(1)
+      .maybeSingle<{ position: number }>(),
+  ]);
+  const rows = (affected ?? []) as { id: string; account_id: string; closed_at: string | null; lost_reason: string | null }[];
+
+  // Vão para o fim da coluna de destino, na mesma ordem, e passam a valer o
+  // tipo dela (fechar em ganho/perdido, reabrir em aberta).
+  const now = new Date().toISOString();
+  let position = last ? toNumber(last.position) : null;
+  const updates = rows.map((lead) => {
+    position = positionBetween(position, null);
+    return admin
+      .from("leads")
+      .update({
+        stage_id: moveLeadsToStageId,
+        position,
+        entered_stage_at: now,
+        updated_at: now,
+        ...closingFields(destination.stage_type, lead.lost_reason, lead.closed_at),
+      })
+      .eq("id", lead.id);
+  });
+  const failed = (await Promise.all(updates)).find((r) => r.error);
+  if (failed?.error) return { error: `Não foi possível mover os leads da etapa: ${failed.error.message}` };
+
   if (rows.length > 0) {
     await admin.from("lead_stage_events").insert(
       rows.map((lead) => ({

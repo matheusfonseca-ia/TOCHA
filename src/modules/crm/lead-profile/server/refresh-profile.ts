@@ -11,23 +11,28 @@ import type { IgAccount } from "@/types/database";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
+/** Buscas de perfil em paralelo no backfill (cada uma é 1 chamada à Graph + 1 update). */
+const BACKFILL_CONCURRENCY = 5;
+
 /**
  * Busca o perfil de `igSenderId` na Graph API e grava em `conversations`.
  * Grava `ig_profile_fetched_at` mesmo quando a busca falha (permissão ainda
  * não concedida, rede, etc.): sem isso, toda mensagem nova do mesmo lead
- * tentaria de novo e falharia do mesmo jeito.
+ * tentaria de novo e falharia do mesmo jeito. `token` já obtido evita
+ * renovar o token de novo a cada lead (backfill em lote).
  */
 export async function refreshLeadProfile(
   admin: AdminClient,
   account: IgAccount,
-  igSenderId: string
+  igSenderId: string,
+  token?: string
 ): Promise<void> {
   const fetchedAt = new Date().toISOString();
   const patch: Record<string, unknown> = { ig_profile_fetched_at: fetchedAt };
 
   try {
-    const token = await getFreshToken(admin, account);
-    const profile = await getFullUserProfile(token, igSenderId);
+    const accessToken = token ?? (await getFreshToken(admin, account));
+    const profile = await getFullUserProfile(accessToken, igSenderId);
     // Só sobrescreve o @ quando a Meta devolveu um: não apaga o que já foi
     // gravado pela 1ª mensagem só porque esta busca não trouxe o campo.
     if (profile.username) patch.ig_sender_username = profile.username;
@@ -75,9 +80,22 @@ export async function backfillLeadProfiles(
     .is("ig_profile_fetched_at", null)
     .limit(limit);
   const pending = (data ?? []) as { ig_sender_id: string }[];
+  if (pending.length === 0) return 0;
 
-  for (const row of pending) {
-    await refreshLeadProfile(admin, account, row.ig_sender_id);
+  // Um token para o lote inteiro: por linha, com o mesmo `account` em mãos,
+  // cada lead renovaria o token de novo quando ele está perto de vencer.
+  let token: string;
+  try {
+    token = await getFreshToken(admin, account);
+  } catch (err) {
+    // Sem token nenhuma busca daria certo; ficam para o próximo backfill.
+    console.warn("[crm] backfill de perfis sem token:", err instanceof Error ? err.message : err);
+    return 0;
+  }
+
+  for (let i = 0; i < pending.length; i += BACKFILL_CONCURRENCY) {
+    const batch = pending.slice(i, i + BACKFILL_CONCURRENCY);
+    await Promise.all(batch.map((row) => refreshLeadProfile(admin, account, row.ig_sender_id, token)));
   }
   return pending.length;
 }

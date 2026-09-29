@@ -79,6 +79,26 @@ describe("validateSequenceGraph com nós de dados", () => {
     ).toMatch(/tag/);
   });
 
+  it("condição 'está na etapa' não pede campo, só a etapa", () => {
+    expect(
+      validateSequenceGraph(linear(conditionNode("k", { operator: "inStage", fieldKey: "", value: "stage-1" })))
+    ).toBeNull();
+    expect(
+      validateSequenceGraph(linear(conditionNode("k", { operator: "inStage", fieldKey: "", value: "" })))
+    ).toMatch(/etapa/);
+  });
+
+  it("condição 'está na etapa' confere que a etapa existe e é da conta ao salvar", () => {
+    const graph = linear(conditionNode("k", { operator: "inStage", fieldKey: "", value: "stage-1" }));
+    const ctx = (account_id: string) => ({
+      accountId: "acc-1",
+      stagesById: new Map([["stage-1", { id: "stage-1", account_id }]]),
+    });
+    expect(validateSequenceGraph(graph, ctx("acc-1"))).toBeNull();
+    expect(validateSequenceGraph(graph, ctx("acc-2"))).toMatch(/outra conta/);
+    expect(validateSequenceGraph(graph, { accountId: "acc-1", stagesById: new Map() })).toMatch(/não existe/);
+  });
+
   it("definir campo: tag obrigatória no modo tag, campo válido no modo campo", () => {
     expect(validateSequenceGraph(linear(setFieldNode("s", { mode: "tag", value: "" })))).toMatch(
       /tag/

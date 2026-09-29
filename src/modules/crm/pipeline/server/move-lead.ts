@@ -1,7 +1,7 @@
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 import { positionBetween, toNumber } from "../utils/fractional-index";
-import type { Lead, LeadMoveSource, PipelineStage } from "../types";
+import type { Lead, LeadMoveSource, PipelineStage, StageType } from "../types";
 
 /**
  * Move (ou cria) um lead numa etapa. Usada tanto pelo board (arrastar,
@@ -11,9 +11,10 @@ import type { Lead, LeadMoveSource, PipelineStage } from "../types";
  * pontas nunca divergem.
  *
  * Identifica o lead por `leadId` (o board já sabe qual é) ou por
- * `conversationId` (o runtime só tem a conversa; cria o lead se ainda não
- * existir aberto neste funil). Sempre com a service role: quem chama já
- * conferiu a posse.
+ * `conversationId` (o runtime só tem a conversa; cria o lead se a conversa
+ * ainda não tiver nenhum neste funil). Lead ganho/perdido continua sendo o
+ * lead da conversa: voltar para uma etapa aberta reabre o mesmo card, em vez
+ * de criar outro. Sempre com a service role: quem chama já conferiu a posse.
  */
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -53,23 +54,51 @@ async function loadStage(admin: AdminClient, accountId: string, stageId: string)
   return stage;
 }
 
+/**
+ * O lead da conversa neste funil, aberto ou fechado (ganho/perdido). O mais
+ * recente, caso sobre duplicata de antes de o fechado contar como lead.
+ */
+export async function currentLeadOf(
+  admin: AdminClient,
+  pipelineId: string,
+  conversationId: string
+): Promise<Lead | null> {
+  const { data } = await admin
+    .from("leads")
+    .select("*")
+    .eq("pipeline_id", pipelineId)
+    .eq("conversation_id", conversationId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle<Lead>();
+  return data;
+}
+
 async function endOfColumnPosition(admin: AdminClient, pipelineId: string, stageId: string): Promise<number> {
   const { data } = await admin
     .from("leads")
     .select("position")
     .eq("pipeline_id", pipelineId)
     .eq("stage_id", stageId)
-    .is("closed_at", null)
     .order("position", { ascending: false })
     .limit(1)
     .maybeSingle<{ position: number }>();
   return positionBetween(data ? toNumber(data.position) : null, null);
 }
 
-function closingFields(stage: PipelineStage, lostReason: string | null | undefined) {
-  if (stage.stage_type === "won") return { closed_at: new Date().toISOString(), lost_reason: null };
-  if (stage.stage_type === "lost") return { closed_at: new Date().toISOString(), lost_reason: lostReason ?? null };
-  return { closed_at: null, lost_reason: null };
+/**
+ * `closed_at`/`lost_reason` de quem está numa etapa do tipo `stageType`:
+ * ganho/perdido fecham, aberta reabre. `keepClosedAt` preserva a data de
+ * quem já estava fechado (mudança em lote, ex.: excluir etapa).
+ */
+export function closingFields(
+  stageType: StageType,
+  lostReason?: string | null,
+  keepClosedAt?: string | null
+): { closed_at: string | null; lost_reason: string | null } {
+  if (stageType === "open") return { closed_at: null, lost_reason: null };
+  const closed_at = keepClosedAt ?? new Date().toISOString();
+  return { closed_at, lost_reason: stageType === "lost" ? lostReason ?? null : null };
 }
 
 async function createLead(admin: AdminClient, input: MoveLeadInput, stage: PipelineStage): Promise<MoveLeadResult> {
@@ -89,7 +118,7 @@ async function createLead(admin: AdminClient, input: MoveLeadInput, stage: Pipel
       value: null,
       position,
       entered_stage_at: now,
-      ...closingFields(stage, input.lostReason),
+      ...closingFields(stage.stage_type, input.lostReason),
     })
     .select("*")
     .maybeSingle<Lead>();
@@ -130,15 +159,9 @@ export async function moveLead(admin: AdminClient, input: MoveLeadInput): Promis
     const { data } = await admin.from("leads").select("*").eq("id", input.leadId).eq("account_id", input.accountId).maybeSingle<Lead>();
     lead = data;
     if (!lead) throw new Error("Lead não encontrado.");
+    if (lead.pipeline_id !== stage.pipeline_id) throw new Error("A etapa é de outro funil.");
   } else if (input.conversationId) {
-    const { data } = await admin
-      .from("leads")
-      .select("*")
-      .eq("pipeline_id", stage.pipeline_id)
-      .eq("conversation_id", input.conversationId)
-      .is("closed_at", null)
-      .maybeSingle<Lead>();
-    lead = data;
+    lead = await currentLeadOf(admin, stage.pipeline_id, input.conversationId);
   } else {
     throw new Error("moveLead precisa de leadId ou conversationId.");
   }
@@ -169,7 +192,7 @@ export async function moveLead(admin: AdminClient, input: MoveLeadInput): Promis
       position,
       entered_stage_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      ...closingFields(stage, input.lostReason),
+      ...closingFields(stage.stage_type, input.lostReason),
     })
     .eq("id", lead.id)
     .select("*")

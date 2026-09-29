@@ -82,7 +82,7 @@ export async function listConversations(
 
 /**
  * Etapa atual do lead no funil padrão, pra seção "Funil" da ficha (Fase 6).
- * Sem funil padrão ainda, ou conversa sem lead aberto: `undefined` (a ficha
+ * Sem funil padrão ainda, ou conversa sem lead no funil: `undefined` (a ficha
  * mostra "Ainda não entrou no funil").
  */
 async function loadPipelineSection(
@@ -104,7 +104,9 @@ async function loadPipelineSection(
       .select("id, stage_id")
       .eq("pipeline_id", pipeline.id)
       .eq("conversation_id", conversationId)
-      .is("closed_at", null)
+      // Lead ganho/perdido também é o lead da conversa (mesma regra do moveLead).
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle<{ id: string; stage_id: string }>(),
     supabase.from("pipeline_stages").select("id, name").eq("pipeline_id", pipeline.id).order("position"),
   ]);

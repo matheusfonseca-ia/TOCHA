@@ -93,8 +93,9 @@ const LEAD_COLUMNS =
 
 /**
  * Board completo de um funil: etapas ordenadas, até 50 cards por coluna
- * (mais recentes na entrada da etapa primeiro) e contagem/soma de valor de
- * TODOS os leads abertos da coluna (não só os carregados).
+ * (pela posição) e contagem/soma de valor de TODOS os leads da coluna (não
+ * só os carregados). Sem filtro de `closed_at`: as colunas Ganho/Perdido são
+ * justamente os leads fechados.
  */
 export async function getBoard(supabase: UserClient, pipelineId: string): Promise<Board | null> {
   const { data: pipeline } = await supabase.from("pipelines").select("*").eq("id", pipelineId).maybeSingle<Pipeline>();
@@ -107,12 +108,8 @@ export async function getBoard(supabase: UserClient, pipelineId: string): Promis
     .order("position");
   const stages = ((stageRows ?? []) as PipelineStage[]).map((s) => ({ ...s, position: toNumber(s.position) }));
 
-  // Estatística (contagem/soma) sobre TODOS os leads abertos, sem cap de 50.
-  const { data: statRows } = await supabase
-    .from("leads")
-    .select("stage_id, value")
-    .eq("pipeline_id", pipelineId)
-    .is("closed_at", null);
+  // Estatística (contagem/soma) sobre TODOS os leads da coluna, sem cap de 50.
+  const { data: statRows } = await supabase.from("leads").select("stage_id, value").eq("pipeline_id", pipelineId);
   const stats = new Map<string, { count: number; sum: number }>();
   for (const row of (statRows ?? []) as { stage_id: string; value: number | null }[]) {
     const current = stats.get(row.stage_id) ?? { count: 0, sum: 0 };
@@ -128,7 +125,6 @@ export async function getBoard(supabase: UserClient, pipelineId: string): Promis
         .select(LEAD_COLUMNS)
         .eq("pipeline_id", pipelineId)
         .eq("stage_id", stage.id)
-        .is("closed_at", null)
         .order("position", { ascending: true })
         .limit(CARDS_PER_COLUMN + 1);
       const rows = (leadRows ?? []) as unknown as LeadRow[];
@@ -141,21 +137,25 @@ export async function getBoard(supabase: UserClient, pipelineId: string): Promis
   return { pipeline, columns };
 }
 
-/** "Carregar mais" de uma coluna: próxima página de cards, a partir do offset já carregado. */
+/**
+ * "Carregar mais" de uma coluna: próxima página depois da última posição já
+ * carregada. Cursor por posição, não offset: arrastar cards para dentro ou
+ * para fora da coluna não desloca a página (offset duplicava ou pulava card).
+ */
 export async function loadMoreStageLeads(
   supabase: UserClient,
   pipelineId: string,
   stageId: string,
-  offset: number
+  afterPosition: number
 ): Promise<{ cards: BoardLeadCard[]; hasMore: boolean }> {
   const { data } = await supabase
     .from("leads")
     .select(LEAD_COLUMNS)
     .eq("pipeline_id", pipelineId)
     .eq("stage_id", stageId)
-    .is("closed_at", null)
+    .gt("position", afterPosition)
     .order("position", { ascending: true })
-    .range(offset, offset + CARDS_PER_COLUMN);
+    .limit(CARDS_PER_COLUMN + 1);
   const rows = (data ?? []) as unknown as LeadRow[];
   return { cards: rows.slice(0, CARDS_PER_COLUMN).map(toCard), hasMore: rows.length > CARDS_PER_COLUMN };
 }

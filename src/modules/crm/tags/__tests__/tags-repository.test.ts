@@ -91,6 +91,22 @@ describe("renameTagInCatalog e deleteTagFromCatalog", () => {
     expect(fake.tables.contacts.find((c) => c.id === "c2")!.tags).toEqual(["nada"]);
   });
 
+  it("renomear e excluir também pegam a grafia sem acento gravada por workflow", async () => {
+    const fake = createFakeAdmin();
+    const { tag } = await createTagInCatalog(admin(fake), ACCOUNT, "Promoção", "green");
+    fake.tables.contacts.push(
+      { id: "c1", account_id: ACCOUNT, ig_sender_id: "s1", tags: ["promocao", "outra"] },
+      { id: "c2", account_id: ACCOUNT, ig_sender_id: "s2", tags: ["Promoção"] }
+    );
+
+    await renameTagInCatalog(admin(fake), ACCOUNT, tag!.id, "Promoção", "Oferta");
+    expect(fake.tables.contacts.map((c) => c.tags)).toEqual([["Oferta", "outra"], ["Oferta"]]);
+
+    fake.tables.contacts[0].tags = ["oferta", "outra"];
+    await deleteTagFromCatalog(admin(fake), ACCOUNT, tag!.id, "Oferta");
+    expect(fake.tables.contacts.map((c) => c.tags)).toEqual([["outra"], []]);
+  });
+
   it("excluir remove do catálogo e de todos os contatos", async () => {
     const fake = createFakeAdmin();
     const { tag } = await createTagInCatalog(admin(fake), ACCOUNT, "vip", "green");

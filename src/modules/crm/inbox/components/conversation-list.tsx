@@ -66,9 +66,21 @@ export function ConversationList({
     return () => clearTimeout(t);
   }, [q, filters, selectedId, router]);
 
+  // Filtro novo = lista nova: sai do modo seleção. O refresh do Realtime (mesmo
+  // filtro, array novo a cada evento) mantém a seleção e só descarta quem
+  // saiu da lista.
+  const filtersKey = JSON.stringify(filters);
   useEffect(() => {
     setSelectionMode(false);
     setSelected(new Set());
+  }, [filtersKey]);
+
+  useEffect(() => {
+    const visible = new Set(conversations.map((c) => c.id));
+    setSelected((prev) => {
+      const next = new Set(Array.from(prev).filter((id) => visible.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
   }, [conversations]);
 
   const multiAccount = accounts.length > 1;

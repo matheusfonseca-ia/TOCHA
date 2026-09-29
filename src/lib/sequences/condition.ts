@@ -10,7 +10,7 @@ import type { ConditionNodeData } from "@/types/sequence";
 export interface ConditionSubject {
   fields: Record<string, unknown>;
   tags: readonly string[];
-  /** Ids das etapas em que o contato tem lead aberto (todos os funis). Fase 6. */
+  /** Etapa atual do contato em cada funil (lead aberto ou fechado). Fase 6. */
   stageIds?: readonly string[];
 }
 

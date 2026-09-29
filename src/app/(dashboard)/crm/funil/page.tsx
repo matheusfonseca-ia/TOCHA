@@ -57,7 +57,7 @@ export default async function FunilPage({
 
   return (
     <div className="fixed inset-x-0 bottom-0 top-14 z-30 flex bg-background md:left-60 md:top-0">
-      <PipelineBoard board={board} pipelines={pipelines} sequences={sequenceRows ?? []} />
+      <PipelineBoard board={board} accounts={accounts} pipelines={pipelines} sequences={sequenceRows ?? []} />
     </div>
   );
 }

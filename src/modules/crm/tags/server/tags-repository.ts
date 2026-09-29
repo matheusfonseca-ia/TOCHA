@@ -1,6 +1,7 @@
 import { loadContact, saveContact } from "@/lib/contacts/repository";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
+import { findContactsWithTag, spellingsOf } from "./tagged-contacts";
 import { paletteColorForIndex } from "../utils/palette";
 import { cleanTagName, dedupeTagsCaseInsensitive, sameTag } from "../utils/normalize-tag";
 import type { CrmTag, TagColor } from "../types";
@@ -120,8 +121,18 @@ export async function renameTagInCatalog(
   const { error } = await admin.from("crm_tags").update({ name: clean }).eq("id", tagId).eq("account_id", accountId);
   if (error) return { error: missingTableHint(error.message) };
 
-  await admin.rpc("crm_tag_rename", { p_account_id: accountId, p_old_name: oldName, p_new_name: clean });
+  // Toda grafia de `oldName` nos contatos (ex.: "promocao" gravado por um
+  // workflow para a tag "Promoção"), não só a variação de maiúscula.
+  for (const spelling of await tagSpellings(admin, accountId, oldName)) {
+    await admin.rpc("crm_tag_rename", { p_account_id: accountId, p_old_name: spelling, p_new_name: clean });
+  }
   return { error: null };
+}
+
+/** Grafias da tag nos contatos da conta, sempre incluindo o próprio nome. */
+async function tagSpellings(admin: AdminClient, accountId: string, name: string): Promise<string[]> {
+  const spellings = spellingsOf(await findContactsWithTag(admin, accountId, name), name);
+  return spellings.some((s) => s.toLowerCase() === name.toLowerCase()) ? spellings : [name, ...spellings];
 }
 
 export async function updateTagColorInCatalog(
@@ -143,7 +154,9 @@ export async function deleteTagFromCatalog(
   const { error } = await admin.from("crm_tags").delete().eq("id", tagId).eq("account_id", accountId);
   if (error) return { error: missingTableHint(error.message) };
 
-  await admin.rpc("crm_tag_remove", { p_account_id: accountId, p_tag_name: name });
+  for (const spelling of await tagSpellings(admin, accountId, name)) {
+    await admin.rpc("crm_tag_remove", { p_account_id: accountId, p_tag_name: spelling });
+  }
   return { error: null };
 }
 

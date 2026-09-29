@@ -7,7 +7,7 @@ import type { IgAccount } from "@/types/database";
 
 import { ensureDefaultPipeline, firstOpenStage } from "../ensure-default-pipeline";
 import { enrollExistingConversations, enrollLeadFromCapture } from "../enroll-lead";
-import { moveLead } from "../move-lead";
+import { closingFields, moveLead } from "../move-lead";
 
 /**
  * Integração do Funil (Fase 5/6): funil padrão, mover/criar lead e a entrada
@@ -246,5 +246,80 @@ describe("enrollExistingConversations: botão 'Trazer conversas existentes'", ()
     expect(enrolled).toBe(1);
     expect(fake.tables.leads).toHaveLength(2);
     expect(fake.tables.leads.some((l) => l.conversation_id === pending.id)).toBe(true);
+  });
+});
+
+describe("lead ganho/perdido continua sendo o lead da conversa", () => {
+  async function wonLead(senderId: string) {
+    const pipeline = await ensureDefaultPipeline(admin, account.id);
+    const stages = fake.tables.pipeline_stages.filter((s) => s.pipeline_id === pipeline.id);
+    const conversation = makeOpenConversation(account.id, senderId);
+    fake.tables.conversations.push(conversation);
+    const created = await moveLead(admin, {
+      accountId: account.id,
+      toStageId: stages.find((s) => s.name === "Novos")!.id,
+      source: "system",
+      conversationId: conversation.id,
+      igSenderId: senderId,
+    });
+    await moveLead(admin, {
+      accountId: account.id,
+      toStageId: stages.find((s) => s.name === "Ganho")!.id,
+      source: "manual",
+      leadId: created.lead.id,
+    });
+    return { pipeline, stages, conversation, leadId: created.lead.id };
+  }
+
+  it("nova DM de quem já foi ganho não abre outro card em Novos", async () => {
+    const { conversation, stages } = await wonLead("lead-20");
+
+    await enrollLeadFromCapture(admin, account.id, conversation.id, "lead-20");
+
+    expect(fake.tables.leads).toHaveLength(1);
+    expect(fake.tables.leads[0].stage_id).toBe(stages.find((s) => s.name === "Ganho")!.id);
+  });
+
+  it("'Trazer conversas existentes' pula conversa com lead fechado", async () => {
+    await wonLead("lead-21");
+    expect(await enrollExistingConversations(admin, account.id)).toBe(0);
+    expect(fake.tables.leads).toHaveLength(1);
+  });
+
+  it("workflow movendo para etapa aberta reabre o mesmo card", async () => {
+    const { conversation, stages, leadId } = await wonLead("lead-22");
+
+    const result = await moveLead(admin, {
+      accountId: account.id,
+      toStageId: stages.find((s) => s.name === "Em conversa")!.id,
+      source: "automation",
+      conversationId: conversation.id,
+      igSenderId: "lead-22",
+    });
+
+    expect(result.lead.id).toBe(leadId);
+    expect(result.lead.closed_at).toBeNull();
+    expect(fake.tables.leads).toHaveLength(1);
+  });
+
+  it("recusa mover o card para etapa de outro funil", async () => {
+    const { leadId } = await wonLead("lead-23");
+    const other = row({ account_id: account.id, name: "Outro", is_default: false, auto_enroll: false });
+    fake.tables.pipelines.push(other);
+    const foreign = row({ pipeline_id: other.id, name: "X", position: 1, color: "#000", stage_type: "open" });
+    fake.tables.pipeline_stages.push(foreign);
+
+    await expect(
+      moveLead(admin, { accountId: account.id, toStageId: foreign.id, source: "manual", leadId })
+    ).rejects.toThrow(/outro funil/);
+  });
+});
+
+describe("closingFields", () => {
+  it("fecha em ganho/perdido, reabre em aberta e preserva a data de quem já estava fechado", () => {
+    expect(closingFields("open", "motivo", "2026-01-01")).toEqual({ closed_at: null, lost_reason: null });
+    expect(closingFields("won", "motivo", "2026-01-01")).toEqual({ closed_at: "2026-01-01", lost_reason: null });
+    expect(closingFields("lost", "caro", "2026-01-01")).toEqual({ closed_at: "2026-01-01", lost_reason: "caro" });
+    expect(closingFields("won").closed_at).toEqual(expect.any(String));
   });
 });

@@ -54,7 +54,17 @@ export function useComposer(conversationId: string) {
           replyToMid: input.replyToMid ?? null,
           heart: input.heart,
         });
-        if ("error" in result) throw new Error(result.error);
+        if ("error" in result) {
+          // Anexo entregue, texto não: daqui em diante a pendência é só o texto.
+          if (result.attachmentSent) {
+            setPending((list) =>
+              list.map((m) =>
+                m.key === key ? { ...m, input: { text: input.text }, kind: "text", text: input.text?.trim() ?? m.text } : m
+              )
+            );
+          }
+          throw new Error(result.error);
+        }
 
         setPending((list) => list.filter((m) => m.key !== key));
         router.refresh();
@@ -74,7 +84,7 @@ export function useComposer(conversationId: string) {
         : input.file
           ? input.file.type.startsWith("image/")
             ? "image"
-            : input.file.type.startsWith("audio/") || /.(m4a|wav)$/i.test(input.file.name)
+            : input.file.type.startsWith("audio/") || /\.(m4a|wav)$/i.test(input.file.name)
               ? "audio"
               : "file"
           : "text";

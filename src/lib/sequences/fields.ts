@@ -85,6 +85,10 @@ export function dataNodeError(node: SequenceGraphNode): string | null {
       if (data.operator === "hasTag") {
         return data.value?.trim() ? null : "Condição: informe a tag.";
       }
+      // inStage compara a etapa do funil (value = id da etapa), sem campo.
+      if (data.operator === "inStage") {
+        return data.value?.trim() ? null : "Condição: escolha a etapa.";
+      }
       if (!isValidFieldKey(data.fieldKey ?? "")) {
         return `Condição: nome do campo inválido, ${FIELD_KEY_HINT}.`;
       }

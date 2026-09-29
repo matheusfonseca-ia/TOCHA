@@ -11,12 +11,21 @@ import { CrmTabs } from "@/modules/crm/shared/components/crm-tabs";
 import { BoardColumn } from "./board-column";
 import { LeadCard } from "./lead-card";
 import { LeadDrawer } from "./lead-drawer";
-import { PipelineSwitcher } from "./pipeline-switcher";
+import { PipelineSwitcher, type FunnelAccount } from "./pipeline-switcher";
 import { StageSettingsDialog } from "./stage-settings-dialog";
 import { useBoardDnd } from "../hooks/use-board-dnd";
 import { usePipelineRealtime } from "../hooks/use-pipeline-realtime";
 import { bringExistingConversationsAction, loadMoreLeadsAction, moveLeadAction } from "../services/pipeline.actions";
-import type { Board, BoardLeadCard, PipelineOption, PipelineStage } from "../types";
+import type { Board, PipelineOption, PipelineStage } from "../types";
+
+/** Paginação de cada coluna: última posição vinda do servidor (cursor do "Carregar mais"). */
+type ColumnPage = { cursor: number | null; hasMore: boolean };
+
+function pagesOf(board: Board): Record<string, ColumnPage> {
+  return Object.fromEntries(
+    board.columns.map((c) => [c.id, { cursor: c.cards.at(-1)?.position ?? null, hasMore: c.hasMore }])
+  );
+}
 
 /** As etapas puras (sem cards/estatísticas) para o diálogo de gerenciar etapas. */
 function columnsToStages(board: Board): PipelineStage[] {
@@ -35,17 +44,19 @@ function columnsToStages(board: Board): PipelineStage[] {
 
 export function PipelineBoard({
   board,
+  accounts,
   pipelines,
   sequences,
 }: {
   board: Board;
+  accounts: FunnelAccount[];
   pipelines: PipelineOption[];
   sequences: { id: string; name: string }[];
 }) {
   usePipelineRealtime();
   const [openLeadId, setOpenLeadId] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState<string | null>(null);
-  const [extra, setExtra] = useState<Record<string, { cards: BoardLeadCard[]; hasMore: boolean }>>({});
+  const [pages, setPages] = useState(() => pagesOf(board));
   const [enrolling, setEnrolling] = useState(false);
 
   const { columns, activeCard, sensors, handleDragStart, handleDragEnd, setColumns } = useBoardDnd(
@@ -63,15 +74,26 @@ export function PipelineBoard({
   // por motivo local (abrir o drawer, "carregar mais" etc).
   useEffect(() => {
     setColumns(Object.fromEntries(board.columns.map((c) => [c.id, c.cards])));
-    setExtra({});
+    setPages(pagesOf(board));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [board]);
 
+  // Os cards carregados entram no mesmo estado do arrastar: dá para mover
+  // qualquer card visível, não só os 50 primeiros.
   async function handleLoadMore(stageId: string) {
+    const page = pages[stageId];
+    if (!page || page.cursor == null) return;
     setLoadingMore(stageId);
-    const offset = (columns[stageId]?.length ?? 0) + (extra[stageId]?.cards.length ?? 0);
-    const res = await loadMoreLeadsAction(board.pipeline.id, stageId, offset);
-    setExtra((prev) => ({ ...prev, [stageId]: { cards: [...(prev[stageId]?.cards ?? []), ...res.cards], hasMore: res.hasMore } }));
+    const res = await loadMoreLeadsAction(board.pipeline.id, stageId, page.cursor);
+    setColumns((prev) => {
+      const shown = new Set(Object.values(prev).flatMap((cards) => cards.map((c) => c.id)));
+      const fresh = res.cards.filter((c) => !shown.has(c.id));
+      return { ...prev, [stageId]: [...(prev[stageId] ?? []), ...fresh] };
+    });
+    setPages((prev) => ({
+      ...prev,
+      [stageId]: { cursor: res.cards.at(-1)?.position ?? page.cursor, hasMore: res.hasMore },
+    }));
     setLoadingMore(null);
   }
 
@@ -88,7 +110,12 @@ export function PipelineBoard({
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-4 py-3">
         <div className="flex items-center gap-3">
           <CrmTabs />
-          <PipelineSwitcher pipelines={pipelines} selectedId={board.pipeline.id} />
+          <PipelineSwitcher
+            accounts={accounts}
+            accountId={board.pipeline.account_id}
+            pipelines={pipelines}
+            selectedId={board.pipeline.id}
+          />
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" className="gap-1.5" disabled={enrolling} onClick={handleBringExisting}>
@@ -103,8 +130,8 @@ export function PipelineBoard({
         <div className="min-h-0 flex-1 overflow-x-auto p-3">
           <div className="flex h-full min-h-0 gap-3">
             {board.columns.map((column) => {
-              const cards = [...(columns[column.id] ?? []), ...(extra[column.id]?.cards ?? [])];
-              const hasMore = extra[column.id] ? extra[column.id].hasMore : column.hasMore;
+              const cards = columns[column.id] ?? [];
+              const hasMore = pages[column.id]?.hasMore ?? false;
               return (
                 <BoardColumn
                   key={column.id}
