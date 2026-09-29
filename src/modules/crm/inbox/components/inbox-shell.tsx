@@ -5,6 +5,7 @@ import { MessagesSquare } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+import type { CrmTag } from "../../tags/types";
 import type {
   InboxAccount,
   InboxConversation,
@@ -30,12 +31,14 @@ export function InboxShell({
   listError,
   filters,
   thread,
+  tagOptions,
 }: {
   accounts: InboxAccount[];
   conversations: InboxConversation[];
   listError: string | null;
   filters: InboxFilters;
   thread: InboxThread | null;
+  tagOptions: CrmTag[];
 }) {
   useInboxRealtime();
   const [panelOpen, setPanelOpen] = useState(false);
@@ -63,6 +66,7 @@ export function InboxShell({
           filters={filters}
           selectedId={selectedId}
           error={listError}
+          tagOptions={tagOptions}
         />
       </aside>
 

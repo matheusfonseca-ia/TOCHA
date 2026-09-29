@@ -1,6 +1,11 @@
 import type { createClient } from "@/lib/supabase/server";
 import type { SequenceRunStatus } from "@/types/sequence";
 
+import {
+  attachTagsToConversations,
+  listSenderIdsWithTag,
+  listTagCatalog,
+} from "../../tags/services/tags.queries";
 import type { MessageRow } from "../../shared/types/message";
 import type {
   ContactPanelData,
@@ -51,10 +56,23 @@ export async function listConversations(
   if (filters.unreadOnly) query = query.gt("unread_count", 0);
   const q = sanitizeSearch(filters.q);
   if (q) query = query.or(`ig_sender_username.ilike.%${q}%,last_message_text.ilike.%${q}%`);
+  if (filters.tag) {
+    const senderIds = await listSenderIdsWithTag(supabase, filters.accountId, filters.tag);
+    // Sem ninguém com a tag: devolve lista vazia sem quebrar o `.in()` (array vazio dá erro no PostgREST).
+    if (senderIds.length === 0) return { conversations: [], error: null };
+    query = query.in("ig_sender_id", senderIds);
+  }
 
   const { data, error } = await query;
   if (error) return { conversations: [], error: error.message };
-  return { conversations: ((data ?? []) as unknown as ConversationRow[]).map(toInboxConversation), error: null };
+  const conversations = ((data ?? []) as unknown as ConversationRow[]).map(toInboxConversation);
+
+  const tagsByLead = await attachTagsToConversations(supabase, conversations);
+  for (const c of conversations) {
+    c.tags = tagsByLead.get(`${c.account_id}:${c.ig_sender_id}`);
+  }
+
+  return { conversations, error: null };
 }
 
 export async function getThread(supabase: UserClient, conversationId: string): Promise<InboxThread | null> {
@@ -66,7 +84,7 @@ export async function getThread(supabase: UserClient, conversationId: string): P
   if (!row) return null;
   const conversation = toInboxConversation(row as unknown as ConversationRow);
 
-  const [messagesRes, contactRes, runsRes] = await Promise.all([
+  const [messagesRes, contactRes, runsRes, tagCatalog] = await Promise.all([
     supabase
       .from("messages")
       .select("*")
@@ -87,12 +105,14 @@ export async function getThread(supabase: UserClient, conversationId: string): P
       .eq("ig_sender_id", conversation.ig_sender_id)
       .in("status", ACTIVE_RUN_STATUSES)
       .order("updated_at", { ascending: false }),
+    listTagCatalog(supabase, conversation.account_id),
   ]);
 
   const rows = (messagesRes.data ?? []) as MessageRow[];
   const panel: ContactPanelData = {
     fields: contactRes.data?.fields ?? {},
     tags: contactRes.data?.tags ?? [],
+    tagCatalog,
     runs: ((runsRes.data ?? []) as unknown as {
       id: string;
       status: SequenceRunStatus;

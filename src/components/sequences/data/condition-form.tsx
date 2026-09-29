@@ -9,11 +9,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { TAG_MAX } from "@/lib/sequences/fields";
 import type { ConditionNodeData, ConditionOperator } from "@/types/sequence";
 
 import { FieldKeyInput } from "./data-fields-context";
 import { OPERATOR_OPTIONS } from "./labels";
+import { TagNameInput } from "./tags-catalog-context";
 
 export function ConditionForm({
   data,
@@ -60,13 +60,21 @@ export function ConditionForm({
       {data.operator !== "exists" && (
         <div className="space-y-2">
           <Label htmlFor="condition-value">{isTag ? "Tag" : "Valor"}</Label>
-          <Input
-            id="condition-value"
-            placeholder={isTag ? "ex.: vip" : data.operator === "gt" || data.operator === "lt" ? "ex.: 18 ou 01/01/2000" : "ex.: pro"}
-            maxLength={isTag ? TAG_MAX : 500}
-            value={data.value}
-            onChange={(e) => onChange({ ...data, value: e.target.value })}
-          />
+          {isTag ? (
+            <TagNameInput
+              id="condition-value"
+              value={data.value}
+              onChange={(value) => onChange({ ...data, value })}
+            />
+          ) : (
+            <Input
+              id="condition-value"
+              placeholder={data.operator === "gt" || data.operator === "lt" ? "ex.: 18 ou 01/01/2000" : "ex.: pro"}
+              maxLength={500}
+              value={data.value}
+              onChange={(e) => onChange({ ...data, value: e.target.value })}
+            />
+          )}
         </div>
       )}
 

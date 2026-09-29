@@ -8,6 +8,7 @@ export function inboxHref(filters: InboxFilters, conversationId?: string | null)
   if (filters.accountId) params.set("conta", filters.accountId);
   if (filters.unreadOnly) params.set("filtro", "nao-lidas");
   if (filters.q) params.set("q", filters.q);
+  if (filters.tag) params.set("tag", filters.tag);
   if (conversationId) params.set("c", conversationId);
   const qs = params.toString();
   return qs ? `${INBOX_PATH}?${qs}` : INBOX_PATH;

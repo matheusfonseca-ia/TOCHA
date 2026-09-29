@@ -6,14 +6,14 @@ import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 import { InboxShell, type InboxAccount, type InboxFilters } from "@/modules/crm";
-import { getThread, listConversations } from "@/modules/crm/server";
+import { getThread, listAllTagNames, listConversations, listTagCatalog } from "@/modules/crm/server";
 
 export const dynamic = "force-dynamic";
 
 export default async function ConversasPage({
   searchParams,
 }: {
-  searchParams: { c?: string; conta?: string; filtro?: string; q?: string };
+  searchParams: { c?: string; conta?: string; filtro?: string; q?: string; tag?: string };
 }) {
   const supabase = createClient();
 
@@ -44,11 +44,13 @@ export default async function ConversasPage({
     accountId: accounts.some((a) => a.id === searchParams.conta) ? (searchParams.conta as string) : "",
     unreadOnly: searchParams.filtro === "nao-lidas",
     q: (searchParams.q ?? "").slice(0, 60),
+    tag: (searchParams.tag ?? "").slice(0, 60),
   };
 
-  const [list, thread] = await Promise.all([
+  const [list, thread, tagOptions] = await Promise.all([
     listConversations(supabase, filters),
     searchParams.c ? getThread(supabase, searchParams.c) : Promise.resolve(null),
+    filters.accountId ? listTagCatalog(supabase, filters.accountId) : listAllTagNames(supabase),
   ]);
 
   return (
@@ -58,6 +60,7 @@ export default async function ConversasPage({
       listError={list.error}
       filters={filters}
       thread={thread}
+      tagOptions={tagOptions}
     />
   );
 }

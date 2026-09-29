@@ -31,7 +31,8 @@ export type TableName =
   | "processed_events"
   | "contacts"
   | "messages"
-  | "message_signals_pending";
+  | "message_signals_pending"
+  | "crm_tags";
 
 export interface FakeError {
   message: string;
@@ -43,7 +44,7 @@ export interface QueryResult<T = Row> {
   error: FakeError | null;
 }
 
-type FilterOp = "eq" | "neq" | "in" | "lt" | "lte" | "gt" | "gte" | "is";
+type FilterOp = "eq" | "neq" | "in" | "lt" | "lte" | "gt" | "gte" | "is" | "contains";
 
 interface Filter {
   column: string;
@@ -117,6 +118,8 @@ function defaultsFor(table: TableName): Row {
         original_text: null,
         hidden_at: null,
       };
+    case "crm_tags":
+      return { color: "green", created_at: now };
     case "interactions":
     case "processed_events":
     case "message_signals_pending":
@@ -169,6 +172,8 @@ function matchesFilters(row: Row, filters: Filter[], table: TableName, db: FakeS
         return val != null && val >= f.value;
       case "is":
         return (val ?? null) === f.value;
+      case "contains":
+        return Array.isArray(val) && Array.isArray(f.value) && f.value.every((v) => val.includes(v));
       default:
         return true;
     }
@@ -244,6 +249,10 @@ class FakeQueryBuilder implements PromiseLike<QueryResult> {
   }
   is(column: string, value: any): this {
     this.filters.push({ column, op: "is", value });
+    return this;
+  }
+  contains(column: string, value: any[]): this {
+    this.filters.push({ column, op: "contains", value });
     return this;
   }
   order(column: string, opts: { ascending?: boolean } = {}): this {
@@ -401,15 +410,58 @@ export class FakeSupabase {
     contacts: [],
     messages: [],
     message_signals_pending: [],
+    crm_tags: [],
   };
 
   from(table: TableName): FakeQueryBuilder {
     return new FakeQueryBuilder(this, table);
   }
 
+  /**
+   * Espelha `crm_tag_rename` / `crm_tag_remove` (migration 0012_crm_tags.sql)
+   * em JS, só o suficiente para os testes de propagação do catálogo de tags.
+   */
+  async rpc(fn: string, params: Record<string, any>): Promise<QueryResult<number>> {
+    const lower = (s: string) => s.toLowerCase();
+    const now = new Date().toISOString();
+
+    if (fn === "crm_tag_rename") {
+      const { p_account_id, p_old_name, p_new_name } = params;
+      let count = 0;
+      for (const row of this.tables.contacts) {
+        const tags: string[] = row.tags ?? [];
+        if (row.account_id !== p_account_id || !tags.some((t) => lower(t) === lower(p_old_name))) continue;
+        const mapped = tags.map((t) => (lower(t) === lower(p_old_name) ? p_new_name : t));
+        const seen = new Set<string>();
+        row.tags = mapped.filter((t) => (seen.has(lower(t)) ? false : (seen.add(lower(t)), true)));
+        row.updated_at = now;
+        count += 1;
+      }
+      return { data: count as any, error: null };
+    }
+
+    if (fn === "crm_tag_remove") {
+      const { p_account_id, p_tag_name } = params;
+      let count = 0;
+      for (const row of this.tables.contacts) {
+        const tags: string[] = row.tags ?? [];
+        if (row.account_id !== p_account_id || !tags.some((t) => lower(t) === lower(p_tag_name))) continue;
+        row.tags = tags.filter((t) => lower(t) !== lower(p_tag_name));
+        row.updated_at = now;
+        count += 1;
+      }
+      return { data: count as any, error: null };
+    }
+
+    return { data: null, error: { message: `rpc desconhecida no fake: ${fn}` } };
+  }
+
   /** Passa a valer como `ReturnType<typeof createAdminClient>` nos testes (cast no chamador). */
-  get client(): { from: (table: TableName) => FakeQueryBuilder } {
-    return { from: (table: TableName) => this.from(table) };
+  get client(): {
+    from: (table: TableName) => FakeQueryBuilder;
+    rpc: (fn: string, params: Record<string, any>) => Promise<QueryResult<number>>;
+  } {
+    return { from: (table: TableName) => this.from(table), rpc: (fn, params) => this.rpc(fn, params) };
   }
 }
 
