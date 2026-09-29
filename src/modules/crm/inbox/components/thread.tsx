@@ -7,6 +7,7 @@ import { ArrowLeft, ExternalLink, MessageSquareDashed, PanelRight } from "lucide
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
+import { LeadProfileDialog } from "../../lead-profile/components/lead-profile-dialog";
 import type { InboxThread } from "../../shared/types/conversation";
 import { leadName, messagePreview } from "../utils/labels";
 import { dayKey, dayLabel, windowStatus } from "../utils/time";
@@ -58,9 +59,19 @@ export function Thread({
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
-        <LeadAvatar username={c.ig_sender_username} seed={c.ig_sender_id} className="h-9 w-9" />
+        <LeadProfileDialog conversation={c}>
+          <LeadAvatar
+            username={c.ig_sender_username}
+            seed={c.ig_sender_id}
+            photoUrl={c.ig_profile_pic_url}
+            conversationId={c.id}
+            className="h-9 w-9"
+          />
+        </LeadProfileDialog>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[14px] font-semibold">{name}</p>
+          <LeadProfileDialog conversation={c}>
+            <p className="truncate text-[14px] font-semibold">{name}</p>
+          </LeadProfileDialog>
           <p
             className={cn("truncate text-[12px]", win.open ? "text-emerald-700 dark:text-primary" : "text-muted-foreground")}
             suppressHydrationWarning

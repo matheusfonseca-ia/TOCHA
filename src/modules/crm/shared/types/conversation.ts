@@ -19,6 +19,13 @@ export interface InboxConversation {
   contact_seen_at: string | null;
   automation_paused_until: string | null;
   created_at: string;
+  /** Foto de perfil na CDN da Meta: expira, o painel volta para as iniciais se falhar. */
+  ig_profile_pic_url: string | null;
+  ig_profile_name: string | null;
+  ig_follower_count: number | null;
+  ig_follows_business: boolean | null;
+  ig_is_verified: boolean | null;
+  ig_profile_fetched_at: string | null;
 }
 
 export interface InboxFilters {

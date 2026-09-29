@@ -21,7 +21,7 @@ const THREAD_LIMIT = 100;
 const ACTIVE_RUN_STATUSES: SequenceRunStatus[] = ["running", "waiting_reply", "waiting_postback", "waiting_delay"];
 
 const CONVERSATION_COLUMNS =
-  "id, account_id, ig_sender_id, ig_sender_username, last_message_at, last_message_text, last_message_kind, last_message_direction, last_inbound_at, unread_count, contact_seen_at, automation_paused_until, created_at, ig_accounts(ig_username)";
+  "id, account_id, ig_sender_id, ig_sender_username, last_message_at, last_message_text, last_message_kind, last_message_direction, last_inbound_at, unread_count, contact_seen_at, automation_paused_until, created_at, ig_profile_pic_url, ig_profile_name, ig_follower_count, ig_follows_business, ig_is_verified, ig_profile_fetched_at, ig_accounts(ig_username)";
 
 type ConversationRow = Omit<InboxConversation, "account_username"> & {
   ig_accounts: { ig_username: string } | null;

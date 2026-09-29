@@ -29,9 +29,19 @@ function mockSendApi() {
   vi.stubGlobal(
     "fetch",
     vi.fn(async (url: string, init?: { body?: string }) => {
-      // User Profile API (busca do @ do lead)
-      if (!init?.body && String(url).includes("fields=username")) {
-        return new Response(JSON.stringify({ username: "ion_comunnity", name: "Ion" }), { status: 200 });
+      // User Profile API (busca do perfil completo do lead): sempre GET, sem body.
+      if (!init?.body) {
+        return new Response(
+          JSON.stringify({
+            username: "ion_comunnity",
+            name: "Ion",
+            profile_pic: "https://cdn.example.com/ion.jpg",
+            follower_count: 120,
+            is_user_follow_business: true,
+            is_verified_user: false,
+          }),
+          { status: 200 }
+        );
       }
       const body = JSON.parse(init?.body ?? "{}");
       const json = body.message
@@ -92,12 +102,21 @@ describe("mensagens do webhook", () => {
     });
   });
 
-  it("primeira DM do lead busca e guarda o @ (eco não busca)", async () => {
+  it("primeira DM do lead busca e guarda o perfil completo (eco não busca)", async () => {
     await captureMessagingEvent(account.ig_user_id, echo("e1", "oi"));
     expect(fake.tables.conversations[0].ig_sender_username ?? null).toBeNull();
 
     await captureMessagingEvent(account.ig_user_id, inbound({ mid: "m1", text: "oi" }));
-    expect(fake.tables.conversations[0].ig_sender_username).toBe("ion_comunnity");
+    const conversation = fake.tables.conversations[0];
+    expect(conversation.ig_sender_username).toBe("ion_comunnity");
+    expect(conversation).toMatchObject({
+      ig_profile_name: "Ion",
+      ig_profile_pic_url: "https://cdn.example.com/ion.jpg",
+      ig_follower_count: 120,
+      ig_follows_business: true,
+      ig_is_verified: false,
+    });
+    expect(conversation.ig_profile_fetched_at).toEqual(expect.any(String));
   });
 
   it("webhook reentregue não duplica", async () => {

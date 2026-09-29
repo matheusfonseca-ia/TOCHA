@@ -337,6 +337,105 @@ export async function getFollowsBusiness(
   return json.is_user_follow_business;
 }
 
+/** Perfil completo de quem conversa com a conta, para a ficha do lead do CRM. */
+export interface UserProfileDetails {
+  username: string | null;
+  name: string | null;
+  profilePicUrl: string | null;
+  followerCount: number | null;
+  followsBusiness: boolean | null;
+  isVerified: boolean | null;
+}
+
+/**
+ * Perfil completo (User Profile API): nome, @, foto, seguidores, se segue a
+ * conta e se é verificado. Mesma regra de consentimento do `getUserProfile`
+ * (só depois de DM ou toque em botão da conta). Campo ausente na resposta
+ * vira null em vez de derrubar a chamada inteira.
+ */
+export async function getFullUserProfile(
+  igToken: string,
+  igScopedId: string
+): Promise<UserProfileDetails> {
+  const json = await graphGet(encodeURIComponent(igScopedId), igToken, {
+    fields: "name,username,profile_pic,follower_count,is_user_follow_business,is_verified_user",
+  });
+  return {
+    username: typeof json.username === "string" ? json.username : null,
+    name: typeof json.name === "string" ? json.name : null,
+    profilePicUrl: typeof json.profile_pic === "string" ? json.profile_pic : null,
+    followerCount: typeof json.follower_count === "number" ? json.follower_count : null,
+    followsBusiness:
+      typeof json.is_user_follow_business === "boolean" ? json.is_user_follow_business : null,
+    isVerified: typeof json.is_verified_user === "boolean" ? json.is_verified_user : null,
+  };
+}
+
+/** Uma conversa listada pela Conversations API (histórico anterior ao CRM). */
+export interface IgConversationSummary {
+  id: string;
+  participants: { data: { id: string; username?: string }[] };
+}
+
+/**
+ * Página de conversas da conta (Conversations API). Usada só na importação
+ * do histórico: o webhook em tempo real não precisa disto. `limit` pequeno
+ * porque cada conversa da página ainda gasta 1 chamada extra para as
+ * mensagens dela, e o Worker tem tempo de execução limitado.
+ */
+export async function listConversationsPage(
+  igToken: string,
+  after?: string,
+  limit = 5
+): Promise<{ conversations: IgConversationSummary[]; nextAfter: string | null }> {
+  const params: Record<string, string> = {
+    platform: "instagram",
+    fields: "id,participants",
+    limit: String(limit),
+  };
+  if (after) params.after = after;
+  const json = await graphGet("me/conversations", igToken, params);
+  const conversations = (json.data as IgConversationSummary[] | undefined) ?? [];
+  const paging = json.paging as { cursors?: { after?: string }; next?: string } | undefined;
+  const nextAfter = paging?.next && paging.cursors?.after ? paging.cursors.after : null;
+  return { conversations, nextAfter };
+}
+
+/** Um anexo de mensagem devolvido pela Conversations API. */
+export interface IgConversationAttachment {
+  mime_type?: string;
+  image_data?: { url?: string };
+  video_data?: { url?: string };
+  file_url?: string;
+}
+
+/** Uma mensagem de dentro de uma conversa (Conversations API). */
+export interface IgConversationMessage {
+  id: string;
+  created_time: string;
+  from?: { id: string; username?: string };
+  to?: { data?: { id: string; username?: string }[] };
+  message?: string;
+  attachments?: { data?: IgConversationAttachment[] };
+  reply_to?: { id?: string };
+}
+
+/**
+ * As mensagens de uma conversa (Conversations API). A Meta só devolve as 20
+ * mais recentes por conversa, sem paginação possível além disso (confirmado
+ * na Fase 0 do CRM, 28/09/2026).
+ */
+export async function getConversationMessages(
+  igToken: string,
+  conversationId: string
+): Promise<IgConversationMessage[]> {
+  const json = await graphGet(conversationId, igToken, {
+    fields: "messages{id,created_time,from,to,message,attachments,reply_to}",
+  });
+  const messages = json.messages as { data?: IgConversationMessage[] } | undefined;
+  return messages?.data ?? [];
+}
+
 export interface IgMedia {
   id: string;
   caption: string | null;

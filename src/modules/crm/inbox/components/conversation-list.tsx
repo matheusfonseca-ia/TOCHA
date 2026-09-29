@@ -174,7 +174,12 @@ function ConversationItem({
         active ? "bg-secondary/80" : "hover:bg-secondary/40"
       )}
     >
-      <LeadAvatar username={c.ig_sender_username} seed={c.ig_sender_id} />
+      <LeadAvatar
+        username={c.ig_sender_username}
+        seed={c.ig_sender_id}
+        photoUrl={c.ig_profile_pic_url}
+        conversationId={c.id}
+      />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
           <p className={cn("truncate text-[14px]", unread ? "font-semibold" : "font-medium")}>

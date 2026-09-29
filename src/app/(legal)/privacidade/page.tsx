@@ -95,6 +95,24 @@ export default function PrivacidadePage() {
               quando a própria Meta o envia junto do evento.
             </li>
             <li>
+              <Term>Conversas do CRM:</Term> o painel guarda o histórico
+              completo da conversa (mensagens recebidas, enviadas pela
+              automação e enviadas pelo administrador), inclusive reação,
+              edição e confirmação de leitura da sua mensagem, quando a Meta
+              envia esses eventos. Mídia (foto, vídeo, áudio) é guardada só
+              como link para o arquivo na Meta, nunca copiada para o Falow, e
+              esse link expira com o tempo.
+            </li>
+            <li>
+              <Term>Perfil do Instagram de quem conversa:</Term> quando você
+              troca mensagem com a conta, o Falow consulta na API oficial da
+              Meta e guarda sua foto de perfil, nome, número de seguidores, se
+              você segue a conta e se o perfil é verificado, para mostrar na
+              ficha do lead do painel do administrador. Também é possível
+              importar o histórico de conversas anteriores à instalação do
+              CRM (a Meta libera só as últimas 20 mensagens por conversa).
+            </li>
+            <li>
               <Term>Comentários públicos:</Term> o texto do comentário, os
               identificadores do comentário e da publicação e o identificador de
               quem comentou, usados para responder o comentário e, quando a
@@ -262,6 +280,12 @@ export default function PrivacidadePage() {
               <Term>Mensagens, comentários e logs:</Term> ficam guardados
               enquanto forem úteis ao histórico e às métricas do administrador, e
               são apagados a qualquer momento a pedido do titular.
+            </li>
+            <li>
+              <Term>Perfil do Instagram (foto, nome, seguidores):</Term>{" "}
+              guardado junto da conversa enquanto ela existir, atualizado
+              sempre que a foto muda ou expira. Some junto quando a conversa é
+              apagada, a pedido do titular ou pela desconexão da conta.
             </li>
             <li>
               <Term>Estado das sequências:</Term> é apagado junto com os demais

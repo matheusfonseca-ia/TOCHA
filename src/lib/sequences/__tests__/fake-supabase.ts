@@ -93,7 +93,16 @@ function defaultsFor(table: TableName): Row {
     case "rule_triggers":
       return { link_delivered_at: null, follow_gate_sent_at: null, created_at: now };
     case "conversations":
-      return { ig_sender_username: null, created_at: now };
+      return {
+        ig_sender_username: null,
+        created_at: now,
+        ig_profile_pic_url: null,
+        ig_profile_name: null,
+        ig_follower_count: null,
+        ig_follows_business: null,
+        ig_is_verified: null,
+        ig_profile_fetched_at: null,
+      };
     case "contacts":
       return { ig_username: null, fields: {}, tags: [], created_at: now, updated_at: now };
     case "messages":

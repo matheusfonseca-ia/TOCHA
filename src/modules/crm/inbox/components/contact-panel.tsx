@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
+import { LeadProfileDialog } from "../../lead-profile/components/lead-profile-dialog";
 import type { InboxThread } from "../../shared/types/conversation";
 import { RUN_STATUS_LABEL, leadName } from "../utils/labels";
 import { fullDateTime } from "../utils/time";
@@ -57,8 +58,18 @@ function PanelBody({ thread }: { thread: InboxThread }) {
   return (
     <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 pb-6 pt-2 xl:pt-5">
       <section className="flex flex-col items-center text-center">
-        <LeadAvatar username={c.ig_sender_username} seed={c.ig_sender_id} className="h-14 w-14 text-base" />
-        <p className="mt-3 text-[15px] font-semibold">{leadName(c.ig_sender_username, c.ig_sender_id)}</p>
+        <LeadProfileDialog conversation={c}>
+          <LeadAvatar
+            username={c.ig_sender_username}
+            seed={c.ig_sender_id}
+            photoUrl={c.ig_profile_pic_url}
+            conversationId={c.id}
+            className="h-14 w-14 text-base"
+          />
+        </LeadProfileDialog>
+        <LeadProfileDialog conversation={c}>
+          <p className="mt-3 text-[15px] font-semibold">{leadName(c.ig_sender_username, c.ig_sender_id)}</p>
+        </LeadProfileDialog>
         {c.ig_sender_username && (
           <a
             href={`https://www.instagram.com/${c.ig_sender_username}/`}

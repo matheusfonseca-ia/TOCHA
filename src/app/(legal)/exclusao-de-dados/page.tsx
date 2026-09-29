@@ -96,7 +96,12 @@ export default function ExclusaoDeDadosPage() {
             <li>A conversa registrada entre você e a conta conectada.</li>
             <li>
               O texto das mensagens e comentários seus que ficaram guardados nos
-              logs de interação.
+              logs de interação, e as mensagens da conversa dentro do CRM
+              (Conversas do painel).
+            </li>
+            <li>
+              A foto de perfil, o nome e o número de seguidores do Instagram
+              guardados na conversa para a ficha do lead do CRM.
             </li>
             <li>
               O seu identificador de remetente e o registro de quais regras já
@@ -159,14 +164,52 @@ export default function ExclusaoDeDadosPage() {
 delete from public.ig_accounts where ig_username = 'seu_usuario';`}</LegalCode>
           <p>
             Para apagar apenas os dados de <Term>uma pessoa</Term> (atendendo a
-            um pedido individual), use o identificador de remetente dela:
+            um pedido individual), use o identificador de remetente dela. O
+            bloco abaixo também apaga as mensagens do CRM (Conversas) e o
+            perfil do Instagram guardado dela (foto, nome, seguidores): tudo
+            isso fica na própria conversa, então apagar a conversa já leva
+            junto. Funciona mesmo em instalações mais antigas, sem as tabelas
+            de notas e funil do CRM (<Term>crm_notes</Term>,{" "}
+            <Term>leads</Term>, <Term>lead_stage_events</Term>):
           </p>
-          <LegalCode>{`-- o ig_sender_id aparece na tela de Logs do painel
-delete from public.interactions   where ig_sender_id = 'ID_DO_REMETENTE';
-delete from public.conversations  where ig_sender_id = 'ID_DO_REMETENTE';
-delete from public.rule_triggers  where ig_sender_id = 'ID_DO_REMETENTE';
-delete from public.sequence_runs  where ig_sender_id = 'ID_DO_REMETENTE';
-delete from public.contacts       where ig_sender_id = 'ID_DO_REMETENTE';`}</LegalCode>
+          <LegalCode>{`-- o ig_sender_id aparece na tela de Logs e na URL da conversa no CRM
+do $$
+declare
+  v_sender_id text := 'ID_DO_REMETENTE';
+begin
+  -- Mensagens do CRM e sinais pendentes (reação/edição ainda não aplicados).
+  -- O "on delete cascade" de messages já apagaria isso ao apagar a conversa
+  -- mais abaixo; fica explícito aqui para o pedido documentar o que sai.
+  if to_regclass('public.message_signals_pending') is not null then
+    delete from public.message_signals_pending
+     where mid in (
+       select m.mid from public.messages m
+       join public.conversations c on c.id = m.conversation_id
+      where c.ig_sender_id = v_sender_id and m.mid is not null
+     );
+  end if;
+  delete from public.messages m
+   using public.conversations c
+   where c.id = m.conversation_id and c.ig_sender_id = v_sender_id;
+
+  -- Notas internas e funil, só se esta instalação já tiver essas tabelas.
+  if to_regclass('public.crm_notes') is not null then
+    execute 'delete from public.crm_notes where ig_sender_id = $1' using v_sender_id;
+  end if;
+  if to_regclass('public.lead_stage_events') is not null then
+    execute 'delete from public.lead_stage_events where ig_sender_id = $1' using v_sender_id;
+  end if;
+  if to_regclass('public.leads') is not null then
+    execute 'delete from public.leads where ig_sender_id = $1' using v_sender_id;
+  end if;
+
+  delete from public.interactions   where ig_sender_id = v_sender_id;
+  -- Apaga a conversa e junto o perfil do Instagram guardado nela (foto, nome, seguidores).
+  delete from public.conversations  where ig_sender_id = v_sender_id;
+  delete from public.rule_triggers  where ig_sender_id = v_sender_id;
+  delete from public.sequence_runs  where ig_sender_id = v_sender_id;
+  delete from public.contacts       where ig_sender_id = v_sender_id;
+end $$;`}</LegalCode>
 
           <p className="pt-2 font-semibold text-foreground">
             Apagar a instalação inteira

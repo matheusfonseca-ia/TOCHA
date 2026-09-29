@@ -1,6 +1,6 @@
-import { fetchAndStoreUsername } from "@/lib/contacts/profile";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+import { refreshLeadProfile } from "../../lead-profile/server/refresh-profile";
 import { parseMessagingEvent, type IncomingMessagingEvent } from "../utils/parse-event";
 import { findAccount, leadNeedsUsername, markSeen, recordIncoming, recordSignal } from "./record";
 
@@ -30,10 +30,11 @@ export async function captureMessagingEvent(
       case "message": {
         const { message } = action;
         await recordIncoming(admin, account.id, message, action.echo ? "instagram_app" : "contact");
-        // O @ do lead aparece na lista do Inbox. Buscado uma vez, na mensagem
-        // dele: é quando a Meta garante o consentimento para ler o perfil.
+        // O @ e a foto do lead aparecem no Inbox. Buscados uma vez, na 1ª
+        // mensagem dele: é quando a Meta garante o consentimento para ler o
+        // perfil (checa pelo @ ainda vazio, o mesmo critério de antes).
         if (message.direction === "inbound" && (await leadNeedsUsername(admin, account.id, message.leadId))) {
-          await fetchAndStoreUsername(admin, account, message.leadId);
+          await refreshLeadProfile(admin, account, message.leadId);
         }
         return;
       }
