@@ -41,17 +41,17 @@ export function ContactPanel({
   return (
     <>
       {open && (
-        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm xl:hidden" onClick={onClose} aria-hidden />
+        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm 2xl:hidden" onClick={onClose} aria-hidden />
       )}
       <aside
         aria-label="Ficha do lead"
         className={cn(
           "w-[320px] max-w-full shrink-0 flex-col border-l border-border/70 bg-background",
-          "fixed inset-y-0 right-0 z-40 xl:static xl:z-auto xl:flex xl:w-[300px]",
+          "fixed inset-y-0 right-0 z-40 2xl:static 2xl:z-auto 2xl:flex 2xl:w-[300px]",
           open ? "flex" : "hidden"
         )}
       >
-        <div className="flex items-center justify-end px-3 pt-3 xl:hidden">
+        <div className="flex items-center justify-end px-3 pt-3 2xl:hidden">
           <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onClose} aria-label="Fechar ficha">
             <X className="h-4 w-4" />
           </Button>
@@ -70,7 +70,7 @@ function PanelBody({ thread }: { thread: InboxThread }) {
     c.automation_paused_until && Date.parse(c.automation_paused_until) > Date.now() ? c.automation_paused_until : null;
 
   return (
-    <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 pb-6 pt-2 xl:pt-5">
+    <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 pb-6 pt-2 2xl:pt-5">
       <section className="flex flex-col items-center text-center">
         <LeadProfileDialog conversation={c}>
           <LeadAvatar

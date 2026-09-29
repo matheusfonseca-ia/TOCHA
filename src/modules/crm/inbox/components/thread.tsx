@@ -2,7 +2,7 @@
 
 import { Fragment, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ExternalLink, MessageSquareDashed, PanelRight } from "lucide-react";
+import { ArrowLeft, MessageSquareDashed, PanelRight } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -111,18 +111,10 @@ export function Thread({
         </div>
         <StatusToggleButton conversationId={c.id} status={c.status} />
         <HandoffToggleButton conversationId={c.id} takenOver={Boolean(c.human_takeover_at)} />
-        {c.ig_sender_username && (
-          <Button asChild variant="ghost" size="sm" className="hidden h-8 gap-1.5 text-[13px] sm:inline-flex">
-            <a href={`https://www.instagram.com/${c.ig_sender_username}/`} target="_blank" rel="noopener noreferrer">
-              <ExternalLink className="h-3.5 w-3.5" />
-              Ver perfil
-            </a>
-          </Button>
-        )}
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 shrink-0 xl:hidden"
+          className="h-8 w-8 shrink-0 2xl:hidden"
           onClick={onTogglePanel}
           aria-label="Ficha do lead"
         >

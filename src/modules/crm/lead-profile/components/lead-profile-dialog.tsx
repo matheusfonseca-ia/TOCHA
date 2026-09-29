@@ -37,7 +37,7 @@ export function LeadProfileDialog({
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex min-w-0 items-center gap-3 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="flex min-w-0 max-w-full items-center gap-3 rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
         aria-label={`Ver perfil de ${name}`}
       >
         {children}
