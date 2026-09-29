@@ -1,9 +1,28 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260928-212159-claude"
-Status: em andamento
-Resumo: CRM Fases 1 e 2 em produção (Worker 61e689b1). Commit 2016444 (duas colunas só a partir de 1024px + debounce 1s) ainda NÃO deployado (build morto por falta de RAM). Fases 3 a 9 distribuídas para 4 agentes Sonnet em worktrees (A: Fase 3+7, migration 0011; B: Fase 4 tags, 0012; C: Fases 5+6 funil e workflow, 0013; D: foto/perfil do lead + Fase 8 histórico + LGPD, 0010). Claude principal faz merge, revisão, aplica migrations 0010 a 0013 em produção e faz um único build/deploy no fim. Falta também aplicar 0009+ no Supabase da Vercel antes do push para o tocha.
+Última tag: "HANDOFF-falow-20260928-223357-claude"
+Status: concluído (pendências do usuário abaixo)
+Resumo: CRM completo (Fases 0 a 9 + foto/perfil do lead) EM PRODUÇÃO no Worker fd0cae14, migrations 0009 a 0013 aplicadas e conferidas no Supabase de produção, 492 testes. Pendências do usuário: aplicar 0009 a 0013 no Supabase da Vercel antes de `! git push tocha main:main`; decidir "Trazer conversas existentes" no Funil; fechar a aba do SQL Editor. Pendências anteriores: migration 0008 e conferência visual do Workflow.
+
+---
+
+## [HANDOFF · falow · 2026-09-28T22:33:57-03:00 · claude]
+Status: concluído
+Objetivo: terminar todas as fases do CRM com agentes (A: 3+7, B: 4, C: 5+6, D: perfil + 8 + LGPD) e publicar.
+Feito:
+- Merge das 4 branches na ordem D, B, A, C com conflitos resolvidos à mão (ficha, lista, thread, consultas, tipos, fake, editor de Workflow, runtime.test). Worktrees dos agentes nasceram num commit antigo (793eafc); cada agente fez ff para a main antes de codar.
+- Correções de revisão: processDueRuns adia em 15 min o run de conversa assumida (antes travava a fila); enrollLeadFromCapture só cria lead (antes devolvia o lead para "Novos" a cada DM); next.config bodySizeLimit 26mb (upload do composer); importação: vazio recebido vira anexo (áudio), vazio enviado vira botões; leadNeedsProfile (leads com @ também ganham foto); revoke explícito das funções de tag para anon/authenticated.
+- Conferido com conta real antes do merge: campos da User Profile API válidos; id da Conversations API == mid do webhook (import não duplica); anexo de imagem em attachments.data[].image_data.url; áudio vem sem anexo.
+- Migrations 0010 a 0013 aplicadas pelo SQL Editor: arquivo servido por node em 127.0.0.1 (CSP do Supabase bloqueia fetch; cópia exata via botão injetado + clipboard, colado com Ctrl+V, hash conferido com CRLF normalizado). Catálogo conferido: 6 colunas de perfil, 7 tabelas, bucket crm-uploads público, 2 funções, 4 índices, realtime em conversations/leads/messages, 10 policies.
+- Backfill de perfis: 59/59 (55 com foto). Build em 2 etapas em primeiro plano (NEXT_PRIVATE_STANDALONE=true + NEXT_PRIVATE_OUTPUT_TRACE_ROOT, depois opennextjs-cloudflare build --skipNextBuild) para não ser morto por falta de RAM; deploys a22c26af e fd0cae14 (layout: ficha fixa só em 2xl, nome trunca, sem "Ver perfil" no cabeçalho, funil com min-w-0).
+- QA logado: lista com fotos, cartão de perfil com "Abrir no Instagram", composer enviando de verdade para @ion_comunnity (gravado como agent, takeover automático, devolvido ao bot), funil com etapas padrão.
+Próximo passo:
+- Usuário: 0009 a 0013 no Supabase da Vercel, push para o tocha, decidir "Trazer conversas existentes".
+- Opcional: pipeline adicional pela UI, reordenar etapas arrastando, remoção de tag em massa.
+Arquivos tocados: src/modules/crm/** (capture, inbox, handoff, notes, quick-replies, tags, pipeline, lead-profile, history-import, shared), src/lib/meta/{graph,process}.ts, src/lib/sequences/{runtime,condition,flow-data,graph}.ts, src/components/sequences/**, src/app/(dashboard)/crm/**, src/app/(dashboard)/rules/sequencias/**, src/app/(legal)/**, src/components/accounts/account-card.tsx, next.config.mjs, scripts/check-db-schema.mjs, supabase/migrations/0010 a 0013.
+Decisões/contexto: aba do SQL Editor (Browser 1) ficou aberta com edição não salva; não fechar pelo MCP. Worktrees dos agentes continuam em .claude/worktrees/agent-* (sem junction de node_modules, conferido).
+Tag: "HANDOFF-falow-20260928-223357-claude"
 
 ---
 

@@ -1,5 +1,14 @@
 # Lessons
 
+## 2026-09-28 · agentes em worktree e código de agente
+- Erro evitado por sorte: as worktrees dos agentes nasceram num commit 47 atrás da main (sem o CRM). Os agentes perceberam e fizeram ff sozinhos, mas poderiam ter codado em cima do nada.
+- Regra: no prompt de agente em worktree, mandar conferir a base na 1ª ação (`git merge-base --is-ancestor <commit-da-main> HEAD`) e fazer `git merge --ff-only main` se precisar.
+- Regra: código de agente sempre passa por revisão dirigida antes do deploy, olhando os pontos de integração (fila, captura, limites do framework). Nesta rodada a revisão pegou 3 bugs que os testes dos próprios agentes não pegavam: fila de atrasos travada, lead devolvido para a 1ª etapa a cada DM e upload barrado pelo limite de 1MB das server actions.
+
+## 2026-09-28 · build com pouca RAM
+- Erro: `build:cloudflare` em background foi morto pelo Claude Code por falta de memória enquanto a sessão esperava.
+- Regra: com pouca RAM, fazer o build em 2 etapas em primeiro plano: `NEXT_PRIVATE_STANDALONE=true NEXT_PRIVATE_OUTPUT_TRACE_ROOT=<raiz> npm run build` e depois `npx opennextjs-cloudflare build --skipNextBuild` (o `npm run build` comum não gera o standalone e o skip falha).
+
 ## 2026-09-28 · instrução de teste manual ambígua
 - Erro: pedi "rodada 2" (reagir, editar, apagar...) sem dizer ONDE fazer. O usuário entendeu que era no Falow e cobrou deploy de telas que ainda não existem.
 - Regra: todo pedido de ação manual diz explicitamente o lugar (app do Instagram no celular, painel do Falow, SQL Editor...) e o que já está no ar para aquilo funcionar. Se nada precisa de deploy, dizer isso na mesma mensagem.

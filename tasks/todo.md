@@ -1,6 +1,35 @@
 # Falow: CRM de conversas (Inbox estilo WhatsApp + Funil Kanban)
 
-Planejado em 2026-09-28. Status: **aprovado em 28/09 (D1 a D4 como propostas); Fase 0 em andamento**.
+Planejado em 2026-09-28. Status: **Fases 0 a 9 em produção em 28/09/2026** (Worker fd0cae14,
+migrations 0009 a 0013 aplicadas e conferidas no catálogo). Fases 3 a 9 feitas por 4 agentes
+Sonnet em worktrees, com merge, revisão e deploy pelo Claude principal.
+
+## Status final (28/09/2026)
+
+Entregue e conferido logado em produção (conta de teste @ion_comunnity):
+- Captura (Fase 1), Inbox ao vivo (2), responder pelo painel com texto/imagem/PDF/citação,
+  assumir e devolver ao bot, respostas rápidas, mark_seen (3; composer testado de ponta a ponta:
+  mensagem gravada como agent com mid, takeover automático, devolvido depois), tags com cor,
+  filtro, em massa e dados editáveis (4), funil kanban com arrastar, entrada automática e etapas
+  (5), nó "Mover para etapa", condição "Está na etapa" e workflow ao entrar na etapa (6), menu da
+  mensagem, apagar para mim, notas internas, concluir/reabrir (7), importar histórico na página
+  Contas (8), LGPD e privacidade (9), foto e cartão de perfil do lead com "Abrir no Instagram"
+  (pedido do usuário). 59/59 perfis preenchidos (55 com foto).
+- 492 testes, tsc e build limpos.
+- Bugs achados na revisão/QA e corrigidos: fila de atrasos travada por conversa assumida,
+  entrada automática devolvendo o lead para "Novos" a cada DM, upload barrado pelo limite de 1MB
+  das server actions, áudio importado rotulado como botões, perfil nunca buscado para leads que
+  já tinham @, prefetch em massa derrubando o Worker (503), canal ao vivo como anon, layout
+  espremido em 768/1280 e botões do funil fora da tela.
+
+Pendente (do usuário):
+- [ ] Aplicar 0009 a 0013 no Supabase da Vercel antes do próximo `! git push tocha main:main`
+      (check-db-schema barra o build de lá sem elas).
+- [ ] Decidir se clica em "Trazer conversas existentes" no Funil (cria lead para as 59 conversas).
+- [ ] Testar com uso real: reação/edição do lead aparecendo no balão, anexo pelo composer.
+- [ ] Fechar a aba do SQL Editor no Chrome ("Sair" no aviso).
+Fora do escopo (limites da Meta): HUMAN_AGENT (App Review), reagir pela conta, editar ou
+desfazer envio no Instagram, histórico além das 20 últimas mensagens por conversa.
 Validação: 8 agentes Sonnet em paralelo, um por feature, só pesquisa (doc oficial da
 Meta e da Supabase + leitura do código).
 
