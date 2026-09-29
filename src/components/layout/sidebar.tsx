@@ -23,7 +23,7 @@ import { signOut } from "@/app/login/actions";
 
 const NAV_ITEMS = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/crm", label: "CRM", icon: MessagesSquare },
+  { href: "/crm", label: "Conversas", icon: MessagesSquare },
   { href: "/rules", label: "Automação", icon: Zap },
   { href: "/contatos", label: "Contatos", icon: Users },
   { href: "/accounts", label: "Contas", icon: Instagram },

@@ -95,7 +95,7 @@ export default function PrivacidadePage() {
               quando a própria Meta o envia junto do evento.
             </li>
             <li>
-              <Term>Conversas do CRM:</Term> o painel guarda o histórico
+              <Term>Conversas:</Term> o painel guarda o histórico
               completo da conversa (mensagens recebidas, enviadas pela
               automação e enviadas pelo administrador), inclusive reação,
               edição e confirmação de leitura da sua mensagem, quando a Meta
@@ -110,7 +110,7 @@ export default function PrivacidadePage() {
               você segue a conta e se o perfil é verificado, para mostrar na
               ficha do lead do painel do administrador. Também é possível
               importar o histórico de conversas anteriores à instalação do
-              CRM (a Meta libera só as últimas 20 mensagens por conversa).
+              painel de Conversas (a Meta libera só as últimas 20 mensagens por conversa).
             </li>
             <li>
               <Term>Comentários públicos:</Term> o texto do comentário, os

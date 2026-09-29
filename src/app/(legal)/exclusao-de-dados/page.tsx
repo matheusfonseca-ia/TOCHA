@@ -96,12 +96,12 @@ export default function ExclusaoDeDadosPage() {
             <li>A conversa registrada entre você e a conta conectada.</li>
             <li>
               O texto das mensagens e comentários seus que ficaram guardados nos
-              logs de interação, e as mensagens da conversa dentro do CRM
+              logs de interação, e as mensagens da conversa na área Conversas do painel
               (Conversas do painel).
             </li>
             <li>
               A foto de perfil, o nome e o número de seguidores do Instagram
-              guardados na conversa para a ficha do lead do CRM.
+              guardados na conversa para a ficha do lead.
             </li>
             <li>
               O seu identificador de remetente e o registro de quais regras já
@@ -165,19 +165,19 @@ delete from public.ig_accounts where ig_username = 'seu_usuario';`}</LegalCode>
           <p>
             Para apagar apenas os dados de <Term>uma pessoa</Term> (atendendo a
             um pedido individual), use o identificador de remetente dela. O
-            bloco abaixo também apaga as mensagens do CRM (Conversas) e o
+            bloco abaixo também apaga as mensagens da área Conversas e o
             perfil do Instagram guardado dela (foto, nome, seguidores): tudo
             isso fica na própria conversa, então apagar a conversa já leva
             junto. Funciona mesmo em instalações mais antigas, sem as tabelas
-            de notas e funil do CRM (<Term>crm_notes</Term>,{" "}
+            de notas e funil (<Term>crm_notes</Term>,{" "}
             <Term>leads</Term>, <Term>lead_stage_events</Term>):
           </p>
-          <LegalCode>{`-- o ig_sender_id aparece na tela de Logs e na URL da conversa no CRM
+          <LegalCode>{`-- o ig_sender_id aparece na tela de Logs e na URL da conversa em Conversas
 do $$
 declare
   v_sender_id text := 'ID_DO_REMETENTE';
 begin
-  -- Mensagens do CRM e sinais pendentes (reação/edição ainda não aplicados).
+  -- Mensagens das Conversas e sinais pendentes (reação/edição ainda não aplicados).
   -- O "on delete cascade" de messages já apagaria isso ao apagar a conversa
   -- mais abaixo; fica explícito aqui para o pedido documentar o que sai.
   if to_regclass('public.message_signals_pending') is not null then

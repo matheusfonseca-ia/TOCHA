@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Heart, Mic, Paperclip, Settings2, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -14,6 +14,10 @@ import { useVoiceRecorder } from "../hooks/use-voice-recorder";
 import { COMPOSER_ACCEPT } from "../utils/attachment-types";
 
 const MAX_TEXT = 1000;
+// Contador só aparece perto do limite, dentro da caixa: fora dela desalinhava os botões.
+const COUNTER_FROM = 800;
+// Altura máxima da caixa ao crescer com o texto (~6 linhas); depois disso rola.
+const MAX_TEXTAREA_PX = 140;
 
 export interface ReplyDraft {
   mid: string;
@@ -79,6 +83,14 @@ export function Composer({
     writeDraft(conversationId, text);
     setPickerOpen(text.startsWith("/"));
   }, [conversationId, text]);
+
+  // A caixa nasce com a altura dos botões (36px) e cresce com o texto.
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, MAX_TEXTAREA_PX)}px`;
+  }, [text, recorder.state]);
 
   function reset() {
     setText("");
@@ -199,7 +211,7 @@ export function Composer({
           </>
         ) : (
           <>
-            <div className="flex-1">
+            <div className="relative min-w-0 flex-1">
               <textarea
                 ref={textareaRef}
                 value={text}
@@ -207,11 +219,16 @@ export function Composer({
                 onKeyDown={handleKeyDown}
                 placeholder='Escreva uma mensagem ("/" para respostas rápidas)'
                 rows={1}
-                className="max-h-32 w-full resize-none rounded-lg border border-input bg-background px-3 py-2 text-[14px] leading-relaxed outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className={cn(
+                  "block min-h-9 w-full resize-none overflow-y-auto rounded-lg border border-input bg-background px-3 py-[7px] text-[14px] leading-5 outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                  text.length >= COUNTER_FROM && "pr-16"
+                )}
               />
-              <div className="mt-0.5 flex justify-end">
-                <span className="text-[11px] text-muted-foreground">{text.length}/{MAX_TEXT}</span>
-              </div>
+              {text.length >= COUNTER_FROM && (
+                <span className="pointer-events-none absolute bottom-2 right-3 text-[11px] tabular-nums text-muted-foreground">
+                  {text.length}/{MAX_TEXT}
+                </span>
+              )}
             </div>
 
             <Button

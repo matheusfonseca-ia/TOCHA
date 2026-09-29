@@ -155,7 +155,7 @@ const PALETTE: {
     icon: PauseOctagon,
     group: "Extras",
   },
-  { type: "moveToStage", label: "Mover para etapa", icon: Kanban, group: "CRM" },
+  { type: "moveToStage", label: "Mover para etapa", icon: Kanban, group: "Funil" },
 ];
 
 // Largura fixa dos blocos no canvas (w-60 em sequence-nodes.tsx) e altura
