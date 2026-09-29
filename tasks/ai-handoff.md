@@ -1,9 +1,26 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260928-204926-claude"
+Última tag: "HANDOFF-falow-20260928-212159-claude"
 Status: em andamento
-Resumo: CRM Fases 1 (captura) e 2 (tela de Conversas em /crm/conversas, ao vivo) EM PRODUÇÃO e conferidas logado no Chrome; 3 bugs achados na conferência e corrigidos (prefetch em massa → 503, canal ao vivo como anon, 768px espremido). Falta: aplicar 0009 no Supabase da Vercel antes do próximo push para o tocha. Próximo: Fase 3 (responder pelo painel + assumir conversa). Pendências anteriores: aplicar migration 0008 e confirmar visualmente o Workflow.
+Resumo: CRM Fases 1 e 2 em produção (Worker 61e689b1). Commit 2016444 (duas colunas só a partir de 1024px + debounce 1s) ainda NÃO deployado (build morto por falta de RAM). Fases 3 a 9 distribuídas para 4 agentes Sonnet em worktrees (A: Fase 3+7, migration 0011; B: Fase 4 tags, 0012; C: Fases 5+6 funil e workflow, 0013; D: foto/perfil do lead + Fase 8 histórico + LGPD, 0010). Claude principal faz merge, revisão, aplica migrations 0010 a 0013 em produção e faz um único build/deploy no fim. Falta também aplicar 0009+ no Supabase da Vercel antes do push para o tocha.
+
+---
+
+## [HANDOFF · falow · 2026-09-28T21:21:59-03:00 · claude]
+Status: em andamento
+Objetivo: terminar todas as fases do CRM com agentes em paralelo (pedido do usuário: "pode avançar todas as fases, jogue seus agentes").
+Feito:
+- @dnd-kit instalado na pasta principal (2c8597d) antes de criar as worktrees (npm install em worktree com junction pode estragar o node_modules real).
+- 4 agentes Sonnet lançados em worktrees isoladas, com escopo, número de migration e regras de recurso (sem build/deploy, tsc no máximo 2 vezes, junction de node_modules removida no fim).
+- Pedido novo do usuário incluído no Agente D: foto do lead na lista/conversa/ficha e diálogo de perfil com "Abrir no Instagram".
+Próximo passo:
+- Receber os 4 relatórios; merge na main na ordem D (0010), A (0011), B (0012), C (0013), resolvendo conflitos em contact-panel.tsx, thread.tsx, conversation-list.tsx, capture-event.ts, fake-supabase.ts, process.ts e runtime.ts.
+- tsc + vitest + next build; revisão enxuta dos pontos críticos (takeover no webhook, auto-enroll na captura, moveToStage no runtime).
+- Aplicar 0010 a 0013 no Supabase de produção (Chrome, SQL Editor, conferência por hash), backfill de perfis, build:cloudflare + deploy, QA logado (só a conversa de teste @ion_comunnity).
+Arquivos tocados: package.json, package-lock.json, tasks/ai-handoff.md
+Decisões/contexto: memória do PC em ~1,6 GB livres com 4 processos do Claude Code abertos; builds em background são mortos pelo Claude Code quando a sessão fica ociosa. Preferir build em primeiro plano quando possível.
+Tag: "HANDOFF-falow-20260928-212159-claude"
 
 ---
 
