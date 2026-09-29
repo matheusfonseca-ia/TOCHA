@@ -42,7 +42,8 @@ export default async function ConversasPage({
 
   const filters: InboxFilters = {
     accountId: accounts.some((a) => a.id === searchParams.conta) ? (searchParams.conta as string) : "",
-    unreadOnly: searchParams.filtro === "nao-lidas",
+    status:
+      searchParams.filtro === "nao-lidas" ? "unread" : searchParams.filtro === "concluidas" ? "done" : "open",
     q: (searchParams.q ?? "").slice(0, 60),
     tag: (searchParams.tag ?? "").slice(0, 60),
   };

@@ -4,6 +4,7 @@
  */
 export { captureMessagingEvent } from "./capture/server/capture-event";
 export { observeOutbound, type OutboundContext } from "./capture/server/observe-outbound";
+export { isTakenOver } from "./handoff/server/takeover";
 export { getThread, getUnreadTotal, listConversations } from "./inbox/services/inbox.queries";
 export type {
   MessageDraft,

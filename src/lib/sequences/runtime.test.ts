@@ -86,6 +86,7 @@ import {
   handleSequencePostback,
   handleSequenceReply,
   maybeStartSequence,
+  processDueRuns,
   startSequenceFromRule,
 } from "@/lib/sequences/runtime";
 
@@ -665,5 +666,98 @@ describe("nó Pausar automações", () => {
     );
     expect(conversation?.automation_paused_until).toBeDefined();
     expect(Date.parse(conversation!.automation_paused_until)).toBeGreaterThan(before + 23 * 3600 * 1000);
+  });
+});
+
+describe("processDueRuns: Assumir conversa (D3)", () => {
+  it("conversa assumida: atraso vencido não dispara, o run continua waiting_delay (sem erro)", async () => {
+    const account = makeAccount();
+    const sequence = makeSequence({
+      account_id: account.id,
+      graph: {
+        nodes: [triggerNode({ keyword: "promo" }), node("d", "delay", { amount: 1, unit: "hours" }), messageNode("a", "Depois do atraso")],
+        edges: [edge("trigger", "d"), edge("d", "a")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+    fake.tables.conversations.push(
+      row({
+        account_id: account.id,
+        ig_sender_id: "sender-50",
+        last_inbound_at: new Date().toISOString(),
+        human_takeover_at: new Date().toISOString(),
+      })
+    );
+    const run = row({
+      sequence_id: sequence.id,
+      account_id: account.id,
+      ig_sender_id: "sender-50",
+      status: "waiting_delay",
+      current_node_id: "d",
+      next_run_at: new Date(Date.now() - 1000).toISOString(),
+      steps_executed: 1,
+      last_error: null,
+      entry_rule_id: null,
+      variables: {},
+      started_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    fake.tables.sequence_runs.push(run);
+
+    const processed = await processDueRuns(5);
+
+    expect(processed).toBe(0);
+    expect(sendTextMessageMock).not.toHaveBeenCalled();
+    expect(fake.tables.sequence_runs[0].status).toBe("waiting_delay");
+    expect(fake.tables.sequence_runs[0].last_error).toBeNull();
+    // Sai do topo da fila: a retomada é adiada, não descartada.
+    expect(Date.parse(fake.tables.sequence_runs[0].next_run_at)).toBeGreaterThan(Date.now() + 10 * 60 * 1000);
+  });
+
+  it("run de conversa assumida não trava a fila: o atraso de outro lead roda no tick seguinte", async () => {
+    const account = makeAccount();
+    const sequence = makeSequence({
+      account_id: account.id,
+      graph: {
+        nodes: [triggerNode({ keyword: "promo" }), node("d", "delay", { amount: 1, unit: "hours" }), messageNode("a", "Depois do atraso")],
+        edges: [edge("trigger", "d"), edge("d", "a")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+    const now = Date.now();
+    for (const [sender, takenOver] of [["sender-60", true], ["sender-61", false]] as const) {
+      fake.tables.conversations.push(
+        row({
+          account_id: account.id,
+          ig_sender_id: sender,
+          last_inbound_at: new Date().toISOString(),
+          human_takeover_at: takenOver ? new Date().toISOString() : null,
+        })
+      );
+    }
+    const baseRun = {
+      sequence_id: sequence.id,
+      account_id: account.id,
+      status: "waiting_delay",
+      current_node_id: "d",
+      steps_executed: 1,
+      last_error: null,
+      entry_rule_id: null,
+      variables: {},
+      started_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+    // O da conversa assumida é o mais antigo: com limit 1, é ele que vem primeiro.
+    fake.tables.sequence_runs.push(
+      row({ ...baseRun, ig_sender_id: "sender-60", next_run_at: new Date(now - 60_000).toISOString() }),
+      row({ ...baseRun, ig_sender_id: "sender-61", next_run_at: new Date(now - 1000).toISOString() })
+    );
+
+    expect(await processDueRuns(1)).toBe(0);
+    expect(await processDueRuns(1)).toBe(1);
+    expect(sendTextMessageMock).toHaveBeenCalledWith(expect.any(String), "sender-61", "Depois do atraso");
+    expect(sendTextMessageMock).not.toHaveBeenCalledWith(expect.any(String), "sender-60", expect.anything());
   });
 });

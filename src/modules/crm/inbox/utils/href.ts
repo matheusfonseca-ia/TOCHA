@@ -6,7 +6,8 @@ export const INBOX_PATH = "/crm/conversas";
 export function inboxHref(filters: InboxFilters, conversationId?: string | null): string {
   const params = new URLSearchParams();
   if (filters.accountId) params.set("conta", filters.accountId);
-  if (filters.unreadOnly) params.set("filtro", "nao-lidas");
+  if (filters.status === "unread") params.set("filtro", "nao-lidas");
+  else if (filters.status === "done") params.set("filtro", "concluidas");
   if (filters.q) params.set("q", filters.q);
   if (filters.tag) params.set("tag", filters.tag);
   if (conversationId) params.set("c", conversationId);

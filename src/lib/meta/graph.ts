@@ -91,12 +91,21 @@ export function observeSends<T>(observer: SendObserver, fn: () => Promise<T>): P
   return sendObserver.run(observer, fn);
 }
 
+/** Citar uma mensagem ao responder (Fase 0 do CRM, 28/09/2026): confirmado
+ *  que `reply_to` só funciona no TOPO do corpo, ao lado de `recipient`
+ *  (dentro de `message` a Graph API devolve 400 "Invalid keys"). */
+export interface SendOptions {
+  replyToMid?: string | null;
+}
+
 async function sendMessage(
   igToken: string,
   recipient: Recipient,
-  message: Record<string, unknown>
+  message: Record<string, unknown>,
+  opts?: SendOptions
 ) {
-  const body = { recipient, message };
+  const body: Record<string, unknown> = { recipient, message };
+  if (opts?.replyToMid) body.reply_to = { mid: opts.replyToMid };
   const response = await graphPost("me/messages", igToken, body);
   const observer = sendObserver.getStore();
   if (observer) await observer({ body, response }).catch(() => {});
@@ -158,9 +167,10 @@ function postbackButtonBody(
 export function sendTextMessage(
   igToken: string,
   recipientId: string,
-  text: string
+  text: string,
+  opts?: SendOptions
 ) {
-  return sendMessage(igToken, { id: recipientId }, textBody(text));
+  return sendMessage(igToken, { id: recipientId }, textBody(text), opts);
 }
 
 export function sendImageMessage(
@@ -170,6 +180,57 @@ export function sendImageMessage(
 ) {
   return sendMessage(igToken, { id: recipientId }, {
     attachment: { type: "image", payload: { url: imageUrl } },
+  });
+}
+
+export type AttachmentKind = "image" | "audio" | "video" | "file";
+
+/**
+ * Anexo por URL pública (composer do painel, Fase 3 do CRM): a Meta baixa o
+ * arquivo da URL informada, então precisa ser pública (bucket `crm-uploads`
+ * do Supabase Storage). Tipo "file" cobre PDF e outros documentos.
+ */
+export function sendAttachmentMessage(
+  igToken: string,
+  recipientId: string,
+  kind: AttachmentKind,
+  url: string,
+  opts?: SendOptions
+) {
+  return sendMessage(
+    igToken,
+    { id: recipientId },
+    { attachment: { type: kind, payload: { url } } },
+    opts
+  );
+}
+
+/**
+ * Figurinha de coração ("❤️", like_heart), o mesmo efeito de dar duplo
+ * toque numa mensagem no app do Instagram. Confirmado na Fase 0: chega ao
+ * lead como `attachment: {type: "like_heart"}` e o eco confirma o envio.
+ */
+export function sendLikeHeartSticker(
+  igToken: string,
+  recipientId: string,
+  opts?: SendOptions
+) {
+  return sendMessage(
+    igToken,
+    { id: recipientId },
+    { attachment: { type: "like_heart" } },
+    opts
+  );
+}
+
+/**
+ * Marca as mensagens do lead como vistas (equivalente ao "✓✓" azul). Não é
+ * uma mensagem: não passa por `observeSends`, igual ao indicador de digitando.
+ */
+export function sendMarkSeen(igToken: string, recipientId: string) {
+  return graphPost("me/messages", igToken, {
+    recipient: { id: recipientId },
+    sender_action: "mark_seen",
   });
 }
 

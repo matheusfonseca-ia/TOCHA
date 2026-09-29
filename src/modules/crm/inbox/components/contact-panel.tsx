@@ -10,6 +10,7 @@ import { LeadProfileDialog } from "../../lead-profile/components/lead-profile-di
 import { ContactFieldsEditor } from "../../tags/components/contact-fields-editor";
 import { TagManagerDialog } from "../../tags/components/tag-manager-dialog";
 import { TagPicker } from "../../tags/components/tag-picker";
+import { NotesPanel } from "../../notes/components/notes-panel";
 import type { InboxThread } from "../../shared/types/conversation";
 import { RUN_STATUS_LABEL, leadName } from "../utils/labels";
 import { fullDateTime } from "../utils/time";
@@ -110,6 +111,10 @@ function PanelBody({ thread }: { thread: InboxThread }) {
             ))}
           </ul>
         )}
+      </PanelSection>
+
+      <PanelSection title="Notas">
+        <NotesPanel accountId={c.account_id} igSenderId={c.ig_sender_id} notes={thread.notes} />
       </PanelSection>
 
       <PanelSection title="Tags">

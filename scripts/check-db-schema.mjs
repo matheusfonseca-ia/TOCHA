@@ -18,6 +18,8 @@ const requiredColumns = {
   messages: ["id", "conversation_id", "mid", "source", "reaction_emoji", "original_text"],
   message_signals_pending: ["id", "mid", "payload"],
   contacts: ["id", "account_id", "fields", "tags"],
+  quick_replies: ["id", "account_id", "title", "text"],
+  crm_notes: ["id", "account_id", "ig_sender_id", "text"],
 };
 
 const checks = await Promise.all(
@@ -47,7 +49,7 @@ const failures = checks.filter(Boolean);
 if (failures.length) {
   console.error("[schema] O banco da Vercel não acompanha o código deste commit:");
   for (const failure of failures) console.error(`  ${failure}`);
-  console.error("[schema] Aplique as migrations de supabase/migrations (0002 a 0009) neste projeto antes do deploy.");
+  console.error("[schema] Aplique as migrations de supabase/migrations (0002 a 0011) neste projeto antes do deploy.");
   process.exit(1);
 }
 

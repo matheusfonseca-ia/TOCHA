@@ -38,7 +38,7 @@ import { FlowData } from "@/lib/sequences/flow-data";
 import { fetchAndStoreUsername } from "@/lib/contacts/profile";
 import { pickBranch } from "@/lib/sequences/randomizer";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { observeOutbound } from "@/modules/crm/server";
+import { isTakenOver, observeOutbound } from "@/modules/crm/server";
 import { sleep } from "@/lib/utils";
 import type { IgAccount, InteractionStatus, Rule } from "@/types/database";
 import {
@@ -592,6 +592,9 @@ async function resumeFromHandle(
  * pela rota de cron e, oportunisticamente, ao fim de cada webhook. Faz o
  * próprio log em `interactions`. Retorna quantos runs processou.
  */
+// Conversa assumida: de quanto em quanto tempo o atraso vencido é conferido de novo.
+const TAKEOVER_RECHECK_MS = 15 * 60 * 1000;
+
 export async function processDueRuns(
   limit = 5,
   deadline = invocationDeadline()
@@ -622,6 +625,21 @@ export async function processDueRuns(
     // (o run é apagado em cascata com ela) e ativa.
     const sequence = row.sequences;
     if (!sequence || !sequence.is_active) continue;
+
+    // Conversa assumida por um atendente (D3): o atraso agendado não
+    // dispara enquanto isso. O run não é reivindicado nem marcado como erro:
+    // continua `waiting_delay`, com a retomada adiada para sair do topo da
+    // fila (senão ocuparia o `limit` a cada tick e nenhum outro atraso
+    // rodaria, o mesmo problema das sequências pausadas acima). Depois de
+    // "Devolver ao bot", retoma em até TAKEOVER_RECHECK_MS.
+    if (await isTakenOver(admin, row.account_id, row.ig_sender_id)) {
+      await admin
+        .from("sequence_runs")
+        .update({ next_run_at: new Date(Date.now() + TAKEOVER_RECHECK_MS).toISOString() })
+        .eq("id", row.id)
+        .eq("status", "waiting_delay");
+      continue;
+    }
 
     const claimed = await claimRun(admin, row.id, "waiting_delay");
     if (!claimed) continue;

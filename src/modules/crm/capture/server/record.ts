@@ -111,6 +111,12 @@ export async function recordIncoming(
     throw new Error(`mensagem não gravada: ${error.message}`);
   }
   if (draft.mid) await applyPendingSignals(admin, accountId, draft.mid);
+
+  // Mensagem nova do lead reabre a conversa (item 10, Fase 7): quem estava
+  // "Concluída" volta para a lista de abertas sozinho.
+  if (draft.direction === "inbound") {
+    await admin.from("conversations").update({ status: "open" }).eq("id", conversationId);
+  }
 }
 
 /**

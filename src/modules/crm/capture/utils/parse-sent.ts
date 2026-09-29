@@ -74,6 +74,11 @@ export function parseSentMessage(
 
   if (attachment) {
     const type = attachment.type ?? "file";
+    // Figurinha de coração: sem URL, o balão mostra o emoji direto (igual à
+    // recebida do lead).
+    if (type === "like_heart") {
+      return { ...base, kind: "sticker", text: null, attachments: null, meta: null };
+    }
     return {
       ...base,
       kind: type === "image" || type === "video" || type === "audio" ? type : "file",
