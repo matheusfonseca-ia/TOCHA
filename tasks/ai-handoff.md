@@ -1,9 +1,28 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260929-133645-claude"
-Status: em andamento
-Resumo: CRM completo (Fases 0 a 9) em produção com os 15 achados da revisão corrigidos (Worker 3e7de824). Nesta mesma branch, a rodada 1 das ideias novas do Falow (campo de texto inteligente, pastas, deeplink automático) foi mesclada por cima: migrations renumeradas de 0009/0010 para 0014/0015 pra não colidir com as do CRM (0009 a 0013), conflitos de merge resolvidos em layout.tsx e sequencias/nova/page.tsx (mantendo os dois lados). Nota herdada do handoff do CRM: "Vercel NÃO é do usuário: ignorar" — checar com o usuário antes de assumir que o projeto tocha-six.vercel.app é dele. Falta: usuário testar os dois conjuntos de features no navegador e aplicar as migrations pendentes (0007, 0008, 0014, 0015).
+Última tag: "HANDOFF-falow-20260930-120025-claude"
+Status: concluído
+Resumo: CRM + rodada 1 do TOCHA (campo de texto inteligente, pastas, deeplink/QR) juntos em produção (Worker 8c75ab94, falow.methodgrowthhub.com.br). Migrations 0014 e 0015 aplicadas no Supabase de produção (0007 e 0008 já estavam). Falta só: OPENROUTER_API_KEY como secret do Worker se o usuário quiser o botão de IA (sem ela o botão não aparece, o resto funciona); o usuário testar pastas/mensagens padrão/QR no navegador; push para o tocha.
+
+---
+
+## [HANDOFF · falow · 2026-09-30T12:00:25-03:00 · claude]
+Status: concluído
+Objetivo: trazer para o Falow as atualizações novas do TOCHA (ede4f45) e configurar o Supabase.
+Feito:
+- `git fetch tocha` + merge fast-forward: tocha/main (rodada 1 de ideias novas + spec/plano do MCP) estava só à frente do main local, sem conflito.
+- `npm install` (dep nova `qrcode`), `tsc --noEmit` limpo, `npm test` 572/572.
+- Migrations 0014 (message_presets) e 0015 (folders + folder_id em rules/sequences) aplicadas no SQL Editor do Supabase de produção (ntzwudcauohpilbdwiyx), conferido por hash. Verificação por SQL: tabelas, colunas folder_id, 2 policies RLS; 0007 e 0008 já estavam aplicadas (o handoff antigo as dava como pendentes).
+- Build em 2 etapas + `wrangler deploy` (Worker 8c75ab94). /rules em produção mostra a barra de pastas sem erro.
+Próximo passo:
+- Opcional: `wrangler secret put OPENROUTER_API_KEY` (e OPENROUTER_MODEL) para ligar o botão de IA nos campos.
+- Usuário testar pastas, mensagens padrão e gatilho de link com QR.
+- Push: `! git -C "D:\Projetos-vibeocding\eualow-instalacaonamaquina" push tocha main:main`.
+- MCP do Falow: só existe spec e plano em docs/superpowers, sem código.
+Arquivos tocados: tasks/ai-handoff.md (o resto veio do merge do TOCHA).
+Decisões/contexto: nenhuma migration nova. A aba do SQL Editor ficou com "Unsaved edits" (não fechar pelo MCP).
+Tag: "HANDOFF-falow-20260930-120025-claude"
 
 ---
 
