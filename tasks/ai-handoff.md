@@ -1,9 +1,26 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260930-120025-claude"
+Última tag: "HANDOFF-falow-20260930-122649-claude"
 Status: concluído
-Resumo: CRM + rodada 1 do TOCHA (campo de texto inteligente, pastas, deeplink/QR) juntos em produção (Worker 8c75ab94, falow.methodgrowthhub.com.br). Migrations 0014 e 0015 aplicadas no Supabase de produção (0007 e 0008 já estavam). Falta só: OPENROUTER_API_KEY como secret do Worker se o usuário quiser o botão de IA (sem ela o botão não aparece, o resto funciona); o usuário testar pastas/mensagens padrão/QR no navegador; push para o tocha.
+Resumo: chave da IA (OpenRouter) agora é POR USUÁRIO, cadastrada na tela Contas (módulo src/modules/ai-settings), criptografada em user_ai_settings (migration 0016 aplicada). OPENROUTER_API_KEY do ambiente virou só o padrão da instalação. Em produção (Worker 60d4c16d). Falta: usuário cadastrar a própria chave em Contas e testar o botão de IA; push para o tocha.
+
+---
+
+## [HANDOFF · falow · 2026-09-30T12:26:49-03:00 · claude]
+Status: concluído
+Objetivo: cada usuário do painel cadastra a própria chave da OpenRouter dentro do sistema.
+Feito:
+- Módulo `src/modules/ai-settings/` (modular-arch): `server.ts` (lê e decifra, `getEffectiveAiConfig` = chave do usuário, senão a da instalação, senão nulo; sem sessão devolve nulo pra ninguém gastar a chave da instalação), `actions.ts` (`saveAiSettings` valida a chave na OpenRouter via /auth/key antes de guardar, `removeAiSettings`), `components/ai-settings-card.tsx` na tela Contas, utils e services com testes (587 testes ao todo).
+- Migration 0016 `user_ai_settings` (user_id PK, api_key_enc AES-256-GCM com TOKEN_ENCRYPTION_KEY, model, RLS por user_id). Aplicada no Supabase de produção.
+- O navegador nunca recebe a chave de volta: só `••••` + 4 últimos caracteres.
+- `rules/ai-actions.ts` passou a usar `getEffectiveAiConfig`; `DEFAULT_MODEL` exportado do provider; README e .env.example ajustados.
+Próximo passo:
+- Usuário colar a chave em Contas > "IA nos campos de texto" e testar o botão nos campos.
+- Push: `! git -C "D:\Projetos-vibeocding\eualow-instalacaonamaquina" push tocha main:main`.
+Arquivos tocados: supabase/migrations/0016_user_ai_settings.sql, src/modules/ai-settings/*, src/app/(dashboard)/accounts/page.tsx, src/app/(dashboard)/rules/ai-actions.ts, src/lib/ai/provider.ts, README.md, .env.example.
+Decisões/contexto: se TOKEN_ENCRYPTION_KEY for trocada, a chave guardada não abre e conta como ausente (usuário recadastra). A migration foi rodada por setValue no editor (versão sem os comentários do arquivo, mesmo SQL) porque o clipboard não funciona com a aba em segundo plano.
+Tag: "HANDOFF-falow-20260930-122649-claude"
 
 ---
 

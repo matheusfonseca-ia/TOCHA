@@ -13,6 +13,8 @@ import {
 } from "@/components/ui/card";
 import { withSyncedProfiles } from "@/lib/meta/account-profile";
 import { createClient } from "@/lib/supabase/server";
+import { AiSettingsCard } from "@/modules/ai-settings";
+import { getAiSettingsStatus } from "@/modules/ai-settings/server";
 import type { IgAccount } from "@/types/database";
 
 const ERROR_MESSAGES: Record<string, string> = {
@@ -50,6 +52,8 @@ export default async function AccountsPage({
   const accounts = stored.map(
     ({ access_token_enc: _token, ...account }) => synced.get(account.id) ?? account
   );
+
+  const aiStatus = await getAiSettingsStatus();
 
   const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/meta`;
 
@@ -106,6 +110,8 @@ export default async function AccountsPage({
           ))}
         </div>
       )}
+
+      <AiSettingsCard status={aiStatus} />
 
       <Card className="mt-8 animate-fade-up">
         <CardHeader>

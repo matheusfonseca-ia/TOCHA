@@ -2,19 +2,21 @@
 
 import type { AiFieldKind } from "@/lib/ai/fields";
 import type { FieldPromptContext } from "@/lib/ai/prompt";
-import { aiConfigFromEnv, generateFieldSuggestions } from "@/lib/ai/provider";
+import { generateFieldSuggestions } from "@/lib/ai/provider";
+import { getEffectiveAiConfig } from "@/modules/ai-settings/server";
 
 /**
  * Botão ✨ dos campos de texto. A chave da IA nunca sai do servidor: o
  * cliente manda só o campo, a instrução e o contexto, e recebe as sugestões
  * prontas.
  *
- * Sem `OPENROUTER_API_KEY` configurada, `isAiEnabled` devolve false e a UI
- * nem mostra o botão.
+ * A chave é a do usuário logado (tela Contas), com `OPENROUTER_API_KEY` da
+ * instalação como padrão. Sem nenhuma das duas, `isAiEnabled` devolve false e
+ * a UI nem mostra o botão.
  */
 
 export async function isAiEnabled(): Promise<boolean> {
-  return aiConfigFromEnv() !== null;
+  return (await getEffectiveAiConfig()) !== null;
 }
 
 export type GenerateResult = { suggestions: string[] } | { error: string };
@@ -25,11 +27,11 @@ export async function generateForField(input: {
   instruction?: string | null;
   context?: FieldPromptContext;
 }): Promise<GenerateResult> {
-  const config = aiConfigFromEnv();
+  const config = await getEffectiveAiConfig();
   if (!config) {
     return {
       error:
-        "IA não configurada nesta instalação. Preencha OPENROUTER_API_KEY no .env.local.",
+        "IA sem chave. Cadastre a sua chave da OpenRouter na tela Contas.",
     };
   }
 

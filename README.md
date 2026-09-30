@@ -9,7 +9,8 @@ E quando uma resposta só não basta, as **Sequências** entram em cena: um canv
 Cada instalação é **sua**: seu banco (Supabase, grátis), seu app Meta, sua hospedagem. Nenhum dado de quem fala com você passa por servidores de terceiros — e, por usar o **Login do Instagram** no seu próprio app Meta, funciona com a sua conta **sem App Review** e sem precisar de Página do Facebook.
 
 > A única exceção é opcional e fica desligada por padrão: se você preencher
-> `OPENROUTER_API_KEY`, os campos de texto do painel ganham um botão de escrever
+> `OPENROUTER_API_KEY` (ou se cada usuário cadastrar a própria chave na tela
+> Contas), os campos de texto do painel ganham um botão de escrever
 > com IA, e o que **você** digita nesse botão vai para o provedor escolhido.
 > Nenhuma mensagem de seguidor é enviada para a IA. Sem a chave, o botão nem
 > aparece.
@@ -75,7 +76,7 @@ e use a URL gerada em `NEXT_PUBLIC_APP_URL`, no OAuth Redirect URI e no webhook 
 | `TOKEN_ENCRYPTION_KEY` | Criptografa tokens no banco | `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `CRON_SECRET` | Senha do tick das Sequências (você inventa) | Veja "Sequências" abaixo |
 | `NEXT_PUBLIC_CONTACT_EMAIL` | E-mail de contato das páginas públicas (opcional) | Veja "Páginas públicas" abaixo |
-| `OPENROUTER_API_KEY` | Liga o botão de escrever com IA nos campos (opcional) ⚠️ segredo | [openrouter.ai/keys](https://openrouter.ai/keys) |
+| `OPENROUTER_API_KEY` | Chave padrão do botão de IA (opcional; cada usuário pode cadastrar a sua em Contas) ⚠️ segredo | [openrouter.ai/keys](https://openrouter.ai/keys) |
 | `OPENROUTER_MODEL` | Modelo usado por esse botão (opcional) | Padrão: `anthropic/claude-sonnet-4.5` |
 
 ## Páginas públicas

@@ -11,7 +11,7 @@ import { buildFieldPrompt, type FieldPromptContext } from "@/lib/ai/prompt";
  */
 
 const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
-const DEFAULT_MODEL = "anthropic/claude-sonnet-4.5";
+export const DEFAULT_MODEL = "anthropic/claude-sonnet-4.5";
 
 export interface AiConfig {
   apiKey: string;
@@ -77,7 +77,7 @@ export async function generateFieldSuggestions(
       error:
         res.status === 429
           ? "A IA está ocupada agora. Tenta de novo em alguns segundos."
-          : `A IA respondeu ${res.status}. Confere a chave em OPENROUTER_API_KEY.`,
+          : `A IA respondeu ${res.status}. Confere sua chave da OpenRouter na tela Contas.`,
     };
   }
 
