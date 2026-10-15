@@ -8,6 +8,10 @@ import { isAccessStatus, type QueryClient } from "@/lib/billing/access";
  *
  * A Stripe não garante ordem de entrega: evento de assinatura de cliente
  * ainda desconhecido devolve "retry" (a rota responde 500 e a Stripe reenvia).
+ *
+ * O payload do evento é congelado quando ele nasce e a reentrega reaproveita o
+ * mesmo corpo. Por isso `created`/`updated` não gravam o status do payload:
+ * perguntam o estado atual à Stripe, como o checkout já faz.
  */
 
 export const PURGE_AFTER_DAYS = 30;
@@ -38,6 +42,32 @@ export function periodEndOf(sub: Stripe.Subscription): string | null {
     (sub as unknown as { items?: { data?: { current_period_end?: number }[] } }).items?.data?.[0]
       ?.current_period_end ?? (sub as unknown as { current_period_end?: number }).current_period_end;
   return typeof raw === "number" ? new Date(raw * 1000).toISOString() : null;
+}
+
+/**
+ * Campos de exclusão (`canceled_at`/`purge_after`) que um status manda gravar.
+ * Regra única: o checkout e os eventos de assinatura usam esta mesma função.
+ * - com acesso: zera a exclusão;
+ * - canceled: agenda a exclusão em PURGE_AFTER_DAYS. Se a linha já estava
+ *   cancelada com `purge_after` (reentrega), os dois valores ficam como estão,
+ *   para a reentrega não empurrar o prazo;
+ * - qualquer outro (incomplete, incomplete_expired, unpaid, paused): não toca.
+ *   Só `canceled` agenda exclusão, e uma exclusão já agendada continua valendo.
+ * Devolve só as chaves a gravar: chave ausente deixa a coluna como está, tanto
+ * no update quanto no upsert.
+ */
+function lifecyclePatch(
+  status: string,
+  previous: { status?: string | null; purge_after?: string | null } | null,
+  now: Date
+): { canceled_at?: string | null; purge_after?: string | null } {
+  if (isAccessStatus(status)) return { canceled_at: null, purge_after: null };
+  if (status !== "canceled") return {};
+  if (previous?.status === "canceled" && previous.purge_after) return {};
+  return {
+    canceled_at: now.toISOString(),
+    purge_after: new Date(now.getTime() + PURGE_AFTER_DAYS * DAY_MS).toISOString(),
+  };
 }
 
 export async function handleStripeEvent(
@@ -73,11 +103,16 @@ async function handleCheckout(
   }
 
   // Reativação: o cliente da Stripe já tem linha. Compra nova: pelo e-mail.
-  const { data: byCustomer } = await deps.admin
+  const { data: byCustomer, error: byCustomerError } = await deps.admin
     .from("subscriptions")
     .select("user_id")
     .eq("stripe_customer_id", customerId)
     .maybeSingle();
+  // Falha de leitura não pode virar "cliente novo": cairia no caminho do e-mail
+  // e poderia convidar um usuário duplicado.
+  if (byCustomerError) {
+    return { status: "retry", reason: `consulta por cliente falhou: ${byCustomerError.message}` };
+  }
   let userId = (byCustomer as { user_id?: string } | null)?.user_id ?? null;
 
   if (!userId) {
@@ -86,16 +121,33 @@ async function handleCheckout(
     userId = (await deps.findUserIdByEmail(email)) ?? (await deps.inviteUser(email));
   }
 
-  const { data: previous } = await deps.admin
+  const { data: previous, error: previousError } = await deps.admin
     .from("subscriptions")
-    .select("stripe_subscription_id, status")
+    .select("stripe_customer_id, stripe_subscription_id, status, purge_after")
     .eq("user_id", userId)
     .maybeSingle();
-  const prev = previous as { stripe_subscription_id?: string | null; status?: string } | null;
-  if (prev?.stripe_subscription_id && prev.stripe_subscription_id !== subscriptionId && isAccessStatus(prev.status)) {
+  if (previousError) {
+    return { status: "retry", reason: `consulta do usuário falhou: ${previousError.message}` };
+  }
+  const prev = previous as {
+    stripe_customer_id?: string | null;
+    stripe_subscription_id?: string | null;
+    status?: string | null;
+    purge_after?: string | null;
+  } | null;
+
+  // O e-mail do checkout não é verificado. Quem já tem uma assinatura com
+  // acesso não troca de assinatura por outra compra: nem a compra em dobro do
+  // próprio cliente, nem a de um terceiro que sabe o e-mail dele (religar a
+  // linha deixaria a assinatura paga órfã e a conta cancelada quando o
+  // terceiro parasse de pagar). A linha fica como está; a duplicada vai para o
+  // log, para ser cancelada/reembolsada na mão. A mesma assinatura de novo
+  // (reentrega do checkout) segue para o upsert, que é idempotente.
+  if (prev && isAccessStatus(prev.status) && prev.stripe_subscription_id !== subscriptionId) {
     console.error(
-      `[stripe] usuário ${userId} comprou de novo com assinatura ativa: ${prev.stripe_subscription_id} substituída por ${subscriptionId}. Cancelar/reembolsar a antiga na Stripe.`
+      `[stripe] compra repetida ignorada: o usuário ${userId} já tem a assinatura ${prev.stripe_subscription_id} (cliente ${prev.stripe_customer_id}) com acesso e o checkout trouxe a assinatura ${subscriptionId} (cliente ${customerId}). A linha não foi alterada: cancelar/reembolsar ${subscriptionId} na Stripe.`
     );
+    return { status: "processed" };
   }
 
   const sub = await deps.retrieveSubscription(subscriptionId);
@@ -107,9 +159,8 @@ async function handleCheckout(
       stripe_subscription_id: sub.id,
       status: sub.status,
       current_period_end: periodEndOf(sub),
-      canceled_at: null,
-      purge_after: null,
       updated_at: now.toISOString(),
+      ...lifecyclePatch(sub.status, prev, now),
     },
     { onConflict: "user_id" }
   );
@@ -123,30 +174,42 @@ async function handleSubscription(
   deps: StripeEventDeps
 ): Promise<StripeEventResult> {
   const customerId = idOf(sub.customer as Ref);
-  const { data } = await deps.admin
+  const { data, error: lookupError } = await deps.admin
     .from("subscriptions")
-    .select("user_id, stripe_subscription_id")
+    .select("user_id, stripe_subscription_id, status, purge_after")
     .eq("stripe_customer_id", customerId)
     .maybeSingle();
-  const row = data as { user_id: string; stripe_subscription_id: string | null } | null;
+  if (lookupError) {
+    return { status: "retry", reason: `consulta da assinatura falhou: ${lookupError.message}` };
+  }
+  const row = data as {
+    user_id: string;
+    stripe_subscription_id: string | null;
+    status: string | null;
+    purge_after: string | null;
+  } | null;
   if (!row) return { status: "retry", reason: "cliente ainda desconhecido" };
   if (row.stripe_subscription_id && row.stripe_subscription_id !== sub.id) return { status: "ignored" };
+  // Cancelada é final para um id de assinatura (reativar sempre traz um id novo
+  // pelo checkout). Só o próprio `deleted`, reentregue, volta a mexer na linha;
+  // um updated/created atrasado não pode reabrir o acesso nem sumir com o purge.
+  if (!deleted && row.status === "canceled" && row.stripe_subscription_id === sub.id) {
+    return { status: "ignored" };
+  }
 
   const now = (deps.now ?? (() => new Date()))();
-  const status = deleted ? "canceled" : sub.status;
-  const patch: Record<string, unknown> = {
+  // O payload de created/updated é o retrato de quando o evento nasceu e pode
+  // chegar velho: a verdade é o estado atual na Stripe. O payload do deleted já
+  // é final, então não precisa de consulta.
+  const current = deleted ? sub : await deps.retrieveSubscription(sub.id);
+  const status = deleted ? "canceled" : current.status;
+  const patch = {
     stripe_subscription_id: sub.id,
     status,
-    current_period_end: periodEndOf(sub),
+    current_period_end: periodEndOf(current),
     updated_at: now.toISOString(),
+    ...lifecyclePatch(status, row, now),
   };
-  if (status === "canceled") {
-    patch.canceled_at = now.toISOString();
-    patch.purge_after = new Date(now.getTime() + PURGE_AFTER_DAYS * DAY_MS).toISOString();
-  } else if (isAccessStatus(status)) {
-    patch.canceled_at = null;
-    patch.purge_after = null;
-  }
 
   const { error } = await deps.admin.from("subscriptions").update(patch).eq("user_id", row.user_id);
   if (error) return { status: "retry", reason: `update falhou: ${error.message}` };

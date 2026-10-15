@@ -1,18 +1,27 @@
 import type Stripe from "stripe";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from "vitest";
 
-import { createFakeAdmin, type FakeSupabase } from "@/lib/sequences/__tests__/fake-supabase";
+import type { QueryClient } from "@/lib/billing/access";
+import { createFakeAdmin, type FakeSupabase, type TableName } from "@/lib/sequences/__tests__/fake-supabase";
 import { handleStripeEvent, type StripeEventDeps } from "@/lib/billing/stripe-events";
 
 const NOW = new Date("2026-10-15T12:00:00Z");
+const DAY_MS = 86_400_000;
+const PURGE_AT = new Date(NOW.getTime() + 30 * DAY_MS).toISOString();
 const PERIOD_END = 1_800_000_000; // segundos
+const PERIOD_END_ISO = new Date(PERIOD_END * 1000).toISOString();
 
-function sub(id: string, status: Stripe.Subscription.Status, customer = "cus_1"): Stripe.Subscription {
+function sub(
+  id: string,
+  status: Stripe.Subscription.Status,
+  customer = "cus_1",
+  periodEnd = PERIOD_END
+): Stripe.Subscription {
   return {
     id,
     status,
     customer,
-    items: { data: [{ current_period_end: PERIOD_END }] },
+    items: { data: [{ current_period_end: periodEnd }] },
   } as unknown as Stripe.Subscription;
 }
 
@@ -30,12 +39,37 @@ function checkout(overrides: Record<string, unknown> = {}) {
   });
 }
 
+/**
+ * Admin que falha só nas leituras de `subscriptions` filtradas por `column`
+ * (o `maybeSingle` devolve erro); todo o resto vai para o fake de verdade.
+ */
+function failingRead(db: FakeSupabase, column: string): QueryClient {
+  return {
+    from: (table: TableName) => {
+      const builder = db.from(table);
+      if (table !== "subscriptions") return builder;
+      let filtered = false;
+      const eq = builder.eq.bind(builder);
+      builder.eq = (col, value) => {
+        if (col === column) filtered = true;
+        return eq(col, value);
+      };
+      const maybeSingle = builder.maybeSingle.bind(builder);
+      builder.maybeSingle = (async () =>
+        filtered ? { data: null, error: { message: "boom" } } : maybeSingle()) as typeof builder.maybeSingle;
+      return builder;
+    },
+  };
+}
+
 describe("handleStripeEvent", () => {
   let db: FakeSupabase;
   let deps: StripeEventDeps;
   let subs: Record<string, Stripe.Subscription>;
+  let errorSpy: MockInstance<typeof console.error>;
 
   beforeEach(() => {
+    errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     db = createFakeAdmin();
     subs = { sub_1: sub("sub_1", "active") };
     deps = {
@@ -45,6 +79,10 @@ describe("handleStripeEvent", () => {
       inviteUser: vi.fn(async () => "novo-user"),
       now: () => NOW,
     };
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
   });
 
   it("checkout de e-mail novo convida e grava a assinatura", async () => {
@@ -93,8 +131,7 @@ describe("handleStripeEvent", () => {
     });
   });
 
-  it("compra repetida de quem já tem assinatura ativa: fica a nova e avisa no log", async () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("compra repetida de quem já tem assinatura ativa: a linha fica intacta e avisa no log", async () => {
     db.tables.subscriptions.push({
       user_id: "cliente-1",
       stripe_customer_id: "cus_velho",
@@ -103,10 +140,181 @@ describe("handleStripeEvent", () => {
     });
     deps.findUserIdByEmail = vi.fn(async () => "cliente-1");
     subs.sub_nova = sub("sub_nova", "active", "cus_novo");
-    await handleStripeEvent(checkout({ customer: "cus_novo", subscription: "sub_nova" }), deps);
-    expect(db.tables.subscriptions[0]).toMatchObject({ stripe_subscription_id: "sub_nova", stripe_customer_id: "cus_novo" });
-    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("sub_velha"));
-    errorSpy.mockRestore();
+
+    const result = await handleStripeEvent(checkout({ customer: "cus_novo", subscription: "sub_nova" }), deps);
+
+    expect(result).toEqual({ status: "processed" });
+    expect(db.tables.subscriptions).toEqual([
+      {
+        user_id: "cliente-1",
+        stripe_customer_id: "cus_velho",
+        stripe_subscription_id: "sub_velha",
+        status: "active",
+      },
+    ]);
+    expect(deps.retrieveSubscription).not.toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    const message = String(errorSpy.mock.calls[0][0]);
+    expect(message).toContain("sub_velha");
+    expect(message).toContain("sub_nova");
+    expect(message).toContain("cus_velho");
+    expect(message).toContain("cus_novo");
+  });
+
+  it.each(["trialing", "past_due"] as const)(
+    "compra repetida com a linha em %s também não toca na linha",
+    async (status) => {
+      db.tables.subscriptions.push({
+        user_id: "cliente-1",
+        stripe_customer_id: "cus_velho",
+        stripe_subscription_id: "sub_velha",
+        status,
+      });
+      deps.findUserIdByEmail = vi.fn(async () => "cliente-1");
+      subs.sub_nova = sub("sub_nova", "active", "cus_novo");
+
+      const result = await handleStripeEvent(checkout({ customer: "cus_novo", subscription: "sub_nova" }), deps);
+
+      expect(result).toEqual({ status: "processed" });
+      expect(db.tables.subscriptions).toHaveLength(1);
+      expect(db.tables.subscriptions[0]).toMatchObject({
+        stripe_customer_id: "cus_velho",
+        stripe_subscription_id: "sub_velha",
+        status,
+      });
+      expect(errorSpy).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it.each(["canceled", "unpaid"] as const)(
+    "quem está sem acesso (%s) volta pela landing com cliente Stripe novo e religa a mesma conta",
+    async (status) => {
+      db.tables.subscriptions.push({
+        user_id: "cliente-1",
+        stripe_customer_id: "cus_velho",
+        stripe_subscription_id: "sub_velha",
+        status,
+        canceled_at: "2026-10-01T00:00:00Z",
+        purge_after: "2026-10-31T00:00:00Z",
+      });
+      deps.findUserIdByEmail = vi.fn(async () => "cliente-1");
+      subs.sub_nova = sub("sub_nova", "active", "cus_novo");
+
+      const result = await handleStripeEvent(checkout({ customer: "cus_novo", subscription: "sub_nova" }), deps);
+
+      expect(result).toEqual({ status: "processed" });
+      expect(errorSpy).not.toHaveBeenCalled();
+      expect(db.tables.subscriptions).toHaveLength(1);
+      expect(db.tables.subscriptions[0]).toMatchObject({
+        user_id: "cliente-1",
+        stripe_customer_id: "cus_novo",
+        stripe_subscription_id: "sub_nova",
+        status: "active",
+        canceled_at: null,
+        purge_after: null,
+      });
+    }
+  );
+
+  it("reentrega do mesmo checkout é idempotente: atualiza a linha e não acusa compra repetida", async () => {
+    db.tables.subscriptions.push({
+      user_id: "cliente-1",
+      stripe_customer_id: "cus_1",
+      stripe_subscription_id: "sub_1",
+      status: "trialing",
+      current_period_end: "2026-11-01T00:00:00.000Z",
+    });
+
+    const result = await handleStripeEvent(checkout(), deps);
+
+    expect(result).toEqual({ status: "processed" });
+    expect(errorSpy).not.toHaveBeenCalled();
+    expect(db.tables.subscriptions).toHaveLength(1);
+    expect(db.tables.subscriptions[0]).toMatchObject({
+      user_id: "cliente-1",
+      stripe_customer_id: "cus_1",
+      stripe_subscription_id: "sub_1",
+      status: "active",
+      current_period_end: PERIOD_END_ISO,
+      canceled_at: null,
+      purge_after: null,
+      updated_at: NOW.toISOString(),
+    });
+  });
+
+  it("checkout de e-mail novo entregue duas vezes convida uma vez só e deixa uma linha", async () => {
+    await handleStripeEvent(checkout(), deps);
+    const result = await handleStripeEvent(checkout(), deps);
+
+    expect(result).toEqual({ status: "processed" });
+    expect(deps.inviteUser).toHaveBeenCalledTimes(1);
+    expect(db.tables.subscriptions).toHaveLength(1);
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it("reativação com pagamento assíncrono (incomplete) mantém a exclusão já agendada", async () => {
+    db.tables.subscriptions.push({
+      user_id: "cliente-1",
+      stripe_customer_id: "cus_1",
+      stripe_subscription_id: "sub_velha",
+      status: "canceled",
+      canceled_at: "2026-10-01T00:00:00Z",
+      purge_after: "2026-10-31T00:00:00Z",
+    });
+    subs.sub_2 = sub("sub_2", "incomplete");
+
+    const result = await handleStripeEvent(checkout({ subscription: "sub_2" }), deps);
+
+    expect(result).toEqual({ status: "processed" });
+    expect(db.tables.subscriptions).toHaveLength(1);
+    expect(db.tables.subscriptions[0]).toMatchObject({
+      user_id: "cliente-1",
+      stripe_subscription_id: "sub_2",
+      status: "incomplete",
+      canceled_at: "2026-10-01T00:00:00Z",
+      purge_after: "2026-10-31T00:00:00Z",
+    });
+  });
+
+  it("checkout de assinatura já cancelada na Stripe agenda a exclusão, e a reentrega não empurra o prazo", async () => {
+    subs.sub_1 = sub("sub_1", "canceled");
+
+    await handleStripeEvent(checkout(), deps);
+    expect(db.tables.subscriptions[0]).toMatchObject({
+      status: "canceled",
+      canceled_at: NOW.toISOString(),
+      purge_after: PURGE_AT,
+    });
+
+    deps.now = () => new Date(NOW.getTime() + 3 * DAY_MS);
+    await handleStripeEvent(checkout(), deps);
+    expect(db.tables.subscriptions).toHaveLength(1);
+    expect(db.tables.subscriptions[0]).toMatchObject({
+      status: "canceled",
+      canceled_at: NOW.toISOString(),
+      purge_after: PURGE_AT,
+    });
+  });
+
+  it("erro ao ler a linha do usuário pede reenvio e não grava nada", async () => {
+    deps.admin = failingRead(db, "user_id");
+
+    const result = await handleStripeEvent(checkout(), deps);
+
+    expect(result).toMatchObject({ status: "retry", reason: expect.stringContaining("boom") });
+    expect(db.tables.subscriptions).toHaveLength(0);
+    expect(deps.retrieveSubscription).not.toHaveBeenCalled();
+  });
+
+  it("erro ao procurar o cliente da Stripe pede reenvio sem cair no caminho do e-mail", async () => {
+    deps.admin = failingRead(db, "stripe_customer_id");
+
+    const result = await handleStripeEvent(checkout(), deps);
+
+    expect(result).toMatchObject({ status: "retry", reason: expect.stringContaining("boom") });
+    expect(deps.findUserIdByEmail).not.toHaveBeenCalled();
+    expect(deps.inviteUser).not.toHaveBeenCalled();
+    expect(db.tables.subscriptions).toHaveLength(0);
   });
 
   it("checkout sem e-mail pede reenvio", async () => {
@@ -123,10 +331,108 @@ describe("handleStripeEvent", () => {
     expect(result.status).toBe("retry");
   });
 
-  it("updated muda status e período", async () => {
+  it("created é tratado como updated: cliente desconhecido pede reenvio, conhecido usa o status do retrieve", async () => {
+    const created = evt("customer.subscription.created", sub("sub_1", "incomplete"));
+
+    expect((await handleStripeEvent(created, deps)).status).toBe("retry");
+    expect(deps.retrieveSubscription).not.toHaveBeenCalled();
+
+    db.tables.subscriptions.push({ user_id: "c1", stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1", status: "incomplete" });
+    const result = await handleStripeEvent(created, deps);
+
+    expect(result).toEqual({ status: "processed" });
+    expect(deps.retrieveSubscription).toHaveBeenCalledWith("sub_1");
+    // O snapshot do evento dizia incomplete; a Stripe (subs.sub_1) diz active.
+    expect(db.tables.subscriptions[0].status).toBe("active");
+  });
+
+  it("updated muda status e período usando o estado atual da Stripe, não o snapshot do evento", async () => {
     db.tables.subscriptions.push({ user_id: "c1", stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1", status: "active" });
+    subs.sub_1 = sub("sub_1", "past_due");
+    // O evento carrega um snapshot velho: outro status e outro período.
+    const stale = sub("sub_1", "active", "cus_1", PERIOD_END - 1000);
+
+    await handleStripeEvent(evt("customer.subscription.updated", stale), deps);
+
+    expect(deps.retrieveSubscription).toHaveBeenCalledWith("sub_1");
+    expect(db.tables.subscriptions[0]).toMatchObject({
+      status: "past_due",
+      current_period_end: PERIOD_END_ISO,
+      canceled_at: null,
+      purge_after: null,
+    });
+  });
+
+  it("created(incomplete) reentregue depois do checkout não rebaixa quem já pagou", async () => {
+    // Ordem real: o checkout grava active (retrieve fresco) e depois a Stripe
+    // reentrega o created congelado em incomplete.
+    await handleStripeEvent(checkout(), deps);
+    expect(db.tables.subscriptions[0].status).toBe("active");
+
+    const result = await handleStripeEvent(evt("customer.subscription.created", sub("sub_1", "incomplete")), deps);
+
+    expect(result).toEqual({ status: "processed" });
+    expect(db.tables.subscriptions).toHaveLength(1);
+    expect(db.tables.subscriptions[0]).toMatchObject({ status: "active", canceled_at: null, purge_after: null });
+  });
+
+  it("updated de assinatura já cancelada na Stripe agenda a exclusão, e o deleted que chega depois não muda o prazo", async () => {
+    db.tables.subscriptions.push({ user_id: "c1", stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1", status: "active" });
+    subs.sub_1 = sub("sub_1", "canceled");
+
+    await handleStripeEvent(evt("customer.subscription.updated", sub("sub_1", "active")), deps);
+    expect(db.tables.subscriptions[0]).toMatchObject({
+      status: "canceled",
+      canceled_at: NOW.toISOString(),
+      purge_after: PURGE_AT,
+    });
+
+    deps.now = () => new Date(NOW.getTime() + DAY_MS);
+    await handleStripeEvent(evt("customer.subscription.deleted", sub("sub_1", "canceled")), deps);
+    expect(db.tables.subscriptions[0]).toMatchObject({
+      status: "canceled",
+      canceled_at: NOW.toISOString(),
+      purge_after: PURGE_AT,
+    });
+  });
+
+  it.each(["incomplete_expired", "unpaid", "paused"] as const)(
+    "updated para %s não mexe em canceled_at nem purge_after",
+    async (status) => {
+      db.tables.subscriptions.push({
+        user_id: "c1",
+        stripe_customer_id: "cus_1",
+        stripe_subscription_id: "sub_1",
+        status: "incomplete",
+        canceled_at: "2026-10-01T00:00:00Z",
+        purge_after: "2026-10-31T00:00:00Z",
+      });
+      subs.sub_1 = sub("sub_1", status);
+
+      await handleStripeEvent(evt("customer.subscription.updated", sub("sub_1", "incomplete")), deps);
+
+      expect(db.tables.subscriptions[0]).toMatchObject({
+        status,
+        canceled_at: "2026-10-01T00:00:00Z",
+        purge_after: "2026-10-31T00:00:00Z",
+      });
+    }
+  );
+
+  it("unpaid não agenda exclusão: só canceled agenda", async () => {
+    db.tables.subscriptions.push({
+      user_id: "c1",
+      stripe_customer_id: "cus_1",
+      stripe_subscription_id: "sub_1",
+      status: "past_due",
+      canceled_at: null,
+      purge_after: null,
+    });
+    subs.sub_1 = sub("sub_1", "unpaid");
+
     await handleStripeEvent(evt("customer.subscription.updated", sub("sub_1", "past_due")), deps);
-    expect(db.tables.subscriptions[0]).toMatchObject({ status: "past_due", purge_after: null });
+
+    expect(db.tables.subscriptions[0]).toMatchObject({ status: "unpaid", canceled_at: null, purge_after: null });
   });
 
   it("deleted marca cancelada e agenda exclusão para 30 dias", async () => {
@@ -137,6 +443,69 @@ describe("handleStripeEvent", () => {
       canceled_at: NOW.toISOString(),
       purge_after: new Date(NOW.getTime() + 30 * 86_400_000).toISOString(),
     });
+    // O payload do deleted já é final: não precisa perguntar de novo à Stripe.
+    expect(deps.retrieveSubscription).not.toHaveBeenCalled();
+  });
+
+  it("deleted reentregue não empurra o prazo de exclusão", async () => {
+    db.tables.subscriptions.push({ user_id: "c1", stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1", status: "active" });
+    const deleted = evt("customer.subscription.deleted", sub("sub_1", "canceled"));
+
+    await handleStripeEvent(deleted, deps);
+    deps.now = () => new Date(NOW.getTime() + 5 * DAY_MS);
+    const result = await handleStripeEvent(deleted, deps);
+
+    expect(result).toEqual({ status: "processed" });
+    expect(db.tables.subscriptions[0]).toMatchObject({
+      status: "canceled",
+      canceled_at: NOW.toISOString(),
+      purge_after: PURGE_AT,
+    });
+    expect(deps.retrieveSubscription).not.toHaveBeenCalled();
+  });
+
+  it("deleted da assinatura nova de uma reativação pendente (incomplete) recomeça os 30 dias", async () => {
+    // A linha não estava cancelada (estava incomplete, com o prazo velho de
+    // antes da reativação): não é reentrega, então vale purge_after = canceled_at + 30.
+    db.tables.subscriptions.push({
+      user_id: "c1",
+      stripe_customer_id: "cus_1",
+      stripe_subscription_id: "sub_2",
+      status: "incomplete",
+      canceled_at: "2026-10-01T00:00:00Z",
+      purge_after: "2026-10-31T00:00:00Z",
+    });
+
+    await handleStripeEvent(evt("customer.subscription.deleted", sub("sub_2", "canceled")), deps);
+
+    expect(db.tables.subscriptions[0]).toMatchObject({
+      status: "canceled",
+      canceled_at: NOW.toISOString(),
+      purge_after: PURGE_AT,
+    });
+  });
+
+  it("updated(active) reentregue depois do deleted é ignorado: a linha continua cancelada com o mesmo purge_after", async () => {
+    db.tables.subscriptions.push({ user_id: "c1", stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1", status: "active" });
+    await handleStripeEvent(evt("customer.subscription.deleted", sub("sub_1", "canceled")), deps);
+    const canceled = { ...db.tables.subscriptions[0] };
+    expect(canceled).toMatchObject({ status: "canceled", purge_after: PURGE_AT });
+
+    deps.now = () => new Date(NOW.getTime() + 2 * DAY_MS);
+    const result = await handleStripeEvent(evt("customer.subscription.updated", sub("sub_1", "active")), deps);
+
+    expect(result).toEqual({ status: "ignored" });
+    expect(db.tables.subscriptions[0]).toEqual(canceled);
+    expect(deps.retrieveSubscription).not.toHaveBeenCalled();
+  });
+
+  it("erro ao procurar o cliente num evento de assinatura pede reenvio com o motivo real", async () => {
+    deps.admin = failingRead(db, "stripe_customer_id");
+
+    const result = await handleStripeEvent(evt("customer.subscription.updated", sub("sub_1", "active")), deps);
+
+    expect(result).toMatchObject({ status: "retry", reason: expect.stringContaining("boom") });
+    expect(deps.retrieveSubscription).not.toHaveBeenCalled();
   });
 
   it("evento de assinatura antiga não derruba a nova", async () => {
