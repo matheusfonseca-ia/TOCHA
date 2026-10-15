@@ -3,7 +3,6 @@
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { isSignupOpen } from "@/lib/config";
 import { createClient } from "@/lib/supabase/server";
 
 const credentialsSchema = z.object({
@@ -35,34 +34,15 @@ export async function signIn(formData: FormData): Promise<AuthResult> {
   redirect("/dashboard");
 }
 
-export async function signUp(formData: FormData): Promise<AuthResult> {
-  if (!(await isSignupOpen())) {
-    return { error: "O cadastro está desativado nesta instalação." };
-  }
+export async function requestPasswordReset(formData: FormData): Promise<AuthResult> {
+  const email = z.string().email("E-mail inválido.").safeParse(formData.get("email"));
+  if (!email.success) return { error: email.error.errors[0].message };
 
-  const parsed = credentialsSchema.safeParse({
-    email: formData.get("email"),
-    password: formData.get("password"),
+  // Mesma resposta exista ou não a conta: não revela quem é cliente.
+  await createClient().auth.resetPasswordForEmail(email.data, {
+    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/definir-senha`,
   });
-  if (!parsed.success) {
-    return { error: parsed.error.errors[0].message };
-  }
-
-  const supabase = createClient();
-  const { data, error } = await supabase.auth.signUp(parsed.data);
-
-  if (error) {
-    return { error: error.message };
-  }
-
-  // Com confirmação de e-mail desativada no Supabase a sessão já vem criada.
-  if (data.session) {
-    redirect("/dashboard");
-  }
-
-  return {
-    message: "Conta criada! Verifique seu e-mail para confirmar o cadastro.",
-  };
+  return { message: "Se esse e-mail tiver conta, o link para redefinir a senha chega em alguns minutos." };
 }
 
 export async function signOut(): Promise<void> {

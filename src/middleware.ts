@@ -1,19 +1,10 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-type CookieToSet = { name: string; value: string; options: CookieOptions };
+import { PUBLIC_PATHS, routeFor } from "@/lib/auth/routing";
+import { isAccessStatus, isOwner } from "@/lib/billing/access";
 
-// Rotas públicas. A landing ("/") é a porta de entrada do domínio e precisa
-// abrir sem login — é ela que a análise da Meta encontra ao visitar o app.
-// As três páginas do grupo (legal) são as URLs cadastradas no painel da Meta
-// (Privacy Policy URL, User Data Deletion e Terms of Service) e também têm de
-// abrir sem login e sem redirecionamento.
-const PUBLIC_PATHS = new Set([
-  "/",
-  "/privacidade",
-  "/exclusao-de-dados",
-  "/termos-de-servico",
-]);
+type CookieToSet = { name: string; value: string; options: CookieOptions };
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -51,15 +42,25 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user && pathname !== "/login") {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
+  let hasAccess = false;
+  if (user) {
+    if (isOwner(user.id)) {
+      hasAccess = true;
+    } else {
+      const { data: sub } = await supabase
+        .from("subscriptions")
+        .select("status")
+        .eq("user_id", user.id)
+        .maybeSingle<{ status: string }>();
+      hasAccess = isAccessStatus(sub?.status);
+    }
   }
 
-  if (user && pathname === "/login") {
+  const target = routeFor(pathname, { loggedIn: Boolean(user), hasAccess });
+  if (target !== "next") {
     const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
+    url.pathname = target;
+    url.search = "";
     return NextResponse.redirect(url);
   }
 
