@@ -28,7 +28,7 @@ Todos os caminhos abaixo são relativos a `projetos/falow/`. Rodar comandos dent
 
 ## Review Focus
 
-1. **Compra repetida com o mesmo e-mail sem login** (pessoa já assinante compra de novo pela landing) → o handler não pode perder a assinatura ativa nem ficar com duas cobranças silenciosas: mantém a mais nova e loga `console.error` com os dois ids para reembolso manual. Teste na Task 3.
+1. **Compra repetida com o mesmo e-mail sem login** (pessoa já assinante compra de novo pela landing, ou terceiro que sabe o e-mail dela) → o handler NÃO religa a conta: a linha fica intacta, loga `compra repetida ignorada` com os ids das duas assinaturas e dos dois clientes (para cancelar/reembolsar a duplicada na mão) e responde `processed`. Teste na Task 3 (fix round 1).
 2. **Logado com assinatura ativa clicando "Assinar/Reativar"** → não cria segunda assinatura; vai para `/dashboard`. Teste na Task 4.
 3. **Leitor de link do e-mail (antivírus/Outlook) abrindo o convite** → o token não pode ser consumido no GET; `verifyOtp` só roda no envio do formulário. Teste na Task 5.
 4. **Evento de assinatura antiga chegando depois da reativação** (`customer.subscription.deleted` da assinatura velha) → ignorado, não derruba a nova. Teste na Task 3.
@@ -323,6 +323,8 @@ git commit -m "Regra de acesso por assinatura (dono sempre liberado)"
 ---
 
 ### Task 3: Webhook da Stripe
+
+> **Emenda (fix round 1 — ver os `Ruling` R3-1/R3-2/R3-3 no ledger).** Os blocos de código e de teste abaixo são o desenho ORIGINAL; a versão entregue difere em três pontos, decididos depois da revisão do chefe: **(R3-1)** `created`/`updated` leem o estado atual com `retrieveSubscription` em vez de confiar no payload congelado do evento; `deleted` é final; evento de uma assinatura já `canceled` é ignorado; um helper `lifecyclePatch` define `canceled_at`/`purge_after` (reentrega não estende o prazo; status sem acesso não mexe no purge). **(R3-2)** o checkout NÃO religa a conta quando a linha já tem acesso com OUTRA assinatura (loga `compra repetida ignorada` e responde `processed`). **(R3-3)** o checkout usa o mesmo helper de ciclo de vida. O código e os testes finais estão em `src/lib/billing/stripe-events.ts` e `stripe-events.test.ts`.
 
 **Files:**
 - Modify: `package.json` (dependência `stripe`)
@@ -2407,6 +2409,7 @@ process.exit(failures ? 1 : 0);
   5. **Meta (app aprovado):** App Domains `falow.app.br`; Instagram → Business login settings → OAuth redirect `https://falow.app.br/api/auth/meta/callback`; Webhooks → callback `https://falow.app.br/api/webhooks/meta` (mesmo verify token); Settings → Basic → Privacy Policy `https://falow.app.br/privacidade`, Terms `https://falow.app.br/termos-de-servico`, User data deletion `https://falow.app.br/exclusao-de-dados`; portfólio empresarial → campo Site `https://falow.app.br`.
   6. **Compra de teste:** com as chaves de teste da Stripe e o cartão `4242 4242 4242 4242`, comprar pela landing com um e-mail seu → e-mail de convite chega pelo Resend → definir senha → painel abre → conectar um @ de teste → bot responde → cancelar pelo portal (cancelar imediatamente) → painel vai para `/assinatura` com a data de exclusão → bot não responde mais → reativar → tudo volta. Depois trocar para as chaves live.
   7. **Isolamento do storage e funções SQL:** copiar, do relatório da Task 9 (o controlador cola a frase no dispatch desta task), o que a revisão achou sobre policies de `storage.objects` e funções `security definer`; e mandar conferir no painel do Supabase: Storage → Policies (nenhuma policy `select` para `anon`/`public` no bucket `crm-uploads`) e Database → Functions (nenhuma função com `account_id` executável por `anon`/`authenticated`).
+  8. **Compra repetida / duplicada:** no log do Worker (Cloudflare → Workers → falow → Logs) procure `[stripe] compra repetida ignorada`; a mensagem traz o usuário e os ids das duas assinaturas e dos dois clientes. Confira na Stripe o status da assinatura ANTIGA: se estiver saudável (`active`), cancele/reembolse a NOVA; se estiver `past_due` ou com cancelamento agendado, é a NOVA que deve ficar: cancele/reembolse a antiga e atualize a linha do usuário em `subscriptions` (`stripe_customer_id`, `stripe_subscription_id`, `status`, `current_period_end`) com os dados da nova.
 
 - [ ] **Step 3: Commit**
 
