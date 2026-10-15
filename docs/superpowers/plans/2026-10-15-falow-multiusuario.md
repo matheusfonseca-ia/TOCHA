@@ -2046,6 +2046,14 @@ describe("purgeExpiredUsers", () => {
     expect(await purgeExpiredUsers(deps)).toEqual({ purged: [] });
   });
 
+  it("sem FALOW_OWNER_USER_ID recusa rodar (senão isOwner() é sempre false e o dono poderia ser apagado)", async () => {
+    vi.stubEnv("FALOW_OWNER_USER_ID", "");
+    db.tables.subscriptions.push({ user_id: "venceu", stripe_customer_id: "c1", status: "canceled", purge_after: "2026-11-19T00:00:00Z" });
+    await expect(purgeExpiredUsers(deps)).rejects.toThrow(/FALOW_OWNER_USER_ID/);
+    expect(deps.deleteUser).not.toHaveBeenCalled();
+    vi.unstubAllEnvs();
+  });
+
   it("falha nos arquivos não apaga o usuário (tenta de novo amanhã)", async () => {
     db.tables.subscriptions.push({ user_id: "venceu", stripe_customer_id: "c1", status: "canceled", purge_after: "2026-11-19T00:00:00Z" });
     deps.removeUploads = vi.fn(async () => {
@@ -2081,6 +2089,11 @@ export interface PurgeDeps {
 }
 
 export async function purgeExpiredUsers(deps: PurgeDeps): Promise<{ purged: string[] }> {
+  // "Nunca apagar o dono" depende desta variável: sem ela isOwner() é sempre
+  // false, e uma assinatura de teste do próprio dono seria apagada em 30 dias.
+  if (!process.env.FALOW_OWNER_USER_ID?.trim()) {
+    throw new Error("FALOW_OWNER_USER_ID não configurado: o purge se recusa a rodar.");
+  }
   const now = (deps.now ?? (() => new Date()))();
   const { data } = await deps.admin
     .from("subscriptions")
