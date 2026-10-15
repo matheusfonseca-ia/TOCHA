@@ -33,10 +33,13 @@ const NAV_ITEMS = [
 export function Sidebar({
   userEmail,
   crmUnread = 0,
+  showBilling = false,
 }: {
   userEmail: string;
   /** Mensagens não lidas no Inbox do CRM (badge do item CRM). */
   crmUnread?: number;
+  /** Mostra "Minha assinatura" (portal da Stripe). Fica de fora pro dono, que não tem assinatura. */
+  showBilling?: boolean;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -186,6 +189,16 @@ export function Sidebar({
               Automações ativas
             </span>
           </div>
+          {showBilling && (
+            <form action="/api/billing/portal" method="post">
+              <button
+                type="submit"
+                className="w-full rounded-md px-2.5 py-1.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-secondary/40 hover:text-foreground"
+              >
+                Minha assinatura
+              </button>
+            </form>
+          )}
           <div className="mt-1 flex items-center justify-between gap-2 px-2.5 py-1">
             <p className="truncate text-[13px] text-muted-foreground" title={userEmail}>
               {userEmail}
