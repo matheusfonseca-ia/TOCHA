@@ -6,7 +6,7 @@ const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!baseUrl || !serviceKey) {
-  console.error("[schema] Faltam as variáveis do Supabase para validar o build da Vercel.");
+  console.error("[schema] Faltam as variáveis do Supabase para validar o build.");
   process.exit(1);
 }
 
@@ -25,6 +25,8 @@ const requiredColumns = {
   pipeline_stages: ["id", "pipeline_id", "position", "stage_type", "on_enter_sequence_id"],
   leads: ["id", "pipeline_id", "conversation_id", "stage_id", "position", "closed_at"],
   lead_stage_events: ["id", "lead_id", "to_stage_id", "source"],
+  subscriptions: ["user_id", "stripe_customer_id", "stripe_subscription_id", "status", "current_period_end", "canceled_at", "purge_after"],
+  stripe_events: ["id"],
 };
 
 const checks = await Promise.all(
@@ -52,10 +54,10 @@ const checks = await Promise.all(
 
 const failures = checks.filter(Boolean);
 if (failures.length) {
-  console.error("[schema] O banco da Vercel não acompanha o código deste commit:");
+  console.error("[schema] O banco não acompanha o código deste commit:");
   for (const failure of failures) console.error(`  ${failure}`);
-  console.error("[schema] Aplique as migrations de supabase/migrations (0002 a 0013) neste projeto antes do deploy.");
+  console.error("[schema] Aplique as migrations de supabase/migrations (até a 0016) neste projeto antes do deploy.");
   process.exit(1);
 }
 
-console.log("[schema] Banco compatível com o build da Vercel.");
+console.log("[schema] Banco compatível com o build.");

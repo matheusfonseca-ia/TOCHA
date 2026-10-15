@@ -139,3 +139,15 @@ export interface Interaction {
   latency_ms: number | null;
   created_at: string;
 }
+
+/** Espelho da assinatura da Stripe (migration 0016). Só o webhook da Stripe escreve. */
+export interface Subscription {
+  user_id: string;
+  stripe_customer_id: string;
+  stripe_subscription_id: string | null;
+  status: string;
+  current_period_end: string | null;
+  canceled_at: string | null;
+  purge_after: string | null;
+  updated_at: string;
+}
