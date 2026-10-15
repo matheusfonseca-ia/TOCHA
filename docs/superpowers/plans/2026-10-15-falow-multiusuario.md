@@ -33,6 +33,7 @@ Todos os caminhos abaixo são relativos a `projetos/falow/`. Rodar comandos dent
 3. **Leitor de link do e-mail (antivírus/Outlook) abrindo o convite** → o token não pode ser consumido no GET; `verifyOtp` só roda no envio do formulário. Teste na Task 5.
 4. **Evento de assinatura antiga chegando depois da reativação** (`customer.subscription.deleted` da assinatura velha) → ignorado, não derruba a nova. Teste na Task 3.
 5. **Conta reativada no mesmo dia do purge** → o purge confere o status de novo e não apaga quem tem acesso. Teste na Task 10.
+6. **Cliente grava/altera `ig_accounts` direto pela API (chave anon + JWT dele) com o `ig_user_id` de outra pessoa** → recusado pelo RLS (Task 14 fecha a escrita; o script da Task 13 testa o ataque). Teste na Task 14.
 
 ---
 
@@ -58,7 +59,8 @@ Todos os caminhos abaixo são relativos a `projetos/falow/`. Rodar comandos dent
 | `src/lib/meta/served-account.ts` (novo) | conta ativa **e** com acesso, para o webhook |
 | `src/lib/meta/process.ts`, `src/lib/sequences/runtime.ts` | portas 2 e 3 |
 | `src/app/(dashboard)/rules/ai-actions.ts` | porta 4 |
-| `src/lib/meta/connect-guard.ts` (novo) + callback OAuth | limite de 1 @ e @ duplicado |
+| `src/lib/meta/connect-guard.ts` (novo) + callback OAuth | limite de 1 @ e @ duplicado; o upsert passa a usar o admin |
+| `supabase/migrations/0017_ig_accounts_select_only.sql` (novo), `src/app/(dashboard)/accounts/actions.ts`, chamadas de `withSyncedProfiles` | Task 14: `ig_accounts` só leitura para o usuário |
 | `src/lib/auth/ownership.ts` (novo) + 6 actions do CRM | helpers de posse |
 | `src/lib/auth/__tests__/admin-actions.audit.test.ts` (novo) | trava de auditoria das actions com service role |
 | `src/lib/billing/purge.ts` + `src/app/api/cron/purge/route.ts` (novos) | exclusão após 30 dias |
@@ -1774,9 +1776,11 @@ export function connectBlockReason(input: {
 - [ ] **Step 5: Callback.** Em `src/app/api/auth/meta/callback/route.ts`, importar `createAdminClient`, `isOwner` e `connectBlockReason`. Logo depois de `const profile = await getInstagramProfile(longToken);` e **antes** de `subscribeAccountToWebhooks`:
 
 ```ts
+    const admin = createAdminClient();
+
     // O RLS só mostra as contas do próprio usuário; o @ de outro login só
     // aparece pela service role.
-    const { data: activeAccounts } = await createAdminClient()
+    const { data: activeAccounts } = await admin
       .from("ig_accounts")
       .select("user_id, ig_user_id")
       .eq("status", "active")
@@ -1790,7 +1794,9 @@ export function connectBlockReason(input: {
     if (blocked) return redirectToAccounts(`error=${blocked}`);
 ```
 
-e, no tratamento do erro do upsert, antes do `return redirectToAccounts("error=unknown")`:
+O **upsert de `ig_accounts` passa a usar esse mesmo `admin`** (hoje é `supabase.from("ig_accounts").upsert(...)`, com o client do usuário): a Task 14 fecha a policy `own accounts` para só leitura (migration 0017), então o usuário deixa de escrever em `ig_accounts` pela API. O `user_id` gravado continua sendo o `user.id` da sessão validada por `supabase.auth.getUser()` no começo da rota. Troque o comentário `// RLS (with check user_id = auth.uid()) garante a posse da linha` por `// Escrita pela service role: o user_id vem da sessão validada acima (a policy de ig_accounts é só leitura, migration 0017).`
+
+E, no tratamento do erro do upsert, antes do `return redirectToAccounts("error=unknown")`:
 
 ```ts
       // Corrida com outro login conectando o mesmo @ (índice único da 0016).
@@ -1821,7 +1827,7 @@ git commit -m "Uma conta do Instagram por assinatura e @ unico entre logins"
 
 **Files:**
 - Create: `src/lib/auth/ownership.ts`, `src/lib/auth/__tests__/admin-actions.audit.test.ts`
-- Modify: `src/modules/crm/handoff/services/handoff.actions.ts`, `src/modules/crm/inbox/services/status.actions.ts`, `src/modules/crm/notes/services/notes.actions.ts`, `src/modules/crm/quick-replies/services/quick-replies.actions.ts`, `src/modules/crm/tags/services/contact-fields.actions.ts`, `src/modules/crm/tags/services/tags.actions.ts`, `src/modules/crm/pipeline/services/pipeline.actions.ts`
+- Modify: `src/modules/crm/handoff/services/handoff.actions.ts`, `src/modules/crm/inbox/services/status.actions.ts`, `src/modules/crm/notes/services/notes.actions.ts`, `src/modules/crm/quick-replies/services/quick-replies.actions.ts`, `src/modules/crm/tags/services/contact-fields.actions.ts`, `src/modules/crm/tags/services/tags.actions.ts`, `src/modules/crm/pipeline/services/pipeline.actions.ts`, `src/app/(dashboard)/accounts/actions.ts` (já reescrita na Task 14)
 
 **Interfaces:**
 - Produces:
@@ -1868,6 +1874,7 @@ export async function ownedConversationId(conversationId: string): Promise<strin
     }
     ```
     importando `ownedAccountId`; remover `createClient` se ficar sem uso.
+  - `src/app/(dashboard)/accounts/actions.ts` (`disconnectAccount`, reescrita na Task 14): trocar a checagem de posse feita inline por `ownedAccountId(id)`, mantendo a escrita pelo admin e as mensagens de erro.
 
 - [ ] **Step 3: Achado real da auditoria — etapa apontando para sequência de outro cliente.** Em `pipeline.actions.ts`, `updateStageAction` grava `on_enter_sequence_id` sem conferir posse. (O runtime já filtra por `account_id`, então não executa, mas a referência estrangeira não pode nem ser gravada.) Logo depois do `if (!stage) return ...`, acrescentar:
 
@@ -1897,6 +1904,7 @@ import { describe, expect, it } from "vitest";
  * vermelho até alguém conferir a posse e registrar aqui.
  */
 const ADMIN_ACTIONS: Record<string, string> = {
+  "app/(dashboard)/accounts/actions.ts#disconnectAccount": "ownedAccountId",
   "modules/crm/handoff/services/handoff.actions.ts#assumeConversation": "ownConversationId",
   "modules/crm/handoff/services/handoff.actions.ts#returnToBot": "ownConversationId",
   "modules/crm/history-import/services/history-import.actions.ts#importHistoryStep": "ig_accounts via client do usuário",
@@ -1968,14 +1976,16 @@ describe("auditoria das server actions com service role", () => {
 - [ ] **Step 6: Revisão dos caminhos internos (sem código novo se estiverem certos).** Conferir, lendo, e anotar o resultado no corpo do commit:
   - `src/app/(dashboard)/crm/funil/page.tsx:46` — `ensureDefaultPipeline(createAdminClient(), accountId)`: o `accountId` precisa vir da lista lida com o client do usuário (linha 26). Se vier de `searchParams` sem conferência contra essa lista, corrigir para usar só ids presentes em `accountsData`.
   - `src/lib/meta/process.ts`, `src/lib/sequences/runtime.ts`, `src/modules/crm/capture/server/*`: toda consulta por conversa/contato/regra filtra por `account_id` da conta do evento.
-  - Storage: no Supabase, `select * from storage.objects` policies — não pode haver policy `select` para `anon` no bucket `crm-uploads` (bucket público serve por URL sem precisar de policy; policy de select habilitaria listar). Registrar o resultado em `docs/operacao-saas.md` (Task 13).
+  - Quem importa módulos que usam o admin: para cada arquivo de `src` (fora de testes) que usa `createAdminClient`, ache os importadores (`grep -rn`) que sejam server action, route handler ou página, e confira que o id de conta/conversa/lead que eles passam adiante vem de uma consulta feita com o client do usuário (ou da sessão), nunca direto de `searchParams`/corpo/formulário. Registre no relatório os que conferiu e qualquer exceção (corrija se for real).
+  - Funções SQL: `grep -n "security definer\|grant execute" supabase/migrations/*.sql`. Toda função que recebe `account_id`/`p_account_id`/`user_id` precisa de `revoke all ... from public, anon, authenticated` (como `crm_tag_rename`); trigger functions não são chamáveis pela API. Registre no relatório o que achou e qualquer exceção.
+  - Storage (`crm-uploads`): **sem acesso ao banco de produção**. Leia as migrations (`grep -n "storage" supabase/migrations/*.sql`): hoje só a 0011 cria o bucket público, sem nenhuma policy em `storage.objects`. Registre no relatório a frase "nenhuma migration cria policy de select para anon em storage.objects" (ou o que achar). A conferência no painel (Storage → Policies) fica no runbook da Task 13.
 
 - [ ] **Step 7: Verificar** — `npm test` e `npm run typecheck` → verdes.
 
 - [ ] **Step 8: Commit**
 
 ```bash
-git add src/lib/auth src/modules/crm
+git add src/lib/auth src/modules/crm "src/app/(dashboard)/accounts/actions.ts"
 git commit -m "Helpers de posse, trava de auditoria das actions com service role e etapa sem workflow de outra conta"
 ```
 
@@ -2348,6 +2358,26 @@ const { data: subs } = await b.from("subscriptions").select("user_id");
 const { data: { user: bUser } } = await b.auth.getUser();
 if (subs?.some((s) => s.user_id !== bUser.id)) { failures++; console.log("FAIL subscriptions: B leu assinatura alheia"); }
 
+// Escrita direta em ig_accounts pela API (migration 0017): tem que ser recusada.
+// Sem isso, um usuário "reserva" o @ de outra pessoa ou desvia os eventos do webhook.
+const forged = await b.from("ig_accounts").insert({
+  user_id: bUser.id, ig_user_id: "99999999999999", ig_username: "teste_isolamento",
+  access_token_enc: "x", status: "disconnected",
+}).select();
+if (!forged.error && forged.data?.length) {
+  failures++;
+  console.log("FAIL ig_accounts: B conseguiu INSERIR uma conta direto pela API (0017 não aplicada?)");
+  await b.from("ig_accounts").delete().eq("id", forged.data[0].id);
+} else console.log("ok   ig_accounts: insert direto recusado");
+
+const { data: before } = await a.from("ig_accounts").select("ig_username").eq("id", aIds[0]).single();
+const tamper = await a.from("ig_accounts").update({ ig_username: "alterado_pela_api" }).eq("id", aIds[0]).select();
+if (!tamper.error && tamper.data?.length) {
+  failures++;
+  console.log("FAIL ig_accounts: A conseguiu ALTERAR a própria conta direto pela API (0017 não aplicada?)");
+  await a.from("ig_accounts").update({ ig_username: before.ig_username }).eq("id", aIds[0]);
+} else console.log("ok   ig_accounts: update direto recusado");
+
 const { error: signUpError } = await createClient(url, anon).auth.signUp({ email: `teste+${Date.now()}@falow.app.br`, password: "xxxxxxxx1" });
 if (!signUpError) { failures++; console.log("FAIL cadastro público ainda aberto no Supabase"); } else console.log("ok   cadastro público fechado");
 
@@ -2355,7 +2385,7 @@ process.exit(failures ? 1 : 0);
 ```
 
 - [ ] **Step 2: Runbook — `docs/operacao-saas.md`.** Escrever com estas seções, cada uma com os passos concretos (onde clicar, que valor colocar):
-  1. **Ordem da virada** (fazer nesta ordem): conferir duplicata de @ (SQL da Task 1) → aplicar `0016_subscriptions.sql` no SQL Editor → `select` nas policies do `storage.objects` para `crm-uploads` (nenhuma `select` para `anon`) → configurar Stripe (seção 2) → Resend + Supabase Auth (seção 3) → secrets do Worker (seção 4) → `npm run deploy:cloudflare` → DNS `falow.app.br` no Worker → Meta (seção 5) → reconectar o @ do dono → rodar `scripts/check-tenant-isolation.mjs` → compra de teste em modo teste da Stripe (seção 6).
+  1. **Ordem da virada** (fazer nesta ordem): conferir duplicata de @ (SQL da Task 1) → aplicar `0016_subscriptions.sql` no SQL Editor → `select` nas policies do `storage.objects` para `crm-uploads` (nenhuma `select` para `anon`) → configurar Stripe (seção 2) → Resend + Supabase Auth (seção 3) → secrets do Worker (seção 4) → `npm run deploy:cloudflare` → DNS `falow.app.br` no Worker → Meta (seção 5) → reconectar o @ do dono → **aplicar `0017_ig_accounts_select_only.sql`** (só agora: o código antigo escrevia em `ig_accounts` com o client do usuário e deixaria de conectar/desconectar; depois que a 0017 entra, retirar o deploy antigo da Vercel) → rodar `scripts/check-tenant-isolation.mjs` (precisa dar `ok` nas duas linhas de `ig_accounts`) → compra de teste em modo teste da Stripe (seção 6).
   2. **Stripe:** produto "Falow" com preço mensal (→ `STRIPE_PRICE_ID`); webhook `https://falow.app.br/api/webhooks/stripe` com os eventos `checkout.session.completed`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted` (→ `STRIPE_WEBHOOK_SECRET`); Customer Portal ativado (cancelar, trocar cartão, ver notas); **Billing → Revenue recovery → "se todas as tentativas falharem: cancelar a assinatura"** (é isso que gera o `deleted` e inicia os 30 dias).
   3. **E-mail:** domínio `falow.app.br` no Resend, registros SPF/DKIM no DNS da Cloudflare; Supabase → Authentication → SMTP Settings com host/porta/usuário/senha do Resend e remetente `nao-responda@falow.app.br`, nome "Falow"; Authentication → Sign In / Providers → **desligar "Allow new users to sign up"**; Authentication → URL Configuration: Site URL `https://falow.app.br`, Redirect URLs `https://falow.app.br/**`; Email Templates em português:
      - **Invite user** — link: `{{ .SiteURL }}/definir-senha?token_hash={{ .TokenHash }}&type=invite`
@@ -2363,13 +2393,169 @@ process.exit(failures ? 1 : 0);
   4. **Secrets do Worker** (`npx wrangler secret put NOME`): `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `META_APP_SECRET`, `META_VERIFY_TOKEN`, `META_GRAPH_VERSION`, `NEXT_PUBLIC_APP_URL=https://falow.app.br`, `TOKEN_ENCRYPTION_KEY` (**o mesmo valor de hoje**, senão os tokens gravados não abrem), `CRON_SECRET`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID`, `FALOW_OWNER_USER_ID`, `OPENROUTER_API_KEY`, `NEXT_PUBLIC_CONTACT_EMAIL`. Lembrar: as `NEXT_PUBLIC_*` também precisam existir no ambiente do **build** (são embutidas no bundle) — o `.env.local` cobre o build local. Plano **Workers Paid** ativo na conta.
   5. **Meta (app aprovado):** App Domains `falow.app.br`; Instagram → Business login settings → OAuth redirect `https://falow.app.br/api/auth/meta/callback`; Webhooks → callback `https://falow.app.br/api/webhooks/meta` (mesmo verify token); Settings → Basic → Privacy Policy `https://falow.app.br/privacidade`, Terms `https://falow.app.br/termos-de-servico`, User data deletion `https://falow.app.br/exclusao-de-dados`; portfólio empresarial → campo Site `https://falow.app.br`.
   6. **Compra de teste:** com as chaves de teste da Stripe e o cartão `4242 4242 4242 4242`, comprar pela landing com um e-mail seu → e-mail de convite chega pelo Resend → definir senha → painel abre → conectar um @ de teste → bot responde → cancelar pelo portal (cancelar imediatamente) → painel vai para `/assinatura` com a data de exclusão → bot não responde mais → reativar → tudo volta. Depois trocar para as chaves live.
-  7. **Resultado da revisão do storage** (preenchido na Task 9, Step 6).
+  7. **Isolamento do storage e funções SQL:** copiar, do relatório da Task 9 (o controlador cola a frase no dispatch desta task), o que a revisão achou sobre policies de `storage.objects` e funções `security definer`; e mandar conferir no painel do Supabase: Storage → Policies (nenhuma policy `select` para `anon`/`public` no bucket `crm-uploads`) e Database → Functions (nenhuma função com `account_id` executável por `anon`/`authenticated`).
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add docs/operacao-saas.md scripts/check-tenant-isolation.mjs
 git commit -m "Runbook da virada para SaaS e checagem de isolamento contra o banco real"
+```
+
+---
+
+### Task 14: Fechar a escrita direta em `ig_accounts` (RLS só leitura) — executar logo após a Task 8, antes da Task 9
+
+**Por quê (achado do chefe da Task 1).** A policy `own accounts` (0001) é `for all`: qualquer usuário logado escreve em `ig_accounts` direto pela API (chave anon + JWT dele), inclusive com o `ig_user_id` de outra pessoa. Com o índice único da 0016 isso deixa o atacante (a) "reservar" o @ de um cliente futuro (a conexão real recebe `account_taken`), (b) desviar para uma conta falsa os eventos do webhook de um @ que ficou desconectado ou expirado — as DMs dele cairiam no CRM do atacante — e (c) driblar o limite de 1 @. A correção: o usuário só **lê** `ig_accounts`; conectar (Task 8), desconectar e sincronizar perfil passam pelo servidor (service role), depois de conferir a sessão e a posse.
+
+**Files:**
+- Create: `supabase/migrations/0017_ig_accounts_select_only.sql`
+- Modify: `src/app/(dashboard)/accounts/actions.ts` (`disconnectAccount`)
+- Modify: `src/lib/meta/account-profile.ts` (só o comentário de `withSyncedProfiles`), `src/app/(dashboard)/accounts/page.tsx`, `src/app/(dashboard)/rules/sequencias/nova/page.tsx`, `src/app/(dashboard)/rules/sequencias/[id]/page.tsx` (chamadas de `withSyncedProfiles`)
+- Test: `src/app/(dashboard)/accounts/actions.test.ts`
+
+**Interfaces:**
+- Consumes: `createAdminClient` (`@/lib/supabase/admin`), `createClient` (`@/lib/supabase/server`).
+- Produces: `disconnectAccount(id: string): Promise<ActionResult>` (mesma assinatura; agora confere a posse com o client do usuário e escreve com o admin). Migration `0017`, que **só pode ser aplicada depois do deploy do código novo** (o código antigo escrevia em `ig_accounts` com o client do usuário).
+
+- [ ] **Step 1: Migration `supabase/migrations/0017_ig_accounts_select_only.sql`**
+
+```sql
+-- ══════════════════════════════════════════════════════════════════════════
+-- Falow multiusuário: ig_accounts passa a ser SOMENTE LEITURA para o usuário.
+--
+-- A policy "own accounts" (0001) era `for all`: qualquer usuário logado escrevia
+-- em ig_accounts direto pela API (chave anon + JWT dele), inclusive com o
+-- ig_user_id de outra pessoa. Com o índice único da 0016 isso deixaria um
+-- usuário "reservar" o @ de quem ainda vai conectar, ou desviar para uma conta
+-- falsa os eventos do webhook de um @ desconectado. Conectar, desconectar e
+-- sincronizar perfil passam pelo servidor (service role), depois de conferir a
+-- sessão e a posse.
+--
+-- ORDEM DE APLICAÇÃO: só DEPOIS de publicar o código novo. O código antigo
+-- escrevia em ig_accounts com o client do usuário e deixaria de conectar.
+-- As policies das outras tabelas consultam ig_accounts por subselect e seguem
+-- funcionando, porque a policy de select continua.
+-- ══════════════════════════════════════════════════════════════════════════
+
+drop policy if exists "own accounts" on public.ig_accounts;
+drop policy if exists "own accounts select" on public.ig_accounts;
+create policy "own accounts select" on public.ig_accounts
+  for select using (user_id = auth.uid());
+```
+
+- [ ] **Step 2: Teste de `disconnectAccount`** — `src/app/(dashboard)/accounts/actions.test.ts`
+
+```ts
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { createFakeAdmin, type FakeSupabase } from "@/lib/sequences/__tests__/fake-supabase";
+
+const { state } = vi.hoisted(() => ({
+  state: { admin: null as unknown, ownedIds: [] as string[] },
+}));
+
+vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("@/lib/supabase/admin", () => ({
+  createAdminClient: () => (state.admin as FakeSupabase).client,
+}));
+vi.mock("@/lib/supabase/server", () => ({
+  // client do usuário: o RLS de select só devolve as contas dele (não tem .update)
+  createClient: () => ({
+    from: () => ({
+      select: () => ({
+        eq: (_column: string, id: string) => ({
+          maybeSingle: async () => ({ data: state.ownedIds.includes(id) ? { id } : null, error: null }),
+        }),
+      }),
+    }),
+  }),
+}));
+
+import { disconnectAccount } from "@/app/(dashboard)/accounts/actions";
+
+describe("disconnectAccount", () => {
+  let db: FakeSupabase;
+  beforeEach(() => {
+    db = createFakeAdmin();
+    state.admin = db;
+    db.tables.ig_accounts.push({ id: "acc-minha", user_id: "c1", ig_user_id: "1", status: "active" });
+    db.tables.ig_accounts.push({ id: "acc-alheia", user_id: "c2", ig_user_id: "2", status: "active" });
+    state.ownedIds = ["acc-minha"];
+  });
+
+  it("desconecta a conta do próprio usuário", async () => {
+    expect(await disconnectAccount("acc-minha")).toEqual({});
+    expect(db.tables.ig_accounts.find((a) => a.id === "acc-minha")!.status).toBe("disconnected");
+  });
+
+  it("recusa conta de outro usuário e não escreve nada", async () => {
+    const result = await disconnectAccount("acc-alheia");
+    expect(result.error).toBeTruthy();
+    expect(db.tables.ig_accounts.find((a) => a.id === "acc-alheia")!.status).toBe("active");
+  });
+});
+```
+
+- [ ] **Step 3: Rodar** — `npx vitest run "src/app/(dashboard)/accounts/actions.test.ts"` → FAIL (a action atual chama `.update` no client do usuário, que o mock não tem).
+
+- [ ] **Step 4: Reescrever `src/app/(dashboard)/accounts/actions.ts`**
+
+```ts
+"use server";
+
+import { revalidatePath } from "next/cache";
+
+import { createAdminClient } from "@/lib/supabase/admin";
+import { createClient } from "@/lib/supabase/server";
+
+export interface ActionResult {
+  error?: string;
+}
+
+/**
+ * Desconecta a conta: as automações param imediatamente.
+ * Reconectar via OAuth reativa a mesma linha (upsert por user_id + ig_user_id).
+ *
+ * A policy de `ig_accounts` é só leitura para o usuário (migration 0017): a
+ * posse é conferida com o client dele (RLS de select) e a escrita vai pela
+ * service role.
+ */
+export async function disconnectAccount(id: string): Promise<ActionResult> {
+  const { data: owned } = await createClient()
+    .from("ig_accounts")
+    .select("id")
+    .eq("id", id)
+    .maybeSingle<{ id: string }>();
+  if (!owned) return { error: "Conta não encontrada." };
+
+  const { error } = await createAdminClient()
+    .from("ig_accounts")
+    .update({ status: "disconnected" })
+    .eq("id", owned.id);
+
+  if (error) return { error: "Não foi possível desconectar a conta." };
+
+  revalidatePath("/accounts");
+  revalidatePath("/dashboard");
+  revalidatePath("/rules");
+  return {};
+}
+```
+
+- [ ] **Step 5: Rodar** o teste do Step 2 → PASS.
+
+- [ ] **Step 6: Sincronização de perfil.** `withSyncedProfiles(db, accounts)` (`src/lib/meta/account-profile.ts`) escreve `ig_username`/`profile_picture_url` com o `db` que recebe, e as três páginas passam o client do usuário — depois da 0017 essa escrita viraria um no-op silencioso (o @ e a foto deixariam de atualizar). Em `accounts/page.tsx`, `rules/sequencias/nova/page.tsx` e `rules/sequencias/[id]/page.tsx`, trocar o primeiro argumento da chamada de `withSyncedProfiles(...)` de `supabase` para `createAdminClient()` (importar de `@/lib/supabase/admin`; manter `supabase` onde ele ainda é usado para as consultas). As contas passadas já vieram de uma consulta do próprio usuário (RLS), então só as dele são sincronizadas. Em `account-profile.ts`, acrescentar ao comentário de `withSyncedProfiles`: "`db` precisa conseguir escrever em `ig_accounts` (service role): para o usuário a tabela é só leitura (migration 0017)". Não mexer na lógica nem nos testes existentes de `account-profile.test.ts`.
+
+- [ ] **Step 7: Achar outras escritas.** Rode `grep -rn -B1 -A4 'from("ig_accounts")' src --include=*.ts --include=*.tsx` (ignore `*.test.*`) e, para cada `.insert(`/`.update(`/`.upsert(`/`.delete(`, confirme qual client faz a escrita: precisa ser admin (service role) em todas — callback do OAuth (já admin pela Task 8), `disconnectAccount` (Step 4), `syncAccountProfile` (via `withSyncedProfiles` / `gate.ts`), `token.ts`, `process.ts`, `runtime.ts`. Se achar alguma que ainda escreve com o client do usuário, corrija do mesmo jeito e liste no relatório.
+
+- [ ] **Step 8: Verificar** — suíte inteira e typecheck → verdes (comandos `node` do `context.md`).
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add supabase/migrations/0017_ig_accounts_select_only.sql "src/app/(dashboard)/accounts" "src/app/(dashboard)/rules/sequencias" src/lib/meta/account-profile.ts
+git commit -m "ig_accounts somente leitura para o usuario (0017): conectar, desconectar e sincronizar perfil passam pelo servidor"
 ```
 
 ---

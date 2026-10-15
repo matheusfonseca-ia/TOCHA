@@ -142,6 +142,16 @@ No callback do OAuth (`src/app/api/auth/meta/callback/route.ts`):
 4. **`crm-uploads`**: continua público (a Meta baixa pela URL); caminho
    `account_id/<uuid>.ext`; conferir que não há policy de listagem para anon.
 5. **Logs/métricas/dashboard**: confirmar que leem só pelo client do usuário.
+6. **`ig_accounts` só leitura para o usuário** (migration `0017_ig_accounts_select_only.sql`):
+   a policy `own accounts` do 0001 era `for all`, então qualquer usuário logado
+   escrevia nessa tabela direto pela API (chave anon + JWT) com o `ig_user_id` de
+   outra pessoa — "reservando" o @ de um cliente futuro (a conexão real cairia em
+   `account_taken`), desviando para uma conta falsa os eventos de um @ desconectado
+   ou driblando o limite de 1 @. Conectar (callback do OAuth), desconectar e
+   sincronizar perfil passam a escrever com a service role, depois de conferir
+   sessão e posse. A 0017 só pode ser aplicada **depois** do deploy do código novo
+   (o código antigo escrevia com o client do usuário). O teste contra o banco real
+   (`scripts/check-tenant-isolation.mjs`) tenta o ataque e exige que seja recusado.
 
 ## 4. Cancelamento, operação e testes
 
