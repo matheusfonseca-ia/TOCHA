@@ -1,5 +1,3 @@
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
@@ -7,6 +5,7 @@ import { signOut } from "@/app/login/actions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { isAccessStatus, isOwner } from "@/lib/billing/access";
+import { formatPurgeDate } from "@/lib/billing/format";
 import { createClient } from "@/lib/supabase/server";
 import type { Subscription } from "@/types/database";
 
@@ -48,9 +47,8 @@ export default async function AssinaturaPage() {
 
         {!active && sub?.purge_after && (
           <p className="text-sm text-muted-foreground">
-            O bot está pausado. Seus dados ficam guardados até{" "}
-            <strong>{format(new Date(sub.purge_after), "d 'de' MMMM 'de' yyyy", { locale: ptBR })}</strong>. Reative
-            antes disso e tudo volta como estava; depois dessa data eles são apagados.
+            O bot está pausado. Seus dados serão apagados a partir de{" "}
+            <strong>{formatPurgeDate(sub.purge_after)}</strong>. Reative antes disso e tudo volta como estava.
           </p>
         )}
 
