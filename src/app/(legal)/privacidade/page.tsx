@@ -156,8 +156,9 @@ export default function PrivacidadePage() {
             </li>
             <li>
               <Term>Dados da assinatura:</Term> o status da assinatura (ativa,
-              cancelada etc.), as datas de início, renovação e cancelamento, e
-              os identificadores do cliente e da assinatura na Stripe. O
+              cancelada etc.), a data de fim do período pago, a data do
+              cancelamento, a data marcada para a exclusão dos dados e os
+              identificadores do cliente e da assinatura na Stripe. O
               pagamento em si é processado pela Stripe: o Falow{" "}
               <Term>não</Term> recebe nem armazena número de cartão ou outros
               dados de pagamento.
@@ -281,7 +282,7 @@ export default function PrivacidadePage() {
           </LegalList>
           <p>
             Nenhum sistema é infalível. Em caso de incidente de segurança que
-            possa gerar risco relevante a você, o administrador comunicará os
+            possa gerar risco relevante a você, o controlador comunicará os
             titulares afetados e a autoridade competente nos prazos aplicáveis.
           </p>
         </LegalSection>
@@ -290,8 +291,10 @@ export default function PrivacidadePage() {
           <LegalList>
             <li>
               <Term>Tokens de acesso:</Term> enquanto a conta estiver conectada.
-              São invalidados e apagados assim que a conta é desconectada ou a
-              autorização é revogada.
+              O token é apagado quando a conta é desconectada no painel. Se a
+              autorização for revogada no Instagram, o token deixa de funcionar
+              e é apagado quando a conta é desconectada ou quando os dados são
+              apagados, 30 dias depois do fim da assinatura.
             </li>
             <li>
               <Term>Mensagens, comentários e logs:</Term> ficam guardados
@@ -302,8 +305,8 @@ export default function PrivacidadePage() {
               <Term>Perfil do Instagram (foto, nome, seguidores):</Term>{" "}
               guardado junto da conversa enquanto ela existir, atualizado
               sempre que a foto muda ou expira. Some junto quando a conversa é
-              apagada, a pedido do titular ou quando os dados da assinatura são
-              apagados (veja abaixo).
+              apagada, a pedido do titular ou quando os dados são apagados após
+              o fim da assinatura (veja abaixo).
             </li>
             <li>
               <Term>Estado das sequências:</Term> é apagado junto com os demais
@@ -316,7 +319,7 @@ export default function PrivacidadePage() {
             </li>
           </LegalList>
           <p>
-            Desconectar a conta do Instagram no painel só para as automações
+            Desconectar a conta do Instagram no painel interrompe as automações
             dessa conta e apaga o token de acesso. As conversas, os contatos e
             os demais registros continuam guardados enquanto a assinatura
             existir. Para apagá-los antes, escreva para o contato no fim desta

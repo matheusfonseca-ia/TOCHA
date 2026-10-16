@@ -96,8 +96,8 @@ export default function ExclusaoDeDadosPage() {
             <li>A conversa registrada entre você e a conta conectada.</li>
             <li>
               O texto das mensagens e comentários seus que ficaram guardados nos
-              logs de interação, e as mensagens da conversa na área Conversas do painel
-              (Conversas do painel).
+              logs de interação, e as mensagens da conversa na área Conversas do
+              painel.
             </li>
             <li>
               A foto de perfil, o nome e o número de seguidores do Instagram
@@ -110,6 +110,18 @@ export default function ExclusaoDeDadosPage() {
             <li>
               Qualquer sequência em andamento em que você tenha entrado, com o
               ponto onde ela parou.
+            </li>
+            <li>
+              Os dados que você informou nos fluxos, como nome, e-mail e
+              telefone, e as etiquetas (tags) atribuídas a você na lista de
+              Contatos.
+            </li>
+            <li>
+              As notas internas que o administrador escreveu sobre você.
+            </li>
+            <li>
+              O seu cartão no funil de vendas (CRM) do painel e o histórico das
+              etapas por onde ele passou.
             </li>
           </LegalList>
 
@@ -197,7 +209,10 @@ export default function ExclusaoDeDadosPage() {
             Pedidos de exclusão são atendidos em até <Term>30 dias</Term>{" "}
             corridos a partir do recebimento (na prática, quase sempre em
             alguns dias). Você recebe uma confirmação pelo mesmo canal em que
-            fez o pedido. Nenhuma cópia de backup é mantida depois desse prazo.
+            fez o pedido. Depois da exclusão, as cópias de segurança automáticas
+            feitas pelo provedor do banco de dados ainda podem conter esses
+            dados por um período limitado, em geral alguns dias, até serem
+            substituídas na rotina do provedor.
           </p>
         </LegalSection>
 

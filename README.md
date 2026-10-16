@@ -20,7 +20,7 @@ Este repositório é o código do serviço. Uma instalação só atende todos os
 | **Cadastro** | Não existe cadastro público. O cliente paga no checkout (botão "Assinar o Falow" na landing, que faz `POST /api/billing/checkout`) e o webhook da Stripe cria a conta e manda um **e-mail de convite** com o link para definir a senha |
 | **Limite** | 1 conta de Instagram por assinatura; um mesmo @ ativo pertence a um login só |
 | **Cancelamento** | O cliente cancela em **Minha assinatura** (portal da Stripe). Sem acesso, as automações param na hora |
-| **Exclusão** | 30 dias depois do cancelamento, o cron `/api/cron/purge` apaga o usuário e todos os dados (contatos, conversas, tokens, arquivos). Reativar dentro dos 30 dias restaura a conta |
+| **Exclusão** | 30 dias depois que a assinatura termina, o cron `/api/cron/purge` apaga o usuário e todos os dados (contatos, conversas, tokens, arquivos). Reativar dentro dos 30 dias restaura a conta |
 | **Dono** | A conta em `FALOW_OWNER_USER_ID` é um usuário comum marcado: sempre com acesso, sem limite de @, sem assinatura e nunca apagada. É a única que vê o botão de escrever com IA |
 
 Status de assinatura que dão acesso: `active`, `trialing` e `past_due`. Qualquer outro (ou ausência de assinatura) não dá.
