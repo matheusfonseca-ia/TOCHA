@@ -11,6 +11,12 @@ import { describe, expect, it } from "vitest";
  */
 const ADMIN_ACTIONS: Record<string, string> = {
   "app/(dashboard)/accounts/actions.ts#disconnectAccount": "ownedAccountId",
+  "app/admin/actions.ts#grantCourtesyAction": "requireAdmin",
+  "app/admin/actions.ts#revokeCourtesyAction": "requireAdmin",
+  "app/admin/actions.ts#blockUserAction": "requireAdmin",
+  "app/admin/actions.ts#unblockUserAction": "requireAdmin",
+  "app/admin/actions.ts#resendAccessAction": "requireAdmin",
+  "app/admin/actions.ts#inviteWithCourtesyAction": "requireAdmin",
   "modules/crm/handoff/services/handoff.actions.ts#assumeConversation": "ownConversationId",
   "modules/crm/handoff/services/handoff.actions.ts#returnToBot": "ownConversationId",
   "modules/crm/history-import/services/history-import.actions.ts#importHistoryStep": "ig_accounts via client do usuário",
@@ -83,5 +89,27 @@ describe("auditoria das server actions com service role", () => {
 
   it("arquivos 'use server' com service role só exportam async function (ou tipos)", () => {
     expect(otherExports).toEqual([]);
+  });
+});
+
+describe("auditoria das actions do painel /admin", () => {
+  // Primeira instrução do corpo (até o primeiro `;`) precisa ser a trava de admin.
+  const FIRST_STATEMENT = /^\s*(const\s*\{\s*adminId\s*\}\s*=\s*await\s+requireAdmin\(|return\s+guarded\()/;
+  const ADMIN_DIR = path.join(SRC, "app", "admin");
+  const unguarded: string[] = [];
+  let checked = 0;
+  for (const file of walk(ADMIN_DIR)) {
+    const text = readFileSync(file, "utf8");
+    if (!/^["']use server["']/m.test(text)) continue;
+    const rel = path.relative(SRC, file).split(path.sep).join("/");
+    for (const m of text.matchAll(/export async function (\w+)\s*\([^)]*\)[^{]*\{([^;]*;)/g)) {
+      checked++;
+      if (!FIRST_STATEMENT.test(m[2])) unguarded.push(`${rel}#${m[1]}`);
+    }
+  }
+
+  it("toda action de src/app/admin começa com requireAdmin() ou guarded()", () => {
+    expect(checked).toBeGreaterThan(0);
+    expect(unguarded).toEqual([]);
   });
 });
