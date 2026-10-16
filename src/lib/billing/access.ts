@@ -24,20 +24,29 @@ export function isAccessStatus(status: string | null | undefined): boolean {
 
 export async function hasActiveAccess(client: QueryClient, userId: string): Promise<boolean> {
   if (isOwner(userId)) return true;
-  const { data } = await client
+  const { data, error } = await client
     .from("subscriptions")
     .select("status")
     .eq("user_id", userId)
     .maybeSingle();
+  // Continua fail-closed, mas o log diz que foi falha de leitura, não "sem assinatura".
+  if (error) {
+    console.error(`[access] falha ao ler subscriptions do usuário ${userId}:`, error.message);
+    return false;
+  }
   return isAccessStatus((data as { status?: string } | null)?.status);
 }
 
 export async function accountHasAccess(client: QueryClient, accountId: string): Promise<boolean> {
-  const { data } = await client
+  const { data, error } = await client
     .from("ig_accounts")
     .select("user_id")
     .eq("id", accountId)
     .maybeSingle();
+  if (error) {
+    console.error(`[access] falha ao ler ig_accounts da conta ${accountId}:`, error.message);
+    return false;
+  }
   const userId = (data as { user_id?: string } | null)?.user_id;
   return userId ? hasActiveAccess(client, userId) : false;
 }

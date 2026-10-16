@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createFakeAdmin, type FakeSupabase } from "@/lib/sequences/__tests__/fake-supabase";
+import { createFakeAdmin, type FakeSupabase, type TableName } from "@/lib/sequences/__tests__/fake-supabase";
 import { accountHasAccess, hasActiveAccess, isAccessStatus, isOwner } from "@/lib/billing/access";
 
 describe("regra de acesso", () => {
@@ -11,6 +11,7 @@ describe("regra de acesso", () => {
 
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.restoreAllMocks();
   });
 
   it("dono vem do FALOW_OWNER_USER_ID", () => {
@@ -65,5 +66,59 @@ describe("regra de acesso", () => {
     expect(await accountHasAccess(db.client, "acc-1")).toBe(true);
     expect(await accountHasAccess(db.client, "acc-2")).toBe(false);
     expect(await accountHasAccess(db.client, "nao-existe")).toBe(false);
+  });
+
+  describe("erro de leitura", () => {
+    // Client cuja consulta falha nas tabelas indicadas (as outras usam o fake normal).
+    function failingClient(failing: TableName[]) {
+      return {
+        from: (table: TableName) => {
+          if (!failing.includes(table)) return db.client.from(table);
+          const chain = {
+            select: () => chain,
+            eq: () => chain,
+            maybeSingle: async () => ({ data: null, error: { message: "boom" } }),
+          };
+          return chain;
+        },
+      };
+    }
+
+    it("hasActiveAccess: erro em subscriptions → false e console.error com a tabela e o id", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(await hasActiveAccess(failingClient(["subscriptions"]), "cliente-1")).toBe(false);
+      expect(consoleError).toHaveBeenCalledTimes(1);
+      const [msg, detail] = consoleError.mock.calls[0];
+      expect(msg).toContain("[access]");
+      expect(msg).toContain("subscriptions");
+      expect(msg).toContain("cliente-1");
+      expect(detail).toBe("boom");
+    });
+
+    it("accountHasAccess: erro em ig_accounts → false e console.error com a tabela e o id", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(await accountHasAccess(failingClient(["ig_accounts"]), "acc-1")).toBe(false);
+      expect(consoleError).toHaveBeenCalledTimes(1);
+      const [msg, detail] = consoleError.mock.calls[0];
+      expect(msg).toContain("[access]");
+      expect(msg).toContain("ig_accounts");
+      expect(msg).toContain("acc-1");
+      expect(detail).toBe("boom");
+    });
+
+    it("accountHasAccess: conta lida, erro em subscriptions → false e console.error", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      db.tables.ig_accounts.push({ id: "acc-1", user_id: "cliente-1", ig_user_id: "1", status: "active" });
+      expect(await accountHasAccess(failingClient(["subscriptions"]), "acc-1")).toBe(false);
+      expect(consoleError).toHaveBeenCalledTimes(1);
+      expect(consoleError.mock.calls[0][0]).toContain("subscriptions");
+    });
+
+    it("sem erro e sem linha: false sem console.error (nas duas funções)", async () => {
+      const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+      expect(await hasActiveAccess(db.client, "cliente-1")).toBe(false);
+      expect(await accountHasAccess(db.client, "nao-existe")).toBe(false);
+      expect(consoleError).not.toHaveBeenCalled();
+    });
   });
 });
