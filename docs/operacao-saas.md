@@ -166,7 +166,7 @@ Depois que a 0017 entrou, o deploy antigo (que escreve em `ig_accounts` direto) 
 
 **Não promova esta branch (`multiusuario`) no projeto da Vercel**: sem o `vercel.json` ela perde o cron diário das sequências e a produção nova é o Worker.
 
-**Se algo der errado / voltar para a Vercel:** reverta a 0017 (SQL acima), recoloque o domínio na Vercel, devolva as URLs antigas da Meta (webhook e OAuth) e **religue o cron da Vercel** (Settings → Cron Jobs → Enable). Ao mesmo tempo, **tire os Cron Triggers do Worker** (remova o bloco `[triggers] crons` do `wrangler.toml` e faça deploy, ou apague/desative o Worker `falow` no painel da Cloudflare): **nunca deixe a Vercel e o Worker disparando a mesma fila** de atrasos ao mesmo tempo.
+**Se algo der errado / voltar para a Vercel:** reverta a 0017 (SQL acima), devolva o domínio à Vercel, devolva as URLs antigas da Meta (webhook e OAuth) e **religue o cron da Vercel** (Settings → Cron Jobs → Enable). O domínio `falow.app.br` está preso ao Worker como Custom domain: **primeiro remova-o** em Cloudflare → Workers & Pages → `falow` → Settings → **Domains & Routes**, e só então adicione-o de novo no projeto da Vercel (crie no DNS da Cloudflare os registros que a Vercel pedir). Ao mesmo tempo, **tire os Cron Triggers do Worker** (remova o bloco `[triggers] crons` do `wrangler.toml` e publique de novo seguindo o roteiro de build da seção 4.4, ou apague/desative o Worker `falow` no painel da Cloudflare): **nunca deixe a Vercel e o Worker disparando a mesma fila** de atrasos ao mesmo tempo.
 
 ### Passo 14 — Limpar os tokens legados [SEM VOLTA FÁCIL]
 
@@ -194,11 +194,20 @@ Crie dois usuários de teste e rode o script (instruções logo abaixo). O resul
 
 O que o script prova, e o que não prova:
 
-- **Leitura:** o usuário B é um usuário de teste que **não é dono de nada** (sem @, sem assinatura, sem dados). O script tenta ler as 22 tabelas de dados e a `subscriptions` **sem nenhum filtro** e dá `FAIL` se B enxergar **qualquer** linha. Os dados reais do dono e dos clientes em produção são a "isca": se o RLS estivesse quebrado, B os veria. Ele só prova isolamento nas tabelas em que existem linhas de outras pessoas; numa tabela vazia no banco inteiro a leitura passaria de qualquer jeito (o dono usa o Falow, então as tabelas principais têm dados).
-- **Escrita em `ig_accounts`:** B não consegue inserir uma conta direto pela API e A não consegue alterar a própria. Para a escrita nas demais tabelas o script não faz teste: elas dependem das policies lidas nas migrations.
+- **Leitura:** o usuário B é um usuário de teste que **não é dono de nada** (sem @, sem assinatura, sem dados). O script tenta ler as 22 tabelas de dados e a `subscriptions` **sem nenhum filtro** e dá `FAIL` se B enxergar **qualquer** linha. Os dados reais do dono e dos clientes em produção são a "isca": se o RLS estivesse quebrado, B os veria. Ele só prova isolamento nas tabelas em que existem linhas de outras pessoas; numa tabela vazia no banco inteiro a leitura passaria de qualquer jeito (o dono usa o Falow, então as tabelas principais têm dados). **A `subscriptions` em geral ainda está vazia neste passo** (o dono não tem linha e a compra de teste só vem no passo 16), então o `ok   subscriptions` daqui não prova nada: por isso o script roda **de novo depois do passo 16**, quando a compra de teste já criou uma linha que serve de isca. Um erro de leitura só conta como `ok (acesso negado)` quando é "permission denied" (código `42501`); qualquer outro erro (JWT, 5xx, rede) sai como `INCONCLUSIVO`.
+- **Escrita em `ig_accounts`:** B não consegue inserir uma conta direto pela API e A não consegue alterar a própria. O insert só conta como recusado com o erro de RLS (`42501`); uma resposta inesperada (outro erro) sai como `INCONCLUSIVO`. Para a escrita nas demais tabelas o script não faz teste: elas dependem das policies lidas nas migrations.
 - **Cadastro público:** só passa quando o Supabase responde que o cadastro está desativado. Qualquer outro erro (por exemplo limite de e-mails) sai como `INCONCLUSIVO`, **não conta como aprovado** e o código de saída é 2: corrija e rode de novo.
 
-**Se algo der errado:** uma linha `FAIL` é problema de segurança: pare, não abra a venda, e corrija a causa (0017 não aplicada, cadastro público ainda ligado, policy faltando) antes de seguir. Um `FAIL` de leitura em B pode também significar que B não é um usuário vazio (tem @ ou assinatura): confira no Supabase e, se for o caso, use um usuário B recém-criado. Código 1 = tem `FAIL`; código 2 = só inconclusivo.
+**Se algo der errado:** uma linha `FAIL` é problema de segurança: pare, não abra a venda, e corrija a causa (0017 não aplicada, cadastro público ainda ligado, policy faltando) antes de seguir. Um `FAIL` de leitura em B pode também significar que B não é um usuário vazio (tem @ ou assinatura): confira no Supabase e, se for o caso, use um usuário B recém-criado.
+
+Códigos de saída do script:
+
+| Código | Significa | O que fazer |
+|---|---|---|
+| `0` | Tudo `ok` | Seguir |
+| `1` | Pelo menos um `FAIL` | Problema de segurança: corrigir antes de seguir |
+| `2` | Nenhum `FAIL`, mas algum `INCONCLUSIVO` | Não vale como aprovado: ler o motivo, corrigir (rede, chave, limite) e rodar de novo |
+| `3` | `PRÉ-REQUISITO FALHOU` (variável faltando, login de A ou B recusado, ou A sem linha em `ig_accounts`) | Nada foi testado: corrigir o pré-requisito indicado e rodar de novo |
 
 #### Como rodar o teste de isolamento
 
@@ -228,12 +237,14 @@ Git Bash:
 TENANT_A_EMAIL=teste-a@seudominio.com TENANT_A_PASSWORD='<senha A>' TENANT_B_EMAIL=teste-b@seudominio.com TENANT_B_PASSWORD='<senha B>' node scripts/check-tenant-isolation.mjs
 ```
 
-4. Saída esperada: uma linha `ok   <tabela>` para cada uma das 22 tabelas, `ok   subscriptions`, `ok   ig_accounts: insert direto recusado`, `ok   ig_accounts: update direto recusado` e `ok   cadastro público fechado`, fechando com `Tudo ok.`; código de saída 0. Qualquer `FAIL` dá código 1; `INCONCLUSIVO` sem `FAIL` dá código 2 (não vale como aprovado).
-5. Limpeza: apague os dois usuários em Authentication → Users (a conta de teste do A some em cascata). Se o script chegou a criar um usuário `teste+<número>@falow.app.br` (só acontece com o cadastro aberto, e aí já saiu um `FAIL`), apague-o também. Se saiu um `AVISO restauro não feito`, a linha de teste do A ficou com o `ig_username` alterado: não importa, ela some junto com o usuário A.
+4. Saída esperada: uma linha `ok   <tabela>` para cada uma das 22 tabelas, `ok   subscriptions`, `ok   ig_accounts: insert direto recusado`, `ok   ig_accounts: update direto recusado` e `ok   cadastro público fechado`, fechando com `Tudo ok.`; código de saída 0. Qualquer `FAIL` dá código 1; `INCONCLUSIVO` sem `FAIL` dá código 2 (não vale como aprovado); `PRÉ-REQUISITO FALHOU` dá código 3 (tabela acima).
+5. **Ainda não apague A e B**: o script roda de novo depois do passo 16 (com a mesma linha de teste do A). Limpeza, depois dessa segunda rodada: apague os dois usuários em Authentication → Users (a conta de teste do A some em cascata). Se o script chegou a criar um usuário `teste+<número>@falow.app.br` (só acontece com o cadastro aberto, e aí já saiu um `FAIL`), apague-o também. Se saiu um `AVISO restauro não feito`, a linha de teste do A ficou com o `ig_username` alterado: não importa, ela some junto com o usuário A.
 
 ### Passo 16 — Compra de teste (modo teste da Stripe)
 
 Roteiro da seção 6 (itens 1 a 10), com as chaves de teste. **Não apague o usuário de teste no fim**: o passo 17 o usa e já o apaga.
+
+Terminado o roteiro, **rode o teste de isolamento de novo** (passo 15, "Como rodar", itens 3 e 4, com os mesmos usuários A e B). Agora a compra de teste criou uma linha em `subscriptions` (e conta, contatos e conversas do usuário de teste), que serve de isca: é esta rodada que prova o isolamento da `subscriptions`. Tem que dar `Tudo ok.` e código 0. Depois dela, apague A e B (item 5 do passo 15).
 
 ### Passo 17 — Prova do cascade de exclusão (uma vez)
 
@@ -243,7 +254,7 @@ Seção 9, bloco "Prova do cascade de exclusão". Usa o usuário de teste do pas
 
 ### Passo 18 — Limpar as assinaturas de teste e virar para o modo live [SEM VOLTA FÁCIL]
 
-Seção 6, bloco "Virar para o modo live". Inclui: listar e apagar os usuários criados com cartão de teste, desativar o endpoint de webhook de teste na Stripe e trocar os três secrets para os valores live. Só depois disso a venda pode abrir (e o site pode ser divulgado).
+Seção 6, bloco "Virar para o modo live", **na ordem dele**: desativar o endpoint de webhook de teste na Stripe, listar e apagar os usuários criados com cartão de teste, configurar o modo live, trocar os três secrets para os valores live e **rodar a lista de novo** depois da troca. Só depois disso a venda pode abrir (e o site pode ser divulgado).
 
 ---
 
@@ -311,6 +322,8 @@ O que cada evento faz (`src/lib/billing/stripe-events.ts`):
 | `customer.subscription.deleted` | `status = canceled`, `canceled_at = agora`, `purge_after = agora + 30 dias`. |
 
 Eventos de assinatura de um cliente que ainda não existe respondem 500 de propósito, para a Stripe reenviar depois (a ordem de entrega não é garantida). Isso é normal no log por alguns segundos após uma compra.
+
+**Convite que falha.** Se o e-mail de convite não sair (por exemplo, limite de envio do SMTP, seção 3.2), o webhook responde 500 ao `checkout.session.completed` e a Stripe reenvia. Confira em Supabase → Authentication → Users se o usuário com o e-mail da compra foi criado. Se não foi, o reenvio da Stripe tenta o convite de novo sozinho. Se foi, reenvie o convite pelo painel do Supabase (no usuário, **Send invite** ou **Send password recovery**; **confira** o nome do botão) ou peça ao cliente para usar "Esqueci minha senha" em `https://falow.app.br/login` com o mesmo e-mail. O reenvio do webhook acha esse usuário pelo e-mail e reaproveita, sem criar outro.
 
 **Se algo der errado:** veja o passo 9 da seção 1. Na Stripe, a aba **Event deliveries** do endpoint mostra a resposta de cada tentativa e permite reenviar.
 
@@ -446,7 +459,7 @@ As `NEXT_PUBLIC_*` são embutidas no código **na hora do build**, não lidas no
 1. Se o `.env.local` tiver `SUPABASE_SERVICE_ROLE_KEY`, `TOKEN_ENCRYPTION_KEY`, `STRIPE_SECRET_KEY` etc. de produção durante o build, esses valores vão **para dentro do código enviado** à Cloudflare.
 2. Um secret que você esqueceu de colocar com `wrangler secret put` não dá erro: o Worker cai, em silêncio, no valor que estava no `.env.local` (que pode ser de desenvolvimento ou de teste).
 
-Por isso, **faça o build de produção só com as variáveis `NEXT_PUBLIC_*` nos arquivos de ambiente**. Roteiro seguro, na pasta do projeto:
+Por isso, **faça o build de produção só com as variáveis `NEXT_PUBLIC_*` nos arquivos de ambiente**. Este roteiro vale para **todo** deploy, não só o primeiro (inclusive os que outras seções mandam fazer). Roteiro seguro, na pasta do projeto:
 
 1. Rode o `npm run check:schema` antes (ele precisa do `SUPABASE_SERVICE_ROLE_KEY` do `.env.local`).
 2. Mova o `.env.local` de lado (renomeie para `.env.guardado.local`, nome que o `.gitignore` já cobre; **não** o apague nem o commite) e crie um `.env.production.local` contendo **apenas** estas quatro linhas, com os valores de produção:
@@ -524,7 +537,9 @@ Limpeza: **o usuário de teste é apagado no passo 17 da seção 1** (prova do c
 
 Só depois de todo o roteiro acima passar e da prova do cascade (passo 17) ter sido feita. Este bloco é o passo 18 da seção 1.
 
-**1. Limpar as assinaturas de teste (antes de trocar as chaves).** Durante a janela de chaves de teste (do deploy do passo 7 até aqui) qualquer pessoa pode ter assinado com o cartão `4242`. Depois da troca de chaves nenhum webhook de teste chega mais e essas linhas ficariam `active` para sempre, com acesso completo e de graça. Liste tudo o que existe, **excluindo o dono**:
+**1. Desativar o webhook de teste (primeiro).** Stripe em modo **teste** → Developers → Webhooks → o endpoint `https://falow.app.br/api/webhooks/stripe` → **Disable** (ou apague). A partir daqui uma compra com cartão de teste não cria mais usuário no Falow: o evento não chega. Sem isso, entre a limpeza (item 2) e a troca das chaves (item 4) ainda dava para alguém assinar com o cartão `4242` e ganhar uma conta.
+
+**2. Limpar as assinaturas de teste (antes de trocar as chaves).** Durante a janela de chaves de teste (do deploy do passo 7 até aqui) qualquer pessoa pode ter assinado com o cartão `4242`. Com o webhook de teste desligado (item 1) e depois da troca de chaves, nenhum evento de teste chega mais e essas linhas ficariam `active` para sempre, com acesso completo e de graça. Liste tudo o que existe, **excluindo o dono**:
 
 ```sql
 select s.user_id, u.email, s.status, s.updated_at, u.created_at as usuario_criado_em
@@ -546,8 +561,6 @@ select u.id, u.email, u.created_at
 
 **Pare se a lista não for exatamente o que você espera**: ela só pode ter os seus usuários de teste (os e-mails que você usou nas compras de teste). Qualquer e-mail que você não reconhece é alguém que assinou com cartão de teste (aí o acesso dele é indevido e pode ser apagado) ou, pior, um cliente real que entrou por outro caminho: investigue antes de apagar. Quando a lista só tiver usuários de teste conhecidos, apague cada um em Supabase → Authentication → Users → o usuário → **Delete user** (a cascata leva a conta de Instagram, os contatos, os dados e a linha de `subscriptions`; se acusar erro de chave estrangeira em leads, use o contorno da seção 9). Rode o primeiro `select` de novo: tem que voltar **vazio**.
 
-**2. Desativar o webhook de teste.** Stripe em modo **teste** → Developers → Webhooks → o endpoint `https://falow.app.br/api/webhooks/stripe` → **Disable** (ou apague). Sem isso, eventos de teste continuariam chegando assinados com o secret de teste.
-
 **3. Stripe em modo live.** Repita 2.1 (produto e preço), 2.3 (só cartão), 2.4 (cancelar no fim das tentativas), 2.5 (portal) e 2.6 (webhook com os mesmos quatro eventos, agora com o endpoint do modo live).
 
 **4. Trocar os três secrets**, um a um, **(você)**:
@@ -559,7 +572,10 @@ npx wrangler secret put STRIPE_WEBHOOK_SECRET
 ```
 
    Com os valores **live** (`sk_live_...`, o `price_...` do live, o `whsec_...` do endpoint live). **Os três mudam de modo**: o `STRIPE_WEBHOOK_SECRET` de teste e o de live são diferentes (cada endpoint tem o seu), e o `STRIPE_PRICE_ID` do modo teste não existe no live (o checkout falharia). Eles valem na hora, sem novo deploy.
-**5. Compra real de conferência (recomendado).** Uma compra com o seu cartão, conferir que tudo chegou (convite, painel, linha em `subscriptions`) e reembolsar em seguida (seção 10c). Só depois disso divulgue o site.
+
+**5. Rodar a lista de novo (depois da troca).** Repita os dois `select` do item 2. Têm que voltar **vazios** (o primeiro) e só com usuários que você reconhece (o segundo). Se aparecer alguém novo, é uma compra de teste que escapou da limpeza (por exemplo, um evento entregue logo antes de o webhook de teste ser desligado): confira e apague como no item 2.
+
+**6. Compra real de conferência (recomendado).** Uma compra com o seu cartão, conferir que tudo chegou (convite, painel, linha em `subscriptions`) e reembolsar em seguida (seção 10c). Só depois disso divulgue o site.
 
 **Se algo der errado:** convite não chega: seção 3. Compra feita e nada na tabela: veja os eventos entregues no endpoint da Stripe (resposta 500/400 e o motivo) e o log do Worker; 400 "Assinatura inválida" é `STRIPE_WEBHOOK_SECRET` de outro modo/endpoint. Bot não responde com assinatura ativa: confira o status da linha e o log (`[meta] @... sem assinatura ativa: evento ignorado` indica que o status da linha não dá acesso).
 
@@ -670,10 +686,11 @@ curl -i -X POST https://falow.app.br/api/webhooks/stripe -H "stripe-signature: t
 
 - Checkout: tem que responder `303` com `Location: https://checkout.stripe.com/...` (cria uma sessão de teste inofensiva).
 - Webhook: tem que responder `400 Assinatura inválida` (prova que a rota carrega e o SDK verifica a assinatura). `503 STRIPE_WEBHOOK_SECRET não configurado` significa secret faltando; `500` ou erro de carregamento do módulo significa que o pacote `stripe` não empacotou direito.
+- Dono: entre em `https://falow.app.br/login` com a conta do dono e abra `/dashboard`. Tem que abrir o painel. Isso confirma que o `FALOW_OWNER_USER_ID` é o mesmo no middleware e no servidor. Se der loop de redirecionamento (a página fica indo e voltando entre `/dashboard` e `/assinatura`), a variável está diferente entre os dois. Causas prováveis: um valor que ficou embutido no build (o build tem que ser feito só com as `NEXT_PUBLIC_*`, seção 4.4) ou o secret gravado errado. Confira se ele existe com `npx wrangler secret list` **(você)**, regrave-o com `npx wrangler secret put FALOW_OWNER_USER_ID` (colando só o UID, sem espaço) e, se o build foi feito com o `.env.local` no lugar, refaça o build e o deploy pelo roteiro da seção 4.4.
 
 O SDK `stripe` vai empacotado pela build Node dentro do OpenNext (usa o cliente fetch e SubtleCrypto, mas só foi checado estaticamente). Se a rota falhar ao carregar, o plano B é acrescentar `serverExternalPackages: ["stripe"]` em `next.config.mjs` para o OpenNext resolver a build worker do pacote (mudança de código: peça a quem mantém o repositório).
 
-Só depois disso crie o endpoint do webhook na Stripe (seção 2.6) e troque o `STRIPE_WEBHOOK_SECRET` provisório. Para provar o fim a fim: no endpoint, **Send test webhook** (ou refaça a compra de teste da seção 6) e confira `200` na aba Event deliveries.
+Só depois disso crie o endpoint do webhook na Stripe (seção 2.6) e troque o `STRIPE_WEBHOOK_SECRET` provisório. Para provar o fim a fim: no endpoint, **Send test webhook** (ou refaça a compra de teste da seção 6) e confira `200` na aba Event deliveries. Se a compra de teste não mandar o e-mail de convite, veja "Convite que falha" na seção 2.6.
 
 ### Prova do cascade de exclusão (uma vez, num usuário de teste)
 
@@ -836,3 +853,32 @@ Confira, em modo live, que estão como na seção 2:
 - Portal com **cancelamento no fim do período**, **troca de cartão** e **download de comprovantes** ligados (2.5).
 - Dunning com "**cancelar a assinatura quando as tentativas acabarem**" (2.4). Se ficar `unpaid`, a conta perde o acesso mas nunca é purgada.
 - Só cartão como forma de pagamento (2.3).
+
+### (e) Consulta mensal: o que o purge nunca apaga
+
+O purge diário só apaga quem está `canceled` com o prazo vencido. Duas situações ficam de fora e acumulam dados para sempre se ninguém olhar. Uma vez por mês, no SQL Editor (só leitura; nada aqui apaga):
+
+```sql
+-- Usuários do Auth sem linha em subscriptions (o dono fica de fora).
+select u.id, u.email, u.created_at, u.last_sign_in_at
+  from auth.users u
+ where u.id <> '<FALOW_OWNER_USER_ID>'
+   and not exists (select 1 from public.subscriptions s where s.user_id = u.id)
+ order by u.created_at;
+```
+
+```sql
+-- Assinaturas paradas em status que não dão acesso e não agendam exclusão, há mais de 30 dias.
+select s.user_id, u.email, s.status, s.stripe_subscription_id, s.updated_at
+  from public.subscriptions s
+  join auth.users u on u.id = s.user_id
+ where s.status in ('incomplete_expired', 'unpaid', 'paused')
+   and s.updated_at < now() - interval '30 days'
+ order by s.updated_at;
+```
+
+Decida **caso a caso**, sempre olhando a Stripe antes (Customers → busque pelo e-mail):
+
+- **Usuário sem linha em `subscriptions`:** pode ser uma compra cujo webhook falhou (a pessoa **pagou** e não tem acesso: veja os eventos do endpoint na Stripe, reenvie o que falhou e fale com ela) ou um usuário de teste esquecido. Só apague (seção 10b, passo 4) depois de confirmar na Stripe que não há assinatura nem pagamento desse e-mail.
+- **`incomplete_expired`:** o primeiro pagamento nunca foi concluído. Se a Stripe não mostrar outra assinatura viva do cliente, apague como na seção 10b.
+- **`unpaid` ou `paused`:** a Stripe não cancelou (confira a seção 2.4). Prefira **cancelar a assinatura na Stripe** (Cancel immediately): o evento de cancelamento chega e os 30 dias de exclusão começam sozinhos, sem apagar nada à mão.
