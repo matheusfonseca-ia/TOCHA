@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { ownedAccountId } from "@/lib/auth/ownership";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -24,9 +25,7 @@ import { getTagWorkflowUsage as queryTagWorkflowUsage } from "./tags.queries";
  */
 
 async function assertOwnsAccount(accountId: string): Promise<{ error: string | null }> {
-  const supabase = createClient();
-  const { data } = await supabase.from("ig_accounts").select("id").eq("id", accountId).maybeSingle();
-  return data ? { error: null } : { error: "Conta não encontrada." };
+  return (await ownedAccountId(accountId)) ? { error: null } : { error: "Conta não encontrada." };
 }
 
 export async function openTagManager(accountId: string): Promise<{ tags: CrmTag[]; error: string | null }> {

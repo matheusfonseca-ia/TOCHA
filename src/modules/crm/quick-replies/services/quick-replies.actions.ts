@@ -1,5 +1,6 @@
 "use server";
 
+import { ownedAccountId as ownAccountId } from "@/lib/auth/ownership";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -7,16 +8,6 @@ const MAX_TITLE = 40;
 const MAX_TEXT = 1000;
 
 export type QuickReplyActionResult = { ok: true } | { error: string };
-
-/** Confere que a conta é do usuário logado antes de qualquer escrita. */
-async function ownAccountId(accountId: string): Promise<string | null> {
-  const { data } = await createClient()
-    .from("ig_accounts")
-    .select("id")
-    .eq("id", accountId)
-    .maybeSingle<{ id: string }>();
-  return data?.id ?? null;
-}
 
 export async function createQuickReply(
   accountId: string,
