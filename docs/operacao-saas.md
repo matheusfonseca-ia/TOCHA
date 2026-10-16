@@ -8,7 +8,7 @@ Convenções:
 - Valores secretos nunca entram neste arquivo nem no git. Onde aparece `<...>`, troque pelo seu valor.
 - "SQL Editor" é Supabase → SQL Editor → New query. Cole o bloco, clique em Run e leia o resultado antes de seguir.
 - Nomes de menu da Stripe, da Meta, do Supabase, do Resend, da Vercel e da Cloudflare mudam de tempos em tempos. Os caminhos abaixo são os de quando o runbook foi escrito; se um nome não aparecer, procure pelo termo em inglês em negrito.
-- Alguns trechos foram escritos **de memória, sem teste contra os serviços**, e estão marcados com "**confira**": a tabela de SMTP do Resend (seção 3.2: host, porta e usuário), o comportamento do `wrangler secret put` quando o Worker ainda não existe (seção 4), o `wrangler rollback` (passo 7) e o comportamento dos Workers Logs (seção 4.6). Antes de depender de um deles, confirme na documentação ou no painel do próprio serviço; se o valor real for outro, vale o do serviço.
+- Alguns trechos foram escritos **de memória, sem teste contra os serviços**, e estão marcados com "**confira**": a tabela de SMTP do Resend (seção 3.2: host, porta e usuário), o comportamento do `wrangler secret put` quando o Worker ainda não existe (seção 4), o `wrangler rollback` (passo 7) e o nome do menu dos Workers Logs no painel (seção 4.6). Antes de depender de um deles, confirme na documentação ou no painel do próprio serviço; se o valor real for outro, vale o do serviço.
 
 Fatos que valem para tudo (vêm da spec `docs/superpowers/specs/2026-10-15-falow-multiusuario-design.md`):
 
@@ -474,7 +474,9 @@ Conferir que existem: Cloudflare → Workers & Pages → `falow` → Settings �
 
 ### 4.6 Logs
 
-Para procurar mensagens depois (seção 8), os logs precisam estar ligados: Cloudflare → Workers & Pages → `falow` → **Observability** (ou Settings → Observability) → ligar **Workers Logs** (**confira** o nome do menu). O `wrangler.toml` **não tem** bloco `[observability]`, então a opção só existe se você ligar no painel, e **confira depois de cada deploy** se ela continua ligada: um `wrangler deploy` pode devolver a configuração ao que está no arquivo (comportamento escrito de memória). Se voltar a ficar desligada, acrescente `[observability]` com `enabled = true` ao `wrangler.toml` (uma mudança de duas linhas no repositório, a ser feita por quem mantém o código) e faça o deploy de novo. Para acompanhar ao vivo sem nada disso: `npx wrangler tail falow --format pretty` **(você)**.
+O `wrangler.toml` já liga os **Workers Logs** (bloco `[observability]` com `enabled = true`): todo deploy sobe com eles ligados, sem passo no painel. Você só confere, depois do primeiro deploy, que as mensagens aparecem em Cloudflare → Workers & Pages → `falow` → **Logs** (em alguns painéis, **Observability** → Logs; **confira** o nome do menu). É lá que se procuram as mensagens da seção 8. Para acompanhar ao vivo: `npx wrangler tail falow --format pretty` **(você)**.
+
+O mesmo arquivo tem `workers_dev = false`: o Worker não fica acessível em endereço `*.workers.dev`, só em `https://falow.app.br`. Todo teste deste runbook usa `https://falow.app.br`.
 
 ---
 
@@ -614,7 +616,7 @@ select tablename from pg_tables where schemaname = 'public' and not rowsecurity;
 
 Quem já tem assinatura com acesso e compra de novo (ou alguém que sabe o e-mail dele) **não** troca de assinatura: o webhook ignora a segunda e deixa a linha como estava. A cobrança da segunda, porém, existe na Stripe e precisa ser tratada à mão.
 
-1. **Achar o aviso.** Procure `[stripe] compra repetida ignorada` nos logs do Worker (Cloudflare → Workers & Pages → `falow` → Observability → Logs, com os Workers Logs ligados; seção 4.6). A mensagem traz o usuário, o id e o cliente da assinatura **antiga** e o id e o cliente da **nova**. Alternativa na Stripe: Customers com o mesmo e-mail e duas assinaturas.
+1. **Achar o aviso.** Procure `[stripe] compra repetida ignorada` nos logs do Worker (Cloudflare → Workers & Pages → `falow` → Logs; o `wrangler.toml` já liga os Workers Logs, seção 4.6). A mensagem traz o usuário, o id e o cliente da assinatura **antiga** e o id e o cliente da **nova**. Alternativa na Stripe: Customers com o mesmo e-mail e duas assinaturas.
 2. **Decidir qual fica**, olhando o status da assinatura ANTIGA na Stripe:
    - Antiga **saudável** (`active`): cancele/reembolse a **NOVA** (Payments → o pagamento → Refund; Subscriptions → a nova → Cancel subscription → Cancel immediately). A linha em `subscriptions` já está certa, não mexa.
    - Antiga **`past_due`** ou com **cancelamento agendado**: a **NOVA** é a que deve ficar. Primeiro atualize a linha do usuário com os dados da nova (SQL Editor):

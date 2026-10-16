@@ -7,6 +7,9 @@ compatibility_flags = ["nodejs_compat"]
 # quebrava no navegador com "__name is not defined". Recomendação do OpenNext:
 # https://opennext.js.org/cloudflare/howtos/keep_names
 keep_names = false
+# O Worker so atende em falow.app.br: nada de endereco *.workers.dev publico
+# (nem durante a janela das chaves de teste da Stripe).
+workers_dev = false
 
 routes = [
   { pattern = "falow.app.br", custom_domain = true }
@@ -20,3 +23,8 @@ binding = "ASSETS"
 # O scheduled() esta em worker.ts.
 [triggers]
 crons = ["* * * * *", "0 6 * * *"]
+
+# Workers Logs ligado pelo arquivo (um deploy nao desliga). E onde aparecem
+# avisos que so existem no log, como "[stripe] compra repetida ignorada".
+[observability]
+enabled = true
