@@ -1,5 +1,5 @@
 name = "falow"
-main = ".open-next/worker.js"
+main = "worker.ts"
 compatibility_date = "2026-09-14"
 compatibility_flags = ["nodejs_compat"]
 # O esbuild do wrangler injeta __name() nas funções; o script inline do
@@ -9,9 +9,14 @@ compatibility_flags = ["nodejs_compat"]
 keep_names = false
 
 routes = [
-  { pattern = "falow.methodgrowthhub.com.br", custom_domain = true }
+  { pattern = "falow.app.br", custom_domain = true }
 ]
 
 [assets]
 directory = ".open-next/assets"
 binding = "ASSETS"
+
+# Crons: a cada minuto roda as sequencias; as 06:00 UTC roda o purge.
+# O scheduled() esta em worker.ts.
+[triggers]
+crons = ["* * * * *", "0 6 * * *"]
