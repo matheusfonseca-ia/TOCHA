@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { isOwner } from "@/lib/billing/access";
+import { isAdmin } from "@/lib/billing/access";
 import { checkoutDecision } from "@/lib/billing/checkout";
 import { getStripe } from "@/lib/billing/stripe";
 import { createClient } from "@/lib/supabase/server";
@@ -30,7 +30,7 @@ export async function POST() {
     return NextResponse.redirect(new URL("/assinatura", appUrl), 303);
   }
 
-  const decision = checkoutDecision({ userId: user?.id ?? null, owner: isOwner(user?.id), subscription });
+  const decision = checkoutDecision({ userId: user?.id ?? null, owner: isAdmin(user?.id), subscription });
   if (decision.kind === "dashboard") return NextResponse.redirect(new URL("/dashboard", appUrl), 303);
 
   const session = await getStripe().checkout.sessions.create({

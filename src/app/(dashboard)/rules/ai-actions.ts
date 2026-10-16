@@ -3,7 +3,7 @@
 import type { AiFieldKind } from "@/lib/ai/fields";
 import type { FieldPromptContext } from "@/lib/ai/prompt";
 import { aiConfigFromEnv, generateFieldSuggestions } from "@/lib/ai/provider";
-import { isOwner } from "@/lib/billing/access";
+import { isAdmin } from "@/lib/billing/access";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -11,22 +11,22 @@ import { createClient } from "@/lib/supabase/server";
  * cliente manda só o campo, a instrução e o contexto, e recebe as sugestões
  * prontas.
  *
- * Só o dono da instalação (`FALOW_OWNER_USER_ID`) vê e usa o botão: a chave é
- * dele e o custo também. Sem `OPENROUTER_API_KEY` configurada, ou para qualquer
+ * Só o dono (`FALOW_OWNER_USER_ID`) e os admins (`FALOW_ADMIN_USER_IDS`) veem
+ * e usam o botão: a chave é do dono e o custo também. Sem `OPENROUTER_API_KEY` configurada, ou para qualquer
  * outro usuário, `isAiEnabled` devolve false e a UI nem mostra o botão.
  * `generateForField` repete a checagem porque uma server action pode ser
  * chamada direto, sem passar pela UI.
  */
 
-async function currentUserIsOwner(): Promise<boolean> {
+async function currentUserIsAdmin(): Promise<boolean> {
   const {
     data: { user },
   } = await createClient().auth.getUser();
-  return isOwner(user?.id);
+  return isAdmin(user?.id);
 }
 
 export async function isAiEnabled(): Promise<boolean> {
-  return aiConfigFromEnv() !== null && (await currentUserIsOwner());
+  return aiConfigFromEnv() !== null && (await currentUserIsAdmin());
 }
 
 export type GenerateResult = { suggestions: string[] } | { error: string };
@@ -37,7 +37,7 @@ export async function generateForField(input: {
   instruction?: string | null;
   context?: FieldPromptContext;
 }): Promise<GenerateResult> {
-  if (!(await currentUserIsOwner())) {
+  if (!(await currentUserIsAdmin())) {
     return { error: "A escrita com IA não está disponível nesta conta." };
   }
 

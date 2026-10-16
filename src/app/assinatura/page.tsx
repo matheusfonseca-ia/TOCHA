@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { signOut } from "@/app/login/actions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { isAccessStatus, isOwner } from "@/lib/billing/access";
+import { accessGrantOf, isAccessStatus, isAdmin } from "@/lib/billing/access";
 import { formatPurgeDate } from "@/lib/billing/format";
 import { createClient } from "@/lib/supabase/server";
 import type { Subscription } from "@/types/database";
@@ -22,13 +22,31 @@ const STATUS_LABEL: Record<string, string> = {
   incomplete_expired: "Pagamento expirado",
 };
 
+function ErroNeutro() {
+  return (
+    <main className="flex min-h-screen items-center justify-center p-4">
+      <Card className="w-full max-w-md space-y-5 p-6">
+        <h1 className="font-display text-xl font-semibold tracking-tight">Sua assinatura</h1>
+        <p>Não foi possível conferir sua assinatura agora. Tente de novo em instantes.</p>
+        {/* <a> comum (não Link): recarrega a página inteira e refaz a leitura no servidor. */}
+        <Button asChild className="w-full">
+          <a href="/assinatura">Tentar de novo</a>
+        </Button>
+        <form action={signOut}>
+          <button type="submit" className="text-sm text-muted-foreground underline">Sair</button>
+        </form>
+      </Card>
+    </main>
+  );
+}
+
 export default async function AssinaturaPage() {
   const supabase = createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
-  if (isOwner(user.id)) redirect("/dashboard");
+  if (isAdmin(user.id)) redirect("/dashboard");
 
   const { data: sub, error } = await supabase
     .from("subscriptions")
@@ -40,14 +58,41 @@ export default async function AssinaturaPage() {
   // abriria uma segunda assinatura.
   if (error) {
     console.error("[assinatura] falha ao ler a assinatura:", error.message);
+    return <ErroNeutro />;
+  }
+
+  const { grant, error: grantError } = await accessGrantOf(supabase, user.id);
+  if (grantError) return <ErroNeutro />;
+
+  // Bloqueio manda sobre a assinatura: sem Reativar nem Gerenciar, só Sair.
+  if (grant?.kind === "block") {
     return (
       <main className="flex min-h-screen items-center justify-center p-4">
         <Card className="w-full max-w-md space-y-5 p-6">
           <h1 className="font-display text-xl font-semibold tracking-tight">Sua assinatura</h1>
-          <p>Não foi possível conferir sua assinatura agora. Tente de novo em instantes.</p>
-          {/* <a> comum (não Link): recarrega a página inteira e refaz a leitura no servidor. */}
-          <Button asChild className="w-full">
-            <a href="/assinatura">Tentar de novo</a>
+          <p>Conta bloqueada. Fale com o suporte.</p>
+          <form action={signOut}>
+            <button type="submit" className="text-sm text-muted-foreground underline">Sair</button>
+          </form>
+        </Card>
+      </main>
+    );
+  }
+
+  const courtesyUntil =
+    grant?.kind === "courtesy" && grant.expires_at && new Date(grant.expires_at) > new Date()
+      ? grant.expires_at
+      : null;
+  if (courtesyUntil) {
+    return (
+      <main className="flex min-h-screen items-center justify-center p-4">
+        <Card className="w-full max-w-md space-y-5 p-6">
+          <h1 className="font-display text-xl font-semibold tracking-tight">Sua assinatura</h1>
+          <p>
+            Cortesia válida até <strong>{formatPurgeDate(courtesyUntil)}</strong>
+          </p>
+          <Button asChild>
+            <Link href="/dashboard">Ir para o painel</Link>
           </Button>
           <form action={signOut}>
             <button type="submit" className="text-sm text-muted-foreground underline">Sair</button>

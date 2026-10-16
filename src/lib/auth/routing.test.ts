@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { routeFor } from "@/lib/auth/routing";
+import { isAdminPath, routeFor } from "@/lib/auth/routing";
 
 const anon = { loggedIn: false, hasAccess: false };
 const lapsed = { loggedIn: true, hasAccess: false };
@@ -28,5 +28,16 @@ describe("routeFor", () => {
     expect(routeFor("/dashboard", paying)).toBe("next");
     expect(routeFor("/assinatura", paying)).toBe("next");
     expect(routeFor("/login", paying)).toBe("/dashboard");
+  });
+});
+
+describe("isAdminPath", () => {
+  it("reconhece /admin e subrotas", () => {
+    expect(isAdminPath("/admin")).toBe(true);
+    expect(isAdminPath("/admin/clientes")).toBe(true);
+  });
+  it("não confunde prefixos parecidos", () => {
+    expect(isAdminPath("/administrativo")).toBe(false);
+    expect(isAdminPath("/dashboard")).toBe(false);
   });
 });

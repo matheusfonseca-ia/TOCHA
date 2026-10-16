@@ -24,3 +24,8 @@ export function routeFor(pathname: string, ctx: { loggedIn: boolean; hasAccess: 
   if (!ctx.hasAccess && !NO_ACCESS_ALLOWED.has(pathname)) return "/assinatura";
   return "next";
 }
+
+/** Área do painel de admin: /admin e qualquer subrota. */
+export function isAdminPath(pathname: string): boolean {
+  return pathname === "/admin" || pathname.startsWith("/admin/");
+}

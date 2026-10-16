@@ -1,8 +1,8 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { PUBLIC_PATHS, routeFor } from "@/lib/auth/routing";
-import { isAccessStatus, isOwner } from "@/lib/billing/access";
+import { PUBLIC_PATHS, isAdminPath, routeFor } from "@/lib/auth/routing";
+import { hasActiveAccess, isAdmin } from "@/lib/billing/access";
 
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
@@ -42,21 +42,15 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  let hasAccess = false;
-  if (user) {
-    if (isOwner(user.id)) {
-      hasAccess = true;
-    } else {
-      const { data: sub, error } = await supabase
-        .from("subscriptions")
-        .select("status")
-        .eq("user_id", user.id)
-        .maybeSingle<{ status: string }>();
-      // Fail-closed: erro de leitura também manda para /assinatura, mas fica no log
-      // (a página mostra "não foi possível conferir", não "sem assinatura").
-      if (error) console.error("[middleware] falha ao ler subscriptions:", error.message);
-      hasAccess = isAccessStatus(sub?.status);
-    }
+  // Regra única (admin → bloqueio → cortesia → assinatura); o client do usuário
+  // lê só as próprias linhas de access_grants e subscriptions (RLS).
+  const hasAccess = user ? await hasActiveAccess(supabase, user.id) : false;
+
+  // /admin não existe para quem não é admin: 404, sem revelar a área.
+  if (user && isAdminPath(pathname) && !isAdmin(user.id)) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/404";
+    return NextResponse.rewrite(url, { status: 404 });
   }
 
   const target = routeFor(pathname, { loggedIn: Boolean(user), hasAccess });

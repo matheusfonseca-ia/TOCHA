@@ -7,6 +7,7 @@ const { state, createServerClient } = vi.hoisted(() => {
   const state = {
     user: null as null | { id: string },
     sub: null as null | { status: string },
+    grant: null as null | { user_id: string; kind: string; expires_at: string | null },
     error: null as null | { message: string },
     fromCalls: [] as string[],
   };
@@ -17,8 +18,10 @@ const { state, createServerClient } = vi.hoisted(() => {
       const chain = {
         select: () => chain,
         eq: () => chain,
-        maybeSingle: async () =>
-          state.error ? { data: null, error: state.error } : { data: state.sub, error: null },
+        maybeSingle: async () => {
+          if (table === "access_grants") return { data: state.grant ?? null, error: null };
+          return state.error ? { data: null, error: state.error } : { data: state.sub, error: null };
+        },
       };
       return chain;
     },
@@ -43,6 +46,7 @@ describe("middleware", () => {
   beforeEach(() => {
     state.user = null;
     state.sub = null;
+    state.grant = null;
     state.error = null;
     state.fromCalls = [];
     createServerClient.mockClear();
@@ -82,7 +86,7 @@ describe("middleware", () => {
     state.sub = { status };
     expect(isNext(await middleware(req("/dashboard")))).toBe(true);
     expect(isNext(await middleware(req("/crm/conversas")))).toBe(true);
-    expect(state.fromCalls[0]).toBe("subscriptions");
+    expect(state.fromCalls.slice(0, 2)).toEqual(["access_grants", "subscriptions"]);
     expect(location(await middleware(req("/login")))?.pathname).toBe("/dashboard");
   });
 
@@ -114,7 +118,7 @@ describe("middleware", () => {
     const r = await middleware(req("/dashboard"));
     expect(r.status).toBe(307);
     expect(location(r)?.pathname).toBe("/assinatura");
-    expect(consoleError).toHaveBeenCalledWith("[middleware] falha ao ler subscriptions:", "boom");
+    expect(consoleError).toHaveBeenCalledWith("[access] falha ao ler subscriptions do usuário u4:", "boom");
   });
 
   it("sem erro na consulta nao registra nada no console.error", async () => {
@@ -123,5 +127,38 @@ describe("middleware", () => {
     state.sub = null;
     await middleware(req("/dashboard"));
     expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  it("não-admin em /admin recebe 404 (rewrite), sem redirecionar", async () => {
+    state.user = { id: "u2" };
+    state.sub = { status: "active" };
+    const r = await middleware(req("/admin/clientes"));
+    expect(r.headers.get("x-middleware-rewrite")).toContain("/404");
+    expect(r.headers.get("location")).toBeNull();
+  });
+
+  it("anônimo em /admin vai para /login como qualquer área logada", async () => {
+    const r = await middleware(req("/admin"));
+    expect(location(r)?.pathname).toBe("/login");
+  });
+
+  it("admin (dono) entra em /admin", async () => {
+    state.user = { id: "user-1" };
+    expect(isNext(await middleware(req("/admin")))).toBe(true);
+  });
+
+  it("cliente bloqueado vai para /assinatura mesmo com assinatura ativa", async () => {
+    state.user = { id: "u3" };
+    state.sub = { status: "active" };
+    state.grant = { user_id: "u3", kind: "block", expires_at: null };
+    expect(location(await middleware(req("/dashboard")))?.pathname).toBe("/assinatura");
+  });
+
+  it("cortesia vencida vai para /assinatura; válida entra", async () => {
+    state.user = { id: "u4" };
+    state.grant = { user_id: "u4", kind: "courtesy", expires_at: "2000-01-01T00:00:00Z" };
+    expect(location(await middleware(req("/dashboard")))?.pathname).toBe("/assinatura");
+    state.grant = { user_id: "u4", kind: "courtesy", expires_at: "2999-01-01T00:00:00Z" };
+    expect(isNext(await middleware(req("/dashboard")))).toBe(true);
   });
 });

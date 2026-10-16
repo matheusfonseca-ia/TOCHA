@@ -34,12 +34,15 @@ export function Sidebar({
   userEmail,
   crmUnread = 0,
   showBilling = false,
+  showAdmin = false,
 }: {
   userEmail: string;
   /** Mensagens não lidas no Inbox do CRM (badge do item CRM). */
   crmUnread?: number;
-  /** Mostra "Minha assinatura" (portal da Stripe). Fica de fora pro dono, que não tem assinatura. */
+  /** Mostra "Minha assinatura" (portal da Stripe). Fica de fora pro dono e admins, que não têm assinatura. */
   showBilling?: boolean;
+  /** Mostra o link do painel /admin (só admins). */
+  showAdmin?: boolean;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -189,6 +192,14 @@ export function Sidebar({
               Automações ativas
             </span>
           </div>
+          {showAdmin && (
+            <Link
+              href="/admin"
+              className="block w-full rounded-md px-2.5 py-1.5 text-left text-[13px] text-muted-foreground transition-colors hover:bg-secondary/40 hover:text-foreground"
+            >
+              Admin
+            </Link>
+          )}
           {showBilling && (
             <form action="/api/billing/portal" method="post">
               <button

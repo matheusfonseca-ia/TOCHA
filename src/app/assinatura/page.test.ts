@@ -13,17 +13,22 @@ const { state } = vi.hoisted(() => ({
     user: { id: "c1" } as { id: string } | null,
     row: null as Record<string, unknown> | null,
     error: null as { message: string } | null,
+    grant: null as Record<string, unknown> | null,
   },
 }));
 
 vi.mock("@/lib/supabase/server", () => ({
   createClient: () => ({
     auth: { getUser: async () => ({ data: { user: state.user } }) },
-    from: () => ({
+    from: (table: string) => ({
       select: () => ({
         eq: () => ({
           maybeSingle: async () =>
-            state.error ? { data: null, error: state.error } : { data: state.row, error: null },
+            table === "access_grants"
+              ? { data: state.grant, error: null }
+              : state.error
+                ? { data: null, error: state.error }
+                : { data: state.row, error: null },
         }),
       }),
     }),
@@ -49,6 +54,7 @@ describe("/assinatura", () => {
     state.user = { id: "c1" };
     state.row = null;
     state.error = null;
+    state.grant = null;
   });
 
   afterEach(() => {
@@ -84,6 +90,24 @@ describe("/assinatura", () => {
     state.row = { status: "active", purge_after: null };
     const html = await render();
     expect(html).toContain("Gerenciar na Stripe");
+    expect(html).not.toContain("Reativar");
+  });
+
+  it("conta bloqueada: avisa e não oferece Reativar nem Gerenciar", async () => {
+    state.row = { status: "active" };
+    state.grant = { user_id: "c1", kind: "block", expires_at: null };
+    const html = await render();
+    expect(html).toContain("Conta bloqueada");
+    expect(html).toContain("Sair");
+    expect(html).not.toContain("Reativar");
+    expect(html).not.toContain("Gerenciar");
+  });
+
+  it("cortesia válida: mostra a data e o botão do painel", async () => {
+    state.grant = { user_id: "c1", kind: "courtesy", expires_at: "2999-01-01T12:00:00Z" };
+    const html = await render();
+    expect(html).toContain("Cortesia válida até");
+    expect(html).toContain("Ir para o painel");
     expect(html).not.toContain("Reativar");
   });
 });

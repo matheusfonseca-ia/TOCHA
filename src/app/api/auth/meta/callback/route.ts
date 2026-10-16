@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { encryptToken } from "@/lib/crypto";
-import { isOwner } from "@/lib/billing/access";
+import { isAdmin } from "@/lib/billing/access";
 import { connectBlockReason } from "@/lib/meta/connect-guard";
 import { subscribeAccountToWebhooks } from "@/lib/meta/graph";
 import {
@@ -74,7 +74,7 @@ export async function GET(request: NextRequest) {
     const blocked = connectBlockReason({
       userId: user.id,
       igUserId: profile.igUserId,
-      owner: isOwner(user.id),
+      owner: isAdmin(user.id),
       activeAccounts: activeAccounts ?? [],
     });
     if (blocked) return redirectToAccounts(`error=${blocked}`);
