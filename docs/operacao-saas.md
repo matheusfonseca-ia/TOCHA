@@ -257,6 +257,8 @@ Faça primeiro em **modo teste** (chave "Test mode" no canto do painel). Quase t
 2. Preço: **Recurring**, mensal, em BRL, o valor do plano.
 3. Salvar. Abra o preço e copie o **Price ID** (`price_...`). Ele vira o secret `STRIPE_PRICE_ID`. O checkout usa exatamente esse preço, com quantidade 1.
 
+O webhook só reconhece assinaturas desse preço (`STRIPE_PRICE_ID`). O mais seguro é usar uma conta Stripe só do Falow; se a conta tiver outros produtos recorrentes, as assinaturas deles são ignoradas (não geram usuário no Falow e aparecem no log como `[stripe] ... ignorado: não é do preço do Falow`). Por isso **não troque o `STRIPE_PRICE_ID` com clientes pagando no preço antigo**: os eventos deles (inclusive o cancelamento) passariam a ser ignorados.
+
 ### 2.2 Chave de API
 
 Developers → **API keys** → copie a **Secret key** (`sk_test_...` no modo teste). Ela vira `STRIPE_SECRET_KEY`. O app não usa a chave publicável.
@@ -304,7 +306,7 @@ O que cada evento faz (`src/lib/billing/stripe-events.ts`):
 
 | Evento | Efeito |
 |---|---|
-| `checkout.session.completed` | Acha o usuário pelo cliente da Stripe (reativação) ou pelo e-mail; se não existe, convida por e-mail; grava a assinatura em `subscriptions`. Compra repetida de quem já tem acesso é ignorada e vai para o log (seção 8). |
+| `checkout.session.completed` | Pergunta a assinatura à Stripe e ignora se não for do `STRIPE_PRICE_ID` (seção 2.1). Acha o usuário pelo cliente da Stripe (reativação) ou pelo e-mail; se não existe, convida por e-mail; grava a assinatura em `subscriptions`. Compra repetida de quem já tem acesso é ignorada e vai para o log (seção 8). |
 | `customer.subscription.created` / `updated` | Pergunta o estado atual à Stripe e atualiza `status` e `current_period_end`. Status com acesso zera `canceled_at`/`purge_after`. |
 | `customer.subscription.deleted` | `status = canceled`, `canceled_at = agora`, `purge_after = agora + 30 dias`. |
 

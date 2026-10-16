@@ -45,6 +45,18 @@ export function periodEndOf(sub: Stripe.Subscription): string | null {
 }
 
 /**
+ * O webhook só reconhece assinaturas do plano do Falow: algum item com o preço
+ * `STRIPE_PRICE_ID`. Outro produto recorrente na mesma conta Stripe não cria
+ * usuário nem mexe em `subscriptions`. Sem a env (testes, dev) não há filtro.
+ */
+export function isFalowSubscription(sub: Stripe.Subscription): boolean {
+  const priceId = process.env.STRIPE_PRICE_ID?.trim();
+  if (!priceId) return true;
+  const items = (sub as unknown as { items?: { data?: { price?: Ref }[] } }).items?.data ?? [];
+  return items.some((item) => idOf(item.price) === priceId);
+}
+
+/**
  * Campos de exclusão (`canceled_at`/`purge_after`) que um status manda gravar.
  * Regra única: o checkout e os eventos de assinatura usam esta mesma função.
  * - com acesso: zera a exclusão;
@@ -102,6 +114,15 @@ async function handleCheckout(
     return { status: "retry", reason: "sessão sem cliente ou assinatura" };
   }
 
+  // A sessão não traz os itens: o preço vem da assinatura. Recuperada antes de
+  // achar ou convidar o usuário, senão a compra de outro produto da mesma conta
+  // Stripe convidaria alguém para o Falow.
+  const sub = await deps.retrieveSubscription(subscriptionId);
+  if (!isFalowSubscription(sub)) {
+    console.warn(`[stripe] checkout da assinatura ${subscriptionId} (cliente ${customerId}) ignorado: não é do preço do Falow (STRIPE_PRICE_ID).`);
+    return { status: "ignored" };
+  }
+
   // Reativação: o cliente da Stripe já tem linha. Compra nova: pelo e-mail.
   const { data: byCustomer, error: byCustomerError } = await deps.admin
     .from("subscriptions")
@@ -150,7 +171,6 @@ async function handleCheckout(
     return { status: "processed" };
   }
 
-  const sub = await deps.retrieveSubscription(subscriptionId);
   const now = (deps.now ?? (() => new Date()))();
   const { error } = await deps.admin.from("subscriptions").upsert(
     {
@@ -173,6 +193,13 @@ async function handleSubscription(
   deleted: boolean,
   deps: StripeEventDeps
 ): Promise<StripeEventResult> {
+  // Assinatura de outro produto: nem consulta (sem isso cada evento dela daria
+  // "cliente ainda desconhecido" e 500 por dias).
+  if (!isFalowSubscription(sub)) {
+    console.warn(`[stripe] evento da assinatura ${sub.id} ignorado: não é do preço do Falow (STRIPE_PRICE_ID).`);
+    return { status: "ignored" };
+  }
+
   const customerId = idOf(sub.customer as Ref);
   const { data, error: lookupError } = await deps.admin
     .from("subscriptions")

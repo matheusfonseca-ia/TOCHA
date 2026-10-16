@@ -11,17 +11,19 @@ const PURGE_AT = new Date(NOW.getTime() + 30 * DAY_MS).toISOString();
 const PERIOD_END = 1_800_000_000; // segundos
 const PERIOD_END_ISO = new Date(PERIOD_END * 1000).toISOString();
 
+/** `priceId` vai em `items.data[0].price.id` (sem ele, o item não tem preço). */
 function sub(
   id: string,
   status: Stripe.Subscription.Status,
   customer = "cus_1",
-  periodEnd = PERIOD_END
+  periodEnd = PERIOD_END,
+  priceId?: string
 ): Stripe.Subscription {
   return {
     id,
     status,
     customer,
-    items: { data: [{ current_period_end: periodEnd }] },
+    items: { data: [{ current_period_end: periodEnd, ...(priceId ? { price: { id: priceId } } : {}) }] },
   } as unknown as Stripe.Subscription;
 }
 
@@ -83,6 +85,7 @@ describe("handleStripeEvent", () => {
 
   afterEach(() => {
     errorSpy.mockRestore();
+    vi.unstubAllEnvs();
   });
 
   it("checkout de e-mail novo convida e grava a assinatura", async () => {
@@ -152,7 +155,9 @@ describe("handleStripeEvent", () => {
         status: "active",
       },
     ]);
-    expect(deps.retrieveSubscription).not.toHaveBeenCalled();
+    // A assinatura nova é recuperada (para conferir o preço) antes de achar o usuário,
+    // mas a linha continua intacta.
+    expect(deps.retrieveSubscription).toHaveBeenCalledWith("sub_nova");
     expect(errorSpy).toHaveBeenCalledTimes(1);
     const message = String(errorSpy.mock.calls[0][0]);
     expect(message).toContain("sub_velha");
@@ -303,7 +308,8 @@ describe("handleStripeEvent", () => {
 
     expect(result).toMatchObject({ status: "retry", reason: expect.stringContaining("boom") });
     expect(db.tables.subscriptions).toHaveLength(0);
-    expect(deps.retrieveSubscription).not.toHaveBeenCalled();
+    // Recuperada só para conferir o preço; nada é gravado.
+    expect(deps.retrieveSubscription).toHaveBeenCalledTimes(1);
   });
 
   it("erro ao procurar o cliente da Stripe pede reenvio sem cair no caminho do e-mail", async () => {
@@ -517,5 +523,141 @@ describe("handleStripeEvent", () => {
 
   it("tipo de evento desconhecido é ignorado", async () => {
     expect(await handleStripeEvent(evt("invoice.paid", {}), deps)).toEqual({ status: "ignored" });
+  });
+
+  describe("filtro pelo preço do Falow (STRIPE_PRICE_ID)", () => {
+    let warnSpy: MockInstance<typeof console.warn>;
+
+    beforeEach(() => {
+      vi.stubEnv("STRIPE_PRICE_ID", "price_falow");
+      warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    });
+
+    afterEach(() => {
+      warnSpy.mockRestore();
+    });
+
+    it("checkout de assinatura de outro preço é ignorado: sem consulta de e-mail, sem convite, sem linha", async () => {
+      subs.sub_1 = sub("sub_1", "active", "cus_1", PERIOD_END, "price_outro");
+
+      const result = await handleStripeEvent(checkout(), deps);
+
+      expect(result).toEqual({ status: "ignored" });
+      expect(deps.retrieveSubscription).toHaveBeenCalledWith("sub_1");
+      expect(deps.findUserIdByEmail).not.toHaveBeenCalled();
+      expect(deps.inviteUser).not.toHaveBeenCalled();
+      expect(db.tables.subscriptions).toHaveLength(0);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(String(warnSpy.mock.calls[0][0])).toContain("sub_1");
+    });
+
+    it("checkout de outro preço não mexe na linha de um cliente do Falow com o mesmo cliente Stripe", async () => {
+      db.tables.subscriptions.push({
+        user_id: "cliente-1",
+        stripe_customer_id: "cus_1",
+        stripe_subscription_id: "sub_velha",
+        status: "canceled",
+        canceled_at: "2026-10-01T00:00:00Z",
+        purge_after: "2026-10-31T00:00:00Z",
+      });
+      const before = { ...db.tables.subscriptions[0] };
+      subs.sub_2 = sub("sub_2", "active", "cus_1", PERIOD_END, "price_outro");
+
+      const result = await handleStripeEvent(checkout({ subscription: "sub_2" }), deps);
+
+      expect(result).toEqual({ status: "ignored" });
+      expect(db.tables.subscriptions).toEqual([before]);
+    });
+
+    it("checkout com o preço certo segue o fluxo normal", async () => {
+      subs.sub_1 = sub("sub_1", "active", "cus_1", PERIOD_END, "price_falow");
+
+      const result = await handleStripeEvent(checkout(), deps);
+
+      expect(result).toEqual({ status: "processed" });
+      expect(deps.inviteUser).toHaveBeenCalledWith("Cliente@Exemplo.com");
+      expect(db.tables.subscriptions).toEqual([
+        expect.objectContaining({ user_id: "novo-user", stripe_subscription_id: "sub_1", status: "active" }),
+      ]);
+      expect(warnSpy).not.toHaveBeenCalled();
+    });
+
+    it("preço como string no item também vale; espaço em volta da env é ignorado", async () => {
+      vi.stubEnv("STRIPE_PRICE_ID", " price_falow\n");
+      subs.sub_1 = {
+        id: "sub_1",
+        status: "active",
+        customer: "cus_1",
+        items: { data: [{ current_period_end: PERIOD_END, price: "price_falow" }] },
+      } as unknown as Stripe.Subscription;
+
+      expect(await handleStripeEvent(checkout(), deps)).toEqual({ status: "processed" });
+      expect(db.tables.subscriptions).toHaveLength(1);
+    });
+
+    it("assinatura com vários itens vale se algum item for do preço do Falow", async () => {
+      subs.sub_1 = {
+        id: "sub_1",
+        status: "active",
+        customer: "cus_1",
+        items: {
+          data: [
+            { current_period_end: PERIOD_END, price: { id: "price_outro" } },
+            { current_period_end: PERIOD_END, price: { id: "price_falow" } },
+          ],
+        },
+      } as unknown as Stripe.Subscription;
+
+      expect(await handleStripeEvent(checkout(), deps)).toEqual({ status: "processed" });
+    });
+
+    it.each(["customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"])(
+      "%s de outro preço é ignorado sem tocar no banco nem na Stripe",
+      async (type) => {
+        db.tables.subscriptions.push({ user_id: "c1", stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1", status: "active" });
+        const before = { ...db.tables.subscriptions[0] };
+        const from = vi.fn();
+        deps.admin = { from };
+
+        const result = await handleStripeEvent(evt(type, sub("sub_1", "canceled", "cus_1", PERIOD_END, "price_outro")), deps);
+
+        expect(result).toEqual({ status: "ignored" });
+        expect(from).not.toHaveBeenCalled();
+        expect(deps.retrieveSubscription).not.toHaveBeenCalled();
+        expect(db.tables.subscriptions).toEqual([before]);
+      }
+    );
+
+    it("updated com o preço certo segue o comportamento atual", async () => {
+      db.tables.subscriptions.push({ user_id: "c1", stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1", status: "active" });
+      subs.sub_1 = sub("sub_1", "past_due", "cus_1", PERIOD_END, "price_falow");
+
+      const result = await handleStripeEvent(
+        evt("customer.subscription.updated", sub("sub_1", "active", "cus_1", PERIOD_END, "price_falow")),
+        deps
+      );
+
+      expect(result).toEqual({ status: "processed" });
+      expect(db.tables.subscriptions[0]).toMatchObject({ status: "past_due", current_period_end: PERIOD_END_ISO });
+    });
+
+    it("deleted com o preço certo agenda a exclusão", async () => {
+      db.tables.subscriptions.push({ user_id: "c1", stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1", status: "active" });
+
+      const result = await handleStripeEvent(
+        evt("customer.subscription.deleted", sub("sub_1", "canceled", "cus_1", PERIOD_END, "price_falow")),
+        deps
+      );
+
+      expect(result).toEqual({ status: "processed" });
+      expect(db.tables.subscriptions[0]).toMatchObject({ status: "canceled", canceled_at: NOW.toISOString(), purge_after: PURGE_AT });
+    });
+
+    it("sem STRIPE_PRICE_ID não há filtro (item sem preço passa)", async () => {
+      vi.stubEnv("STRIPE_PRICE_ID", "");
+      // sub_1 do beforeEach de fora não tem preço no item.
+      expect(await handleStripeEvent(checkout(), deps)).toEqual({ status: "processed" });
+      expect(db.tables.subscriptions).toHaveLength(1);
+    });
   });
 });
