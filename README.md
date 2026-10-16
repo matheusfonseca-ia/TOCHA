@@ -23,6 +23,8 @@ Este repositório é o código do serviço. Uma instalação só atende todos os
 | **Exclusão** | 30 dias depois que a assinatura termina, o cron `/api/cron/purge` apaga o usuário e todos os dados (contatos, conversas, tokens, arquivos). Reativar dentro dos 30 dias restaura a conta |
 | **Dono** | A conta em `FALOW_OWNER_USER_ID` é um usuário comum marcado: sempre com acesso, sem limite de @, sem assinatura e nunca apagada. É a única que vê o botão de escrever com IA |
 
+**Painel `/admin`:** o dono e os UUIDs de `FALOW_ADMIN_USER_IDS` veem os clientes, dão cortesia, bloqueiam e reenviam acesso (sem ler conversas e sem mexer na Stripe); para os demais a rota dá 404. Detalhes e MFA em `docs/operacao-saas.md` (seção 11).
+
 Status de assinatura que dão acesso: `active`, `trialing` e `past_due`. Qualquer outro (ou ausência de assinatura) não dá.
 
 ## Deploy e operação
@@ -73,6 +75,7 @@ Para o Meta e a Stripe alcançarem seu computador em desenvolvimento, abra um t�
 | `STRIPE_WEBHOOK_SECRET` | Segredo de assinatura do webhook da Stripe ⚠️ segredo | Stripe → Developers → Webhooks → endpoint `/api/webhooks/stripe` → Signing secret |
 | `STRIPE_PRICE_ID` | Preço mensal do plano único | Stripe → Products → Falow → preço → API ID (`price_...`) |
 | `FALOW_OWNER_USER_ID` | UUID do usuário dono (sem assinatura, sem limite de @, com IA, nunca apagado) | Supabase → Authentication → Users |
+| `FALOW_ADMIN_USER_IDS` | UUIDs de admins além do dono, separados por vírgula (opcional). Dão acesso ao painel `/admin` | Supabase → Authentication → Users |
 | `NEXT_PUBLIC_CONTACT_EMAIL` | E-mail de contato das páginas públicas (opcional) | Veja "Páginas públicas" abaixo |
 | `OPENROUTER_API_KEY` | Liga o botão de escrever com IA, **só para o dono** (opcional) ⚠️ segredo | [openrouter.ai/keys](https://openrouter.ai/keys) |
 | `OPENROUTER_MODEL` | Modelo usado por esse botão (opcional) | Padrão: `anthropic/claude-sonnet-4.5` |

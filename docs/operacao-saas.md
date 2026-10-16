@@ -31,6 +31,7 @@ Fatos que valem para tudo (vêm da spec `docs/superpowers/specs/2026-10-15-falow
 8. Compra repetida ou duplicada
 9. Primeiro deploy: checagens
 10. Pedidos de exclusão e reembolso
+11. Admins e painel /admin
 
 ---
 
@@ -50,10 +51,11 @@ select ig_user_id, count(*) from public.ig_accounts where status = 'active' grou
 
 Tem que voltar **vazio**. Se voltar linha: dois logins têm o mesmo @ ativo. Decida qual fica e desconecte o outro (`update public.ig_accounts set status = 'disconnected' where id = '<id da linha que sai>';`), rode a consulta de novo até voltar vazio.
 
-### Passo 2 — Aplicar `0016_subscriptions.sql` [SEM VOLTA FÁCIL]
+### Passo 2 — Aplicar `0016_subscriptions.sql` e `0018_admin_access_grants.sql` [SEM VOLTA FÁCIL]
 
 1. Abra o arquivo `supabase/migrations/0016_subscriptions.sql`, copie **tudo**.
 2. SQL Editor → New query → cole → Run. Tem que terminar com "Success".
+3. Logo depois, repita com `supabase/migrations/0018_admin_access_grants.sql` (cria `access_grants` e `admin_audit_log`, ambas com RLS). Ela é aditiva, como a 0016, e usa `if not exists`, então pode ser repetida. A 0017 continua só no passo 12.
 
 O que ela faz: cria `subscriptions` e `stripe_events` (com RLS), troca o índice comum de `ig_accounts.ig_user_id` pelo índice único de @ ativo (`ig_accounts_active_ig_user_id_key`) e cria a função `falow_user_id_by_email` (só `service_role` executa). Ela é aditiva: o código antigo da Vercel continua funcionando com ela aplicada.
 
@@ -68,6 +70,13 @@ drop table if exists public.stripe_events;
 drop table if exists public.subscriptions;
 drop index if exists public.ig_accounts_active_ig_user_id_key;
 create index if not exists ig_accounts_ig_user_id_idx on public.ig_accounts (ig_user_id) where status = 'active';
+```
+
+Para desfazer a 0018 (perde as cortesias, os bloqueios e o registro de ações dos admins):
+
+```sql
+drop table if exists public.admin_audit_log;
+drop table if exists public.access_grants;
 ```
 
 Depois de aplicar, rode `npm run check:schema` (seção 9). Ele só passa **depois** da 0016.
@@ -242,7 +251,7 @@ TENANT_A_EMAIL=teste-a@seudominio.com TENANT_A_PASSWORD='<senha A>' TENANT_B_EMA
 
 ### Passo 16 — Compra de teste (modo teste da Stripe)
 
-Roteiro da seção 6 (itens 1 a 10), com as chaves de teste. **Não apague o usuário de teste no fim**: o passo 17 o usa e já o apaga.
+Roteiro da seção 6 (itens 1 a 11, o 11 é o roteiro do admin), com as chaves de teste. **Não apague o usuário de teste no fim**: o passo 17 o usa e já o apaga.
 
 Terminado o roteiro, **rode o teste de isolamento de novo** (passo 15, "Como rodar", itens 3 e 4, com os mesmos usuários A e B). Agora a compra de teste criou uma linha em `subscriptions` (e conta, contatos e conversas do usuário de teste), que serve de isca: é esta rodada que prova o isolamento da `subscriptions`. Tem que dar `Tudo ok.` e código 0. Depois dela, apague A e B (item 5 do passo 15).
 
@@ -439,6 +448,7 @@ A lista abaixo foi conferida contra o código (`src`, `scripts`, `worker.ts`, `w
 
 | Nome | Efeito se faltar |
 |---|---|
+| `FALOW_ADMIN_USER_IDS` | Ninguém além do dono é admin e o painel `/admin` dá 404 para todo o resto. Formato: UUIDs (Supabase → Authentication → Users → copie o **User UID**) separados por vírgula, **sem e-mails** e sem espaço sobrando. O dono não precisa estar na lista. Item que não é UUID é ignorado e vai para o log. Para mudar a lista: `npx wrangler secret put FALOW_ADMIN_USER_IDS` **(você)**; o código lê a variável a cada chamada, então vale na hora, sem novo deploy (**confira** depois abrindo `/admin` com a conta afetada). A lista nunca é alterada pelo painel (seção 11) |
 | `META_GRAPH_VERSION` | Usa `v25.0`. Se hoje você usa outra versão, coloque o mesmo valor |
 | `OPENROUTER_API_KEY` | Sem ela o botão de escrever com IA não aparece (só o dono o vê de qualquer forma) |
 | `OPENROUTER_MODEL` | Usa `anthropic/claude-sonnet-4.5` |
@@ -530,6 +540,12 @@ Este é o passo 16 da seção 1. Use as **chaves de teste** da Stripe (seção 2
 8. O webhook `customer.subscription.deleted` chega; o painel passa a redirecionar para `/assinatura`, que mostra "Cancelada" e a data de exclusão (30 dias à frente). Confira `status = canceled` e `purge_after` preenchido na tabela.
 9. Mande outra DM para o @ de teste: o bot **não** responde (o log do Worker mostra `[meta] @<usuario> sem assinatura ativa: evento ignorado`; não vira linha em Logs do painel).
 10. Em `/assinatura`, clique **Reativar assinatura**, pague de novo com o cartão de teste. Volta `status = active`, `canceled_at` e `purge_after` vazios, o painel abre e o bot volta a responder, com as regras como estavam.
+11. Roteiro do admin (seção 11), com um segundo usuário de teste que **não** tenha assinatura:
+    1. Entre como dono e abra `https://falow.app.br/admin`.
+    2. Dê **cortesia** ao usuário de teste e confira que ele entra no painel sem pagar.
+    3. **Bloqueie** o usuário: ele é redirecionado para `/assinatura`, que mostra "Conta bloqueada", e o bot dele para de responder (o log do Worker mostra o evento ignorado por falta de acesso).
+    4. **Desbloqueie** e confira que o acesso volta.
+    5. Abra `/admin` logado como cliente comum (sem ser admin): tem que aparecer a página 404.
 
 Limpeza: **o usuário de teste é apagado no passo 17 da seção 1** (prova do cascade, seção 9), que precisa dele com um lead num funil. Não o apague antes. Se for pular a prova do cascade (não recomendado), apague-o em Supabase → Authentication → Users (em cascata some a conta e os dados dele; veja o aviso do funil na seção 9).
 
@@ -877,8 +893,68 @@ select s.user_id, u.email, s.status, s.stripe_subscription_id, s.updated_at
  order by s.updated_at;
 ```
 
+```sql
+-- Cortesias vencidas há mais de 30 dias (o usuário perdeu o acesso e pode ter ficado sem assinatura).
+select g.user_id, u.email, g.expires_at, g.reason
+  from public.access_grants g
+  join auth.users u on u.id = g.user_id
+ where g.kind = 'courtesy'
+   and g.expires_at < now() - interval '30 days'
+ order by g.expires_at;
+```
+
 Decida **caso a caso**, sempre olhando a Stripe antes (Customers → busque pelo e-mail):
 
 - **Usuário sem linha em `subscriptions`:** pode ser uma compra cujo webhook falhou (a pessoa **pagou** e não tem acesso: veja os eventos do endpoint na Stripe, reenvie o que falhou e fale com ela) ou um usuário de teste esquecido. Só apague (seção 10b, passo 4) depois de confirmar na Stripe que não há assinatura nem pagamento desse e-mail.
 - **`incomplete_expired`:** o primeiro pagamento nunca foi concluído. Se a Stripe não mostrar outra assinatura viva do cliente, apague como na seção 10b.
 - **`unpaid` ou `paused`:** a Stripe não cancelou (confira a seção 2.4). Prefira **cancelar a assinatura na Stripe** (Cancel immediately): o evento de cancelamento chega e os 30 dias de exclusão começam sozinhos, sem apagar nada à mão.
+
+---
+
+## 11. Admins e painel /admin
+
+### Quem é admin
+
+Admin é o dono (`FALOW_OWNER_USER_ID`) mais os UUIDs da variável `FALOW_ADMIN_USER_IDS` (seção 4.2). Ninguém vira admin por dentro do app: a lista só muda por `npx wrangler secret put FALOW_ADMIN_USER_IDS` **(você)**, nunca pelo painel. Admin tem acesso como o dono (sem assinatura, sem limite de @, com o botão de IA) e nunca é apagado pelo purge.
+
+### O que o painel faz e o que não faz
+
+Em `https://falow.app.br/admin` (404 para quem não é admin):
+
+- Lista os clientes com e-mail, data de cadastro, último login, @ conectado, status e fim do período da assinatura, `purge_after`, cortesia e bloqueio.
+- **Cortesia:** dá acesso por um prazo, sem pagamento, com um motivo.
+- **Bloqueio:** tira o acesso na hora (o painel redireciona para `/assinatura` com "Conta bloqueada" e o bot para de responder). O bloqueio prevalece sobre uma assinatura paga.
+- **Reenviar acesso:** reenvia o convite ou o link de nova senha.
+- Registra toda ação de escrita no registro de ações.
+
+O que **não** faz:
+
+- Não lê conversas, contatos nem mensagens dos clientes.
+- Não mexe na Stripe: **bloquear não cancela a cobrança**. Quem está bloqueado e paga continua sendo cobrado até a assinatura ser cancelada na Stripe (e reembolsada, se for o caso: seção 10c).
+- Não promove ninguém a admin, e admin não pode ser bloqueado nem receber cortesia pelo painel (o servidor recusa).
+
+### MFA nas contas admin (recomendado)
+
+Não é trava no código; é recomendação do runbook. Ligue a verificação em duas etapas (TOTP) nas contas admin: Supabase → Authentication → **MFA** (ou **Multi-Factor**; **confira** o nome do menu e que o TOTP está habilitado no projeto). Cada admin cadastra o próprio autenticador no login dele (o painel do Supabase não faz isso por outra pessoa). Uma conta admin sem MFA e com senha fraca é a conta mais valiosa do sistema.
+
+### Remover um admin
+
+Tire o UUID da variável e regrave-a (`npx wrangler secret put FALOW_ADMIN_USER_IDS` **(você)**, com a lista nova inteira). Vale na hora. Se a pessoa estava com sessão aberta, `/admin` passa a dar 404 na próxima chamada. A conta dela vira um cliente comum: sem assinatura ela perde o acesso e entra no fluxo normal da seção 10e.
+
+### Onde ver o registro de ações
+
+No próprio `/admin`, aba **Registro** (últimas 50 ações). Para consulta direta, SQL Editor (só leitura):
+
+```sql
+select a.created_at, a.admin_id, au.email as admin_email, a.action,
+       a.target_user_id, tu.email as alvo_email, a.details
+  from public.admin_audit_log a
+  left join auth.users au on au.id = a.admin_id
+  left join auth.users tu on tu.id = a.target_user_id
+ order by a.created_at desc
+ limit 100;
+```
+
+As ações gravadas são `courtesy_grant`, `courtesy_revoke`, `block`, `unblock`, `invite_resend` e `courtesy_invite`. A tabela só é lida e escrita pelo servidor (service role); o cliente comum não a enxerga.
+
+**Se algo der errado:** admin vê 404 em `/admin`: o UUID não está na variável, tem espaço ou e-mail no lugar do UID, ou o secret foi gravado no ambiente errado (`npx wrangler secret list` **(você)** mostra se o nome existe). Reverter a 0018 está no passo 2 da seção 1.
