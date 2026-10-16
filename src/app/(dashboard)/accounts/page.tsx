@@ -22,6 +22,8 @@ const ERROR_MESSAGES: Record<string, string> = {
     "Conta incompatível. Use uma conta Profissional (Comercial ou Criador de Conteúdo).",
   exchange_failed:
     "Falha ao conectar. Confira INSTAGRAM_APP_ID/INSTAGRAM_APP_SECRET e se a conta aceitou o convite de testadora no painel Meta.",
+  account_limit: "Seu plano permite 1 conta do Instagram. Desconecte a atual para conectar outra.",
+  account_taken: "Esse @ já está conectado em outra conta do Falow. Desconecte por lá primeiro.",
   unknown: "Erro inesperado ao conectar. Tente novamente.",
 };
 
