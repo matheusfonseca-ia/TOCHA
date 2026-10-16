@@ -51,6 +51,8 @@ export async function syncAccountProfile(
 /**
  * Versão para as páginas: recebe as contas com o token criptografado e
  * devolve só os campos de exibição (o token nunca segue para o client).
+ * `db` precisa conseguir escrever em `ig_accounts` (service role): para o
+ * usuário a tabela é só leitura (migration 0017).
  */
 export async function withSyncedProfiles<T extends AccountProfile & { access_token_enc: string }>(
   db: SupabaseClient,

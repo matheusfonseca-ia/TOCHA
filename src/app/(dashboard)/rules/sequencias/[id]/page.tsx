@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { SequenceEditor } from "@/components/sequences/sequence-editor";
 import { withSyncedProfiles } from "@/lib/meta/account-profile";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { listTagOptionsForEditor } from "@/modules/crm/server";
 import { stageOptionsFromRows } from "@/modules/crm/pipeline/services/pipeline.queries";
@@ -59,7 +60,7 @@ export default async function EditarSequenciaPage({
   if (!sequence) notFound();
 
   // O @ pode ter mudado no Instagram: o link ig.me de referência usa o atual.
-  const accounts = await withSyncedProfiles(supabase, storedAccounts ?? []);
+  const accounts = await withSyncedProfiles(createAdminClient(), storedAccounts ?? []);
 
   return (
     <SequenceEditor

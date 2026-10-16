@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { withSyncedProfiles } from "@/lib/meta/account-profile";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { IgAccount } from "@/types/database";
 
@@ -45,7 +46,7 @@ export default async function AccountsPage({
   // @ e foto mudam no Instagram sem aviso: contas ativas mostram (e gravam)
   // os atuais; o token criptografado não segue para o client.
   const synced = new Map(
-    (await withSyncedProfiles(supabase, stored.filter((a) => a.status === "active"))).map(
+    (await withSyncedProfiles(createAdminClient(), stored.filter((a) => a.status === "active"))).map(
       (a) => [a.id, a]
     )
   );
