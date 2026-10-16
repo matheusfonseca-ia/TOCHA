@@ -27,7 +27,7 @@ export default async function EditarAutomacaoPage({ params }: { params: { id: st
 
   const { data: account } = await supabase
     .from("ig_accounts")
-    .select("id, ig_username, profile_picture_url, access_token_enc")
+    .select("id, ig_username, profile_picture_url, access_token_enc, status")
     .eq("id", rule.account_id)
     .maybeSingle();
   if (!account) notFound();

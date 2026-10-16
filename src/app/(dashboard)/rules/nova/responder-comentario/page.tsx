@@ -12,7 +12,7 @@ export default async function NovaAutomacaoResponderComentarioPage() {
 
   const { data: accounts } = await supabase
     .from("ig_accounts")
-    .select("id, ig_username, profile_picture_url, access_token_enc")
+    .select("id, ig_username, profile_picture_url, access_token_enc, status")
     .eq("status", "active")
     .order("connected_at");
 
