@@ -18,8 +18,23 @@ import { Button } from "@/components/ui/button";
 export const metadata: Metadata = {
   title: "Falow: respostas automáticas para DMs e comentários do Instagram",
   description:
-    "Conecte sua conta profissional, crie regras de palavra-chave e sequências de conversa, e deixe o Falow responder as DMs e os comentários sozinho, 24h por dia.",
+    "Assine, conecte sua conta profissional do Instagram, crie regras de palavra-chave e sequências de conversa, e deixe o Falow responder as DMs e os comentários sozinho, 24h por dia.",
 };
+
+/**
+ * Botão de assinatura: o POST cai em /api/billing/checkout, que abre o
+ * checkout da Stripe. Visitante sem login e cliente logado usam o mesmo botão.
+ */
+function SubscribeForm() {
+  return (
+    <form action="/api/billing/checkout" method="post">
+      <Button type="submit" size="lg">
+        Assinar o Falow
+        <ArrowRight />
+      </Button>
+    </form>
+  );
+}
 
 /**
  * Página inicial pública. Antes daqui saía um redirect direto pro painel, o
@@ -32,19 +47,27 @@ export const metadata: Metadata = {
 const STEPS = [
   {
     n: "01",
-    title: "Conecte a conta",
-    body: "Autorize sua conta profissional de Instagram pelo login oficial da Meta. Leva um clique e nenhuma senha passa pelo Falow.",
+    title: "Assine",
+    body: "Faça o pagamento pela Stripe. Logo depois chega um e-mail com o link pra você criar sua senha e entrar no painel.",
   },
   {
     n: "02",
-    title: "Escreva as regras",
-    body: "“Se a mensagem contiver preço, responda com o link da tabela.” Palavra-chave de um lado, resposta do outro.",
+    title: "Conecte a conta e escreva as regras",
+    body: "Autorize sua conta profissional de Instagram pelo login oficial da Meta; nenhuma senha do Instagram passa pelo Falow. Depois cadastre as regras: “se a mensagem contiver preço, responda com o link da tabela”.",
   },
   {
     n: "03",
     title: "Deixe rodar",
     body: "A DM chega, o Falow confere as regras, espera alguns segundos pra conversa parecer natural e responde. Tudo fica registrado.",
   },
+];
+
+const PLAN_POINTS = [
+  "Um plano só, com assinatura mensal cobrada pela Stripe. O valor aparece na tela de pagamento, antes de você confirmar.",
+  "Cada assinatura conecta uma conta de Instagram.",
+  "Você cancela quando quiser, em “Minha assinatura” dentro do painel, sem multa.",
+  "Depois que a assinatura termina, as automações param na hora. Seus dados ficam guardados por 30 dias, e se você reativar nesse prazo encontra tudo como deixou. Passados os 30 dias, contatos, conversas, tokens e arquivos são apagados de forma definitiva.",
+  "Arrependimento: você pede o reembolso integral em até 7 dias corridos depois da primeira contratação (CDC, art. 49), por e-mail.",
 ];
 
 const FEATURES = [
@@ -114,16 +137,21 @@ export default function HomePage() {
             </p>
 
             <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Button asChild size="lg">
-                <Link href="/login">
-                  Entrar no painel
-                  <ArrowRight />
-                </Link>
-              </Button>
+              <SubscribeForm />
               <Button asChild size="lg" variant="ghost">
                 <Link href="#como-funciona">Ver como funciona</Link>
               </Button>
             </div>
+            <p className="mt-4 text-xs text-muted-foreground">
+              Assinatura mensal pela Stripe. Cancele quando quiser. Já assina?{" "}
+              <Link
+                className="font-medium text-foreground underline decoration-primary decoration-2 underline-offset-4 transition-colors hover:text-primary"
+                href="/login"
+              >
+                Entrar
+              </Link>
+              .
+            </p>
           </div>
         </section>
 
@@ -137,7 +165,7 @@ export default function HomePage() {
               Como funciona
             </h2>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted-foreground">
-              Três passos entre instalar e ver a primeira resposta saindo
+              Três passos entre assinar e ver a primeira resposta saindo
               sozinha.
             </p>
 
@@ -187,8 +215,31 @@ export default function HomePage() {
           </div>
         </section>
 
+        {/* Assinatura */}
+        <section id="assinatura" className="scroll-mt-20 border-t border-border bg-card/40">
+          <div className="mx-auto max-w-5xl px-6 py-20">
+            <h2 className="font-display text-2xl font-bold tracking-tight text-foreground">
+              Como funciona a assinatura
+            </h2>
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+              O Falow roda hospedado em falow.app.br. Você não instala nada nem
+              precisa de servidor próprio.
+            </p>
+
+            <ul className="mt-8 max-w-2xl list-disc space-y-3 pl-5 text-sm leading-relaxed text-muted-foreground marker:text-primary">
+              {PLAN_POINTS.map((point) => (
+                <li key={point}>{point}</li>
+              ))}
+            </ul>
+
+            <div className="mt-8">
+              <SubscribeForm />
+            </div>
+          </div>
+        </section>
+
         {/* Permissões e transparência */}
-        <section className="border-t border-border bg-card/40">
+        <section className="border-t border-border">
           <div className="mx-auto max-w-5xl px-6 py-20">
             <div className="flex items-start gap-3">
               <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
@@ -223,7 +274,8 @@ export default function HomePage() {
               O Falow{" "}
               <strong className="font-semibold text-foreground">não</strong>{" "}
               acessa sua lista de seguidores, seu feed, suas conversas antigas,
-              seus contatos nem seus dados de pagamento. Não vende dados, não usa
+              seus contatos nem dados de cartão (o pagamento da assinatura passa
+              pela Stripe). Não vende dados, não usa
               suas mensagens para treinar modelos de IA e não envia nada fora da
               janela de 24 horas permitida pela Meta. O detalhamento completo
               está na{" "}
