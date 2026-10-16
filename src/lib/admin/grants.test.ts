@@ -49,6 +49,14 @@ describe("grants", () => {
     expect(db.tables.access_grants).toHaveLength(1);
   });
 
+  it("cortesia em cliente bloqueado e recusada (bloqueio > cortesia) e nao desbloqueia", async () => {
+    await blockUser(admin(), { adminId: "user-1", targetUserId: "c1", reason: "abuso" });
+    const r = await grantCourtesy(admin(), { adminId: "user-1", targetUserId: "c1", expiresAt: in30, reason: "x", now: NOW });
+    expect(r).toEqual({ ok: false, error: "Cliente bloqueado: desbloqueie antes de dar cortesia." });
+    expect(db.tables.access_grants).toEqual([expect.objectContaining({ user_id: "c1", kind: "block" })]);
+    expect(db.tables.admin_audit_log.map((e) => e.action)).toEqual(["block"]);
+  });
+
   it("falha na auditoria reverte a mudança e devolve erro", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     const real = db.client;

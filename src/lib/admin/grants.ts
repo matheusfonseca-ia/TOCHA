@@ -46,11 +46,15 @@ async function writeWithAudit(
   admin: QueryClient,
   targetUserId: string,
   change: () => Promise<{ error: { message: string } | null }>,
-  audit: { adminId: string; action: AdminAuditAction; details?: Record<string, unknown> }
+  audit: { adminId: string; action: AdminAuditAction; details?: Record<string, unknown> },
+  guard?: (previous: AccessGrant | null) => string | null
 ): Promise<GrantResult> {
   if (isAdmin(targetUserId)) return { ok: false, error: ADMIN_TARGET_ERROR };
   const { grant: previous, error: readError } = await currentGrant(admin, targetUserId);
   if (readError) return { ok: false, error: "Não foi possível ler o cliente. Tente de novo." };
+
+  const guardError = guard?.(previous);
+  if (guardError) return { ok: false, error: guardError };
 
   const { error } = await change();
   if (error) return { ok: false, error: "Não foi possível salvar. Tente de novo." };
@@ -90,7 +94,8 @@ export async function grantCourtesy(
         },
         { onConflict: "user_id" }
       ),
-    { adminId: input.adminId, action: "courtesy_grant", details: { expires_at: input.expiresAt.toISOString(), reason: input.reason.trim() } }
+    { adminId: input.adminId, action: "courtesy_grant", details: { expires_at: input.expiresAt.toISOString(), reason: input.reason.trim() } },
+    (previous) => (previous?.kind === "block" ? "Cliente bloqueado: desbloqueie antes de dar cortesia." : null)
   );
 }
 
