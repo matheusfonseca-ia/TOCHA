@@ -151,3 +151,30 @@ export interface Subscription {
   purge_after: string | null;
   updated_at: string;
 }
+
+/** Cortesia (com validade) ou bloqueio dado por um admin (migration 0018). */
+export interface AccessGrant {
+  user_id: string;
+  kind: "courtesy" | "block";
+  expires_at: string | null;
+  reason: string;
+  granted_by: string;
+  created_at: string;
+}
+
+export type AdminAuditAction =
+  | "courtesy_grant"
+  | "courtesy_revoke"
+  | "block"
+  | "unblock"
+  | "invite_resend"
+  | "courtesy_invite";
+
+export interface AdminAuditEntry {
+  id: number;
+  admin_id: string;
+  action: AdminAuditAction;
+  target_user_id: string | null;
+  details: Record<string, unknown>;
+  created_at: string;
+}

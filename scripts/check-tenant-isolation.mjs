@@ -51,7 +51,7 @@ const aIds = aAccounts.map((r) => r.id);
 const { data: { user: bUser }, error: bUserError } = await b.auth.getUser();
 if (bUserError || !bUser) prerequisiteFailed(`não consegui ler o usuário B (${bUserError?.message ?? "sem usuário"}).`);
 
-// Todas as tabelas de public criadas nas migrations (0001 a 0016), menos
+// Todas as tabelas de public criadas nas migrations (0001 a 0018), menos
 // subscriptions, que tem checagem própria logo abaixo (com mensagem própria
 // para o caso de B não ser um usuário vazio).
 const tables = [
@@ -59,7 +59,7 @@ const tables = [
   "sequences", "sequence_runs", "sequence_versions", "interactions", "contacts",
   "messages", "message_signals_pending", "quick_replies", "crm_notes", "crm_tags",
   "pipelines", "pipeline_stages", "leads", "lead_stage_events",
-  "message_presets", "folders", "stripe_events",
+  "message_presets", "folders", "stripe_events", "access_grants", "admin_audit_log",
 ];
 
 let failures = 0;

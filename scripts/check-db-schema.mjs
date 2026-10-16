@@ -27,6 +27,8 @@ const requiredColumns = {
   lead_stage_events: ["id", "lead_id", "to_stage_id", "source"],
   subscriptions: ["user_id", "stripe_customer_id", "stripe_subscription_id", "status", "current_period_end", "canceled_at", "purge_after"],
   stripe_events: ["id"],
+  access_grants: ["user_id", "kind", "expires_at", "reason", "granted_by"],
+  admin_audit_log: ["id", "admin_id", "action", "target_user_id", "details"],
 };
 
 const checks = await Promise.all(
