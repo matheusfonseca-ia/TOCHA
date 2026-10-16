@@ -130,6 +130,26 @@ describe("purgeExpiredUsers", () => {
     expect(deps.removeUploads).not.toHaveBeenCalled();
   });
 
+  it("erro ao ler access_grants: pula o usuário (nunca apaga na dúvida)", async () => {
+    db.tables.subscriptions.push({ user_id: "venceu", stripe_customer_id: "c1", status: "canceled", purge_after: "2026-11-19T00:00:00Z" });
+    db.tables.access_grants.push({ user_id: "venceu", kind: "courtesy", expires_at: "2027-01-01T00:00:00Z", reason: "x", granted_by: "user-1" });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    deps.admin = {
+      from: (table: string) => {
+        if (table === "access_grants") {
+          const broken: Record<string, unknown> = {};
+          for (const m of ["select", "eq", "neq", "lt"]) broken[m] = () => broken;
+          broken.maybeSingle = async () => ({ data: null, error: { message: "timeout" } });
+          return broken;
+        }
+        return db.client.from(table as never);
+      },
+    };
+    expect(await purgeExpiredUsers(deps)).toEqual({ purged: [] });
+    expect(deps.removeUploads).not.toHaveBeenCalled();
+    expect(deps.deleteUser).not.toHaveBeenCalled();
+  });
+
   it("bloqueado com assinatura cancelada e vencida é apagado normalmente", async () => {
     db.tables.subscriptions.push({ user_id: "venceu", stripe_customer_id: "c1", status: "canceled", purge_after: "2026-11-19T00:00:00Z" });
     db.tables.access_grants.push({ user_id: "venceu", kind: "block", expires_at: null, reason: "x", granted_by: "user-1" });
