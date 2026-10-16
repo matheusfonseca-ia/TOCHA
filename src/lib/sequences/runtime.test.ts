@@ -763,6 +763,62 @@ describe("processDueRuns: Assumir conversa (D3)", () => {
   });
 });
 
+describe("processDueRuns: assinatura parada", () => {
+  function seedDelayRun(userId: string) {
+    const account = makeAccount({ user_id: userId });
+    const sequence = makeSequence({
+      account_id: account.id,
+      graph: {
+        nodes: [triggerNode({ keyword: "promo" }), node("d", "delay", { amount: 1, unit: "hours" }), messageNode("a", "Depois do atraso")],
+        edges: [edge("trigger", "d"), edge("d", "a")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+    fake.tables.conversations.push(
+      row({ account_id: account.id, ig_sender_id: "lead-1", last_inbound_at: new Date().toISOString(), human_takeover_at: null })
+    );
+    fake.tables.sequence_runs.push(
+      row({
+        id: "run-1",
+        sequence_id: sequence.id,
+        account_id: account.id,
+        ig_sender_id: "lead-1",
+        status: "waiting_delay",
+        current_node_id: "d",
+        next_run_at: new Date(Date.now() - 1000).toISOString(),
+        steps_executed: 1,
+        last_error: null,
+        entry_rule_id: null,
+        variables: {},
+        started_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+    );
+  }
+
+  it("adia o atraso de conta sem assinatura, sem apagar nem marcar erro", async () => {
+    seedDelayRun("cliente-sem-assinatura");
+
+    const processed = await processDueRuns(5);
+
+    expect(processed).toBe(0);
+    expect(sendTextMessageMock).not.toHaveBeenCalled();
+    const run = fake.tables.sequence_runs.find((r) => r.id === "run-1")!;
+    expect(run.status).toBe("waiting_delay");
+    expect(run.last_error).toBeNull();
+    expect(Date.parse(run.next_run_at as string)).toBeGreaterThan(Date.now() + 50 * 60 * 1000);
+  });
+
+  it("conta com assinatura ativa continua retomando o atraso", async () => {
+    seedDelayRun("cliente-pagante");
+    fake.tables.subscriptions.push({ user_id: "cliente-pagante", stripe_customer_id: "cus_1", status: "active" });
+
+    expect(await processDueRuns(5)).toBe(1);
+    expect(sendTextMessageMock).toHaveBeenCalledWith(expect.any(String), "lead-1", "Depois do atraso");
+  });
+});
+
 describe("nó Mover para etapa (Fase 6, CRM)", () => {
   function seedPipeline(accountId: string) {
     const pipeline = row({ account_id: accountId, name: "Funil de teste", is_default: true, auto_enroll: true });

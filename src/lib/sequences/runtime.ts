@@ -11,6 +11,7 @@ import { isExpired, withoutExpired } from "@/lib/expiry/expiry";
 import { checkFollow } from "@/lib/follow-gate/check";
 import { isFollowGateOn } from "@/lib/follow-gate/copy";
 import { sendFollowGateMessage } from "@/lib/follow-gate/gate";
+import { accountHasAccess } from "@/lib/billing/access";
 import { getFreshToken } from "@/lib/meta/token";
 import {
   triggerMatchesInbound,
@@ -618,6 +619,8 @@ async function resumeFromHandle(
  */
 // Conversa assumida: de quanto em quanto tempo o atraso vencido é conferido de novo.
 const TAKEOVER_RECHECK_MS = 15 * 60 * 1000;
+/** Assinatura parada: o atraso fica parado (não apaga) e é reconferido de hora em hora. */
+const INACTIVE_RECHECK_MS = 60 * 60 * 1000;
 
 export async function processDueRuns(
   limit = 5,
@@ -649,6 +652,17 @@ export async function processDueRuns(
     // (o run é apagado em cascata com ela) e ativa.
     const sequence = row.sequences;
     if (!sequence || !sequence.is_active) continue;
+
+    // Assinatura parada: o atraso não dispara e nada é apagado. Adia a
+    // retomada pelo mesmo motivo da conversa assumida (sai do topo da fila).
+    if (!(await accountHasAccess(admin, row.account_id))) {
+      await admin
+        .from("sequence_runs")
+        .update({ next_run_at: new Date(Date.now() + INACTIVE_RECHECK_MS).toISOString() })
+        .eq("id", row.id)
+        .eq("status", "waiting_delay");
+      continue;
+    }
 
     // Conversa assumida por um atendente (D3): o atraso agendado não
     // dispara enquanto isso. O run não é reivindicado nem marcado como erro:
