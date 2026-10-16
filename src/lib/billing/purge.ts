@@ -16,13 +16,19 @@ export interface PurgeDeps {
 export async function purgeExpiredUsers(deps: PurgeDeps): Promise<{ purged: string[] }> {
   // "Nunca apagar o dono" depende desta variável: sem ela isOwner() é sempre
   // false, e uma assinatura de teste do próprio dono seria apagada em 30 dias.
-  if (!process.env.FALOW_OWNER_USER_ID?.trim()) {
+  // Mesmo valor (já com trim) que isOwner() usa, senão o guard passa e o dono não é reconhecido.
+  const owner = process.env.FALOW_OWNER_USER_ID?.trim();
+  if (!owner) {
     throw new Error("FALOW_OWNER_USER_ID não configurado: o purge se recusa a rodar.");
   }
   const now = (deps.now ?? (() => new Date()))();
+  // Só `canceled` é apagado (incomplete/unpaid/paused nunca agendam purge). O
+  // `.neq` é a segunda camada de proteção do dono, além do isOwner() por linha.
   const { data } = await deps.admin
     .from("subscriptions")
     .select("user_id, status, purge_after")
+    .eq("status", "canceled")
+    .neq("user_id", owner)
     .lt("purge_after", now.toISOString());
   const rows = (data ?? []) as { user_id: string; status: string; purge_after: string | null }[];
 
@@ -30,6 +36,17 @@ export async function purgeExpiredUsers(deps: PurgeDeps): Promise<{ purged: stri
   for (const row of rows) {
     if (!row.purge_after || isOwner(row.user_id) || isAccessStatus(row.status)) continue;
     try {
+      // Releitura logo antes do que não tem volta: um webhook de reativação pode
+      // ter chegado depois do select acima. Qualquer dúvida (inclusive erro) = pula.
+      const { data: current, error: rereadError } = await deps.admin
+        .from("subscriptions")
+        .select("status, purge_after")
+        .eq("user_id", row.user_id)
+        .maybeSingle();
+      const fresh = current as { status?: string; purge_after?: string | null } | null;
+      // Date (não comparação de string): o Postgres devolve o timestamptz em outro formato; NaN também pula.
+      if (rereadError || !fresh || fresh.status !== "canceled" || !fresh.purge_after || !(new Date(fresh.purge_after) < now)) continue;
+
       const { data: accounts } = await deps.admin.from("ig_accounts").select("id").eq("user_id", row.user_id);
       for (const account of (accounts ?? []) as { id: string }[]) await deps.removeUploads(account.id);
       await deps.deleteUser(row.user_id);

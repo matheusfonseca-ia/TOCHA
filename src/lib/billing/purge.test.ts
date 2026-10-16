@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createFakeAdmin, type FakeSupabase } from "@/lib/sequences/__tests__/fake-supabase";
 import { purgeExpiredUsers, type PurgeDeps } from "@/lib/billing/purge";
@@ -13,6 +13,10 @@ describe("purgeExpiredUsers", () => {
     db = createFakeAdmin();
     deps = { admin: db.client, removeUploads: vi.fn(async () => {}), deleteUser: vi.fn(async () => {}), now: () => NOW };
     db.tables.ig_accounts.push({ id: "acc-venceu", user_id: "venceu", ig_user_id: "1", status: "active" });
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it("apaga arquivos e usuário de quem passou do prazo", async () => {
@@ -43,7 +47,6 @@ describe("purgeExpiredUsers", () => {
     db.tables.subscriptions.push({ user_id: "venceu", stripe_customer_id: "c1", status: "canceled", purge_after: "2026-11-19T00:00:00Z" });
     await expect(purgeExpiredUsers(deps)).rejects.toThrow(/FALOW_OWNER_USER_ID/);
     expect(deps.deleteUser).not.toHaveBeenCalled();
-    vi.unstubAllEnvs();
   });
 
   it("falha nos arquivos não apaga o usuário (tenta de novo amanhã)", async () => {
@@ -53,6 +56,62 @@ describe("purgeExpiredUsers", () => {
     });
     vi.spyOn(console, "error").mockImplementation(() => {});
     expect(await purgeExpiredUsers(deps)).toEqual({ purged: [] });
+    expect(deps.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("env do dono com espaço no fim: o dono continua protegido (guard e isOwner leem o mesmo valor)", async () => {
+    vi.stubEnv("FALOW_OWNER_USER_ID", "user-1 ");
+    db.tables.ig_accounts.push({ id: "acc-dono", user_id: "user-1", ig_user_id: "9", status: "active" });
+    db.tables.subscriptions.push({ user_id: "user-1", stripe_customer_id: "c0", status: "canceled", purge_after: "2026-01-01T00:00:00Z" });
+    expect(await purgeExpiredUsers(deps)).toEqual({ purged: [] });
+    expect(deps.removeUploads).not.toHaveBeenCalled();
+    expect(deps.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("só apaga assinatura canceled: incomplete, unpaid e paused com purge_after antigo ficam", async () => {
+    for (const status of ["incomplete", "unpaid", "paused"]) {
+      db.tables.subscriptions.push({ user_id: `u-${status}`, stripe_customer_id: `c-${status}`, status, purge_after: "2026-11-19T00:00:00Z" });
+    }
+    expect(await purgeExpiredUsers(deps)).toEqual({ purged: [] });
+    expect(deps.removeUploads).not.toHaveBeenCalled();
+    expect(deps.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("reativou entre a consulta e a exclusão: relê a assinatura e não apaga nada", async () => {
+    db.tables.subscriptions.push({ user_id: "venceu", stripe_customer_id: "c1", status: "canceled", purge_after: "2026-11-19T00:00:00Z" });
+    let subscriptionReads = 0;
+    deps.admin = {
+      from: (table: string) => {
+        if (table === "subscriptions" && ++subscriptionReads === 2) {
+          // webhook de reativação chega depois do select inicial
+          db.tables.subscriptions[0] = { user_id: "venceu", stripe_customer_id: "c1", status: "active", purge_after: null };
+        }
+        return db.client.from(table as never);
+      },
+    };
+    expect(await purgeExpiredUsers(deps)).toEqual({ purged: [] });
+    expect(subscriptionReads).toBe(2);
+    expect(deps.removeUploads).not.toHaveBeenCalled();
+    expect(deps.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("releitura da assinatura que falha: pula o usuário (falha segura)", async () => {
+    db.tables.subscriptions.push({ user_id: "venceu", stripe_customer_id: "c1", status: "canceled", purge_after: "2026-11-19T00:00:00Z" });
+    let subscriptionReads = 0;
+    deps.admin = {
+      from: (table: string) => {
+        if (table === "subscriptions" && ++subscriptionReads === 2) {
+          const broken: Record<string, unknown> = {};
+          for (const m of ["select", "eq", "neq", "lt"]) broken[m] = () => broken;
+          broken.maybeSingle = async () => ({ data: null, error: { message: "banco fora" } });
+          return broken;
+        }
+        return db.client.from(table as never);
+      },
+    };
+    expect(await purgeExpiredUsers(deps)).toEqual({ purged: [] });
+    expect(subscriptionReads).toBe(2);
+    expect(deps.removeUploads).not.toHaveBeenCalled();
     expect(deps.deleteUser).not.toHaveBeenCalled();
   });
 });

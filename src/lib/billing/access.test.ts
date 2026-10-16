@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createFakeAdmin, type FakeSupabase } from "@/lib/sequences/__tests__/fake-supabase";
 import { accountHasAccess, hasActiveAccess, isAccessStatus, isOwner } from "@/lib/billing/access";
@@ -9,10 +9,31 @@ describe("regra de acesso", () => {
     db = createFakeAdmin();
   });
 
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("dono vem do FALOW_OWNER_USER_ID", () => {
     expect(isOwner("user-1")).toBe(true);
     expect(isOwner("cliente-1")).toBe(false);
     expect(isOwner(null)).toBe(false);
+  });
+
+  it("env do dono com espaço ou quebra de linha nas pontas ainda identifica o dono", () => {
+    vi.stubEnv("FALOW_OWNER_USER_ID", "user-1 ");
+    expect(isOwner("user-1")).toBe(true);
+    vi.stubEnv("FALOW_OWNER_USER_ID", "user-1\n");
+    expect(isOwner("user-1")).toBe(true);
+    expect(isOwner("cliente-1")).toBe(false);
+  });
+
+  it("env do dono vazio ou só espaços: ninguém é dono", () => {
+    for (const value of ["", "   ", "\n"]) {
+      vi.stubEnv("FALOW_OWNER_USER_ID", value);
+      expect(isOwner("user-1")).toBe(false);
+      expect(isOwner("")).toBe(false);
+      expect(isOwner(value)).toBe(false);
+    }
   });
 
   it("só active, trialing e past_due dão acesso", () => {

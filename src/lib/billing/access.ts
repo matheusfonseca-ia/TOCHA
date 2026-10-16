@@ -12,7 +12,9 @@ export const ACCESS_STATUSES = ["active", "trialing", "past_due"] as const;
 export type QueryClient = { from: (table: any) => any };
 
 export function isOwner(userId: string | null | undefined): boolean {
-  const owner = process.env.FALOW_OWNER_USER_ID;
+  // trim: `echo id | vercel env add` deixa quebra de linha no fim do valor, e o
+  // purge usa este mesmo valor para decidir quem nunca pode ser apagado.
+  const owner = process.env.FALOW_OWNER_USER_ID?.trim();
   return Boolean(owner && userId && userId === owner);
 }
 
