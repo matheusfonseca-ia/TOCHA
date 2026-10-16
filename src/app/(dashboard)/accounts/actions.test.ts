@@ -30,19 +30,25 @@ describe("disconnectAccount", () => {
   beforeEach(() => {
     db = createFakeAdmin();
     state.admin = db;
-    db.tables.ig_accounts.push({ id: "acc-minha", user_id: "c1", ig_user_id: "1", status: "active" });
-    db.tables.ig_accounts.push({ id: "acc-alheia", user_id: "c2", ig_user_id: "2", status: "active" });
+    db.tables.ig_accounts.push({ id: "acc-minha", user_id: "c1", ig_user_id: "1", status: "active", access_token_enc: "tok-minha", token_expires_at: "2026-12-01T00:00:00.000Z" });
+    db.tables.ig_accounts.push({ id: "acc-alheia", user_id: "c2", ig_user_id: "2", status: "active", access_token_enc: "tok-alheia", token_expires_at: "2026-12-01T00:00:00.000Z" });
     state.ownedIds = ["acc-minha"];
   });
 
-  it("desconecta a conta do próprio usuário", async () => {
+  it("desconecta a conta do próprio usuário e apaga o token guardado", async () => {
     expect(await disconnectAccount("acc-minha")).toEqual({});
-    expect(db.tables.ig_accounts.find((a) => a.id === "acc-minha")!.status).toBe("disconnected");
+    const row = db.tables.ig_accounts.find((a) => a.id === "acc-minha")!;
+    expect(row.status).toBe("disconnected");
+    expect(row.access_token_enc).toBe("");
+    expect(row.token_expires_at).toBeNull();
   });
 
   it("recusa conta de outro usuário e não escreve nada", async () => {
     const result = await disconnectAccount("acc-alheia");
     expect(result.error).toBeTruthy();
-    expect(db.tables.ig_accounts.find((a) => a.id === "acc-alheia")!.status).toBe("active");
+    const row = db.tables.ig_accounts.find((a) => a.id === "acc-alheia")!;
+    expect(row.status).toBe("active");
+    expect(row.access_token_enc).toBe("tok-alheia");
+    expect(row.token_expires_at).toBe("2026-12-01T00:00:00.000Z");
   });
 });

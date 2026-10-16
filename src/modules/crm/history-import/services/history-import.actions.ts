@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { AccountNotActiveError } from "@/lib/meta/token";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { IgAccount } from "@/types/database";
@@ -65,7 +66,12 @@ export async function importHistoryStep(
       ...empty,
       done: false,
       nextCursor: cursor,
-      error: err instanceof Error ? err.message : "Falha ao importar histórico.",
+      error:
+        err instanceof AccountNotActiveError
+          ? "Conta desconectada. Reconecte o Instagram para importar o histórico."
+          : err instanceof Error
+            ? err.message
+            : "Falha ao importar histórico.",
     };
   }
 }

@@ -9,7 +9,7 @@ import {
   sendTextMessage,
   type AttachmentKind,
 } from "@/lib/meta/graph";
-import { getFreshToken } from "@/lib/meta/token";
+import { AccountNotActiveError, getFreshToken } from "@/lib/meta/token";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import type { IgAccount } from "@/types/database";
@@ -48,6 +48,9 @@ const WINDOW_CLOSED_MESSAGE =
   "Janela fechada: o Instagram só deixa responder até 24h depois da última mensagem do lead.";
 
 function friendlyError(err: unknown): string {
+  if (err instanceof AccountNotActiveError) {
+    return "Esta conta do Instagram está desconectada. Reconecte para enviar mensagens.";
+  }
   if (err instanceof GraphApiError) {
     if (err.code === 10 && err.subcode === 2018278) return WINDOW_CLOSED_MESSAGE;
     if (err.code === 190) return "O token desta conta expirou. Reconecte a conta do Instagram.";
