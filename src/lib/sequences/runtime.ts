@@ -644,6 +644,8 @@ export async function processDueRuns(
     .limit(limit);
 
   let processed = 0;
+  // Contas sem assinatura decididas neste tick (não vale entre ticks).
+  const inactiveAccounts = new Set<string>();
 
   for (const row of (due ?? []) as RunWithSequence[]) {
     if (Date.now() + NODE_BUDGET_MS > deadline) break;
@@ -653,14 +655,23 @@ export async function processDueRuns(
     const sequence = row.sequences;
     if (!sequence || !sequence.is_active) continue;
 
-    // Assinatura parada: o atraso não dispara e nada é apagado. Adia a
-    // retomada pelo mesmo motivo da conversa assumida (sai do topo da fila).
+    // Conta já vista sem assinatura neste tick: o backlog dela inteiro já foi
+    // adiado, os demais runs do lote só são pulados (sem novas consultas).
+    if (inactiveAccounts.has(row.account_id)) continue;
+
+    // Assinatura parada: o atraso não dispara e nada é apagado. Adia de uma
+    // vez TODOS os runs vencidos da conta (a checagem é por conta, não por
+    // conversa: um backlog grande ocuparia o `limit` a cada tick e travaria
+    // os atrasos das contas pagantes, o mesmo problema das sequências pausadas).
     if (!(await accountHasAccess(admin, row.account_id))) {
+      inactiveAccounts.add(row.account_id);
+      const nowIso = new Date().toISOString();
       await admin
         .from("sequence_runs")
         .update({ next_run_at: new Date(Date.now() + INACTIVE_RECHECK_MS).toISOString() })
-        .eq("id", row.id)
-        .eq("status", "waiting_delay");
+        .eq("account_id", row.account_id)
+        .eq("status", "waiting_delay")
+        .lte("next_run_at", nowIso);
       continue;
     }
 

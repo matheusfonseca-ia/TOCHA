@@ -817,6 +817,89 @@ describe("processDueRuns: assinatura parada", () => {
     expect(await processDueRuns(5)).toBe(1);
     expect(sendTextMessageMock).toHaveBeenCalledWith(expect.any(String), "lead-1", "Depois do atraso");
   });
+
+  describe("backlog de conta sem assinatura", () => {
+    function seedAccountWithRuns(userId: string, runs: { sender: string; nextRunAt: number }[]) {
+      const account = makeAccount({ user_id: userId, ig_user_id: `ig-${userId}` });
+      const sequence = makeSequence({
+        account_id: account.id,
+        graph: {
+          nodes: [triggerNode({ keyword: "promo" }), node("d", "delay", { amount: 1, unit: "hours" }), messageNode("a", "Depois do atraso")],
+          edges: [edge("trigger", "d"), edge("d", "a")],
+        },
+      });
+      fake.tables.ig_accounts.push(account);
+      fake.tables.sequences.push(sequence);
+      for (const { sender, nextRunAt } of runs) {
+        fake.tables.conversations.push(
+          row({ account_id: account.id, ig_sender_id: sender, last_inbound_at: new Date().toISOString(), human_takeover_at: null })
+        );
+        fake.tables.sequence_runs.push(
+          row({
+            id: `run-${sender}`,
+            sequence_id: sequence.id,
+            account_id: account.id,
+            ig_sender_id: sender,
+            status: "waiting_delay",
+            current_node_id: "d",
+            next_run_at: new Date(nextRunAt).toISOString(),
+            steps_executed: 1,
+            last_error: null,
+            entry_rule_id: null,
+            variables: {},
+            started_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+        );
+      }
+      return { account, sequence };
+    }
+
+    const runOf = (sender: string) => fake.tables.sequence_runs.find((r) => r.id === `run-${sender}`)!;
+
+    it("um tick adia todo o backlog da conta parada e libera a fila pra conta ativa", async () => {
+      const now = Date.now();
+      // Backlog parado é o mais antigo da fila; o run da conta ativa vem depois.
+      seedAccountWithRuns("cliente-sem-assinatura", [
+        { sender: "parado-1", nextRunAt: now - 5000 },
+        { sender: "parado-2", nextRunAt: now - 4000 },
+        { sender: "parado-3", nextRunAt: now - 3000 },
+      ]);
+      seedAccountWithRuns("user-1", [{ sender: "ativo-1", nextRunAt: now - 1000 }]);
+
+      // Tick 1: limit 2 só alcança runs da conta parada.
+      expect(await processDueRuns(2)).toBe(0);
+      expect(sendTextMessageMock).not.toHaveBeenCalled();
+      for (const sender of ["parado-1", "parado-2", "parado-3"]) {
+        const run = runOf(sender);
+        expect(run.status).toBe("waiting_delay");
+        expect(run.last_error).toBeNull();
+        expect(Date.parse(run.next_run_at as string)).toBeGreaterThan(Date.now() + 50 * 60 * 1000);
+      }
+      expect(runOf("ativo-1").status).toBe("waiting_delay");
+
+      // Tick 2: o backlog não ocupa mais a fila, a conta ativa é atendida.
+      expect(await processDueRuns(2)).toBe(1);
+      expect(sendTextMessageMock).toHaveBeenCalledTimes(1);
+      expect(sendTextMessageMock).toHaveBeenCalledWith(expect.any(String), "ativo-1", "Depois do atraso");
+      expect(runOf("ativo-1").status).not.toBe("waiting_delay");
+    });
+
+    it("não mexe nos runs da conta parada que ainda não venceram", async () => {
+      const now = Date.now();
+      const future = now + 10 * 60 * 1000;
+      seedAccountWithRuns("cliente-sem-assinatura", [
+        { sender: "vencido", nextRunAt: now - 1000 },
+        { sender: "futuro", nextRunAt: future },
+      ]);
+
+      expect(await processDueRuns(5)).toBe(0);
+
+      expect(Date.parse(runOf("vencido").next_run_at as string)).toBeGreaterThan(Date.now() + 50 * 60 * 1000);
+      expect(Date.parse(runOf("futuro").next_run_at as string)).toBe(future);
+      expect(runOf("futuro").status).toBe("waiting_delay");
+    });
+  });
 });
 
 describe("nó Mover para etapa (Fase 6, CRM)", () => {
