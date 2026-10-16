@@ -7,7 +7,8 @@ Convenções:
 - Comandos `npm run ...` e `npx ...` rodam num terminal normal (PowerShell ou Git Bash), aberto na pasta do projeto (`projetos/falow`), na branch `multiusuario`. Os que precisam de login na Cloudflare estão marcados com **(você)**: faça `npx wrangler login` uma vez antes.
 - Valores secretos nunca entram neste arquivo nem no git. Onde aparece `<...>`, troque pelo seu valor.
 - "SQL Editor" é Supabase → SQL Editor → New query. Cole o bloco, clique em Run e leia o resultado antes de seguir.
-- Nomes de menu da Stripe, da Meta, do Supabase, do Resend e da Cloudflare mudam de tempos em tempos. Os caminhos abaixo são os de quando o runbook foi escrito; se um nome não aparecer, procure pelo termo em inglês em negrito.
+- Nomes de menu da Stripe, da Meta, do Supabase, do Resend, da Vercel e da Cloudflare mudam de tempos em tempos. Os caminhos abaixo são os de quando o runbook foi escrito; se um nome não aparecer, procure pelo termo em inglês em negrito.
+- Alguns trechos foram escritos **de memória, sem teste contra os serviços**, e estão marcados com "**confira**": a tabela de SMTP do Resend (seção 3.2: host, porta e usuário), o comportamento do `wrangler secret put` quando o Worker ainda não existe (seção 4), o `wrangler rollback` (passo 7) e o comportamento dos Workers Logs (seção 4.6). Antes de depender de um deles, confirme na documentação ou no painel do próprio serviço; se o valor real for outro, vale o do serviço.
 
 Fatos que valem para tudo (vêm da spec `docs/superpowers/specs/2026-10-15-falow-multiusuario-design.md`):
 
@@ -77,7 +78,7 @@ Rode o SQL da seção 7 (policies de `storage.objects`). Nenhuma policy `select`
 
 ### Passo 4 — Stripe, parte 1 (produto, ajustes e portal), em modo teste
 
-Faça tudo da seção 2 **menos o webhook** (o webhook só é criado depois do primeiro deploy, no passo 9). Comece em **modo teste** da Stripe; o modo live vem no fim (seção 6).
+Faça tudo da seção 2 **menos o webhook** (o webhook só é criado depois do primeiro deploy, no passo 9). Comece em **modo teste** da Stripe; o modo live vem no fim (passo 18, seção 6).
 
 ### Passo 5 — Resend e Supabase Auth
 
@@ -86,7 +87,9 @@ Tudo da seção 3: domínio no Resend, SMTP no Supabase, cadastro público desli
 ### Passo 6 — Secrets do Worker e checagens antes do deploy
 
 1. Seção 4: coloque todos os secrets (usando as chaves **de teste** da Stripe por enquanto; `STRIPE_WEBHOOK_SECRET` provisório, ver seção 4).
-2. Seção 9, bloco "Antes do deploy": zona na Cloudflare, `npm run check:schema`, build e `--dry-run`.
+2. Seção 9, bloco "Antes do deploy", primeiro a zona na Cloudflare e o `npm run check:schema` (este usa o `.env.local` normal, com a service role).
+3. Seção 4.4: prepare o ambiente do build (só as `NEXT_PUBLIC_*` nos arquivos `.env*`; **não** deixe os secrets no `.env.local` durante o build). Só então rode o build e o `--dry-run` do mesmo bloco da seção 9.
+4. Depois do deploy do passo 7, desfaça o ambiente de build (seção 4.4, último item) para o `.env.local` voltar ao normal.
 
 ### Passo 7 — Deploy **(você)**
 
@@ -96,11 +99,13 @@ npm run deploy:cloudflare
 
 Isso faz `opennextjs-cloudflare build` e depois `wrangler deploy`. O `custom_domain = true` do `wrangler.toml` cria o domínio `falow.app.br` apontando para o Worker e emite o certificado sozinho.
 
+**Atenção, janela de chaves de teste.** A partir daqui e até a troca para o modo live (passo 18) o site público roda com chaves **de teste** da Stripe: qualquer pessoa que achar o link consegue assinar com o cartão `4242 4242 4242 4242` e ganha acesso completo, e essas contas continuam existindo depois da troca. Portanto, **até o passo 18 não divulgue o site**: não linke `falow.app.br` na landing, nas redes, no app da Meta nem para clientes, e mantenha a janela curta (faça os passos 7 a 18 no mesmo dia, se der). O passo 18 inclui a limpeza das assinaturas de teste.
+
 **Se algo der errado:**
 
-- Falha por já existir registro DNS em `falow.app.br`: apague o registro antigo em Cloudflare → o domínio → DNS → Records e rode o deploy de novo. A zona `falow.app.br` precisa existir na sua conta Cloudflare (seção 9).
+- Falha por já existir registro DNS em `falow.app.br`: apague em Cloudflare → o domínio → DNS → Records **só os registros `A`, `AAAA` ou `CNAME` do próprio `falow.app.br`** (o apex/host raiz que apontava para a hospedagem antiga) e rode o deploy de novo. **Não toque nos `MX`, `TXT` nem nos `CNAME` de e-mail** (SPF, DKIM, DMARC) da seção 3.1: apagar esses derruba o envio de e-mail do Resend. A zona `falow.app.br` precisa existir na sua conta Cloudflare (seção 9).
 - Falha de build: o terminal mostra o motivo. Nada foi publicado.
-- Deploy publicou mas o site está quebrado: `npx wrangler rollback` **(você)** volta o Worker para a versão anterior (não desfaz o banco).
+- Deploy publicou mas o site está quebrado: `npx wrangler rollback` **(você; confira o comportamento na documentação do wrangler)** volta o Worker para a versão anterior (não desfaz o banco).
 
 ### Passo 8 — DNS `falow.app.br` no Worker
 
@@ -152,9 +157,16 @@ create policy "own accounts" on public.ig_accounts
 
 ### Passo 13 — Tirar o deploy antigo da Vercel
 
-Depois que a 0017 entrou, o deploy antigo (que escreve em `ig_accounts` direto) não pode mais ficar recebendo tráfego. Na Vercel: remova o domínio do projeto antigo (Settings → Domains) e, se quiser, apague o projeto depois de alguns dias de operação estável. **Não promova esta branch (`multiusuario`) no projeto da Vercel**: sem o `vercel.json` ela perde o cron diário das sequências e a produção nova é o Worker.
+Depois que a 0017 entrou, o deploy antigo (que escreve em `ig_accounts` direto) não pode mais ficar recebendo tráfego. **Só tirar o domínio não basta**: o `vercel.json` da `main` antiga agenda um cron diário em `/api/cron/sequences`, e a Vercel chama o deploy de produção pelo endereço `*.vercel.app` mesmo sem domínio customizado. O código antigo **não** confere a assinatura (o novo confere), então um cron esquecido continuaria, todo dia, executando os atrasos de clientes que não pagam. Na Vercel, no projeto antigo:
 
-**Se algo der errado:** para voltar ao antigo, reverta a 0017 (SQL acima), recoloque o domínio na Vercel e devolva as URLs antigas da Meta (webhook e OAuth).
+1. **Desligue o cron**: Settings → **Cron Jobs** → **Disable** (confira o nome do menu).
+2. Remova o domínio do projeto (Settings → **Domains**).
+3. **Pause ou apague o projeto.** Pausar (Settings → **Advanced** → pausar/*Pause*, se o plano oferecer) já derruba as chamadas; **apagar é o recomendado**, depois de alguns dias de operação estável do Worker. Enquanto o projeto existir e estiver ativo, o item 1 é o que impede o cron antigo.
+4. Confirme: Cron Jobs sem execuções novas no dia seguinte (ou projeto apagado).
+
+**Não promova esta branch (`multiusuario`) no projeto da Vercel**: sem o `vercel.json` ela perde o cron diário das sequências e a produção nova é o Worker.
+
+**Se algo der errado / voltar para a Vercel:** reverta a 0017 (SQL acima), recoloque o domínio na Vercel, devolva as URLs antigas da Meta (webhook e OAuth) e **religue o cron da Vercel** (Settings → Cron Jobs → Enable). Ao mesmo tempo, **tire os Cron Triggers do Worker** (remova o bloco `[triggers] crons` do `wrangler.toml` e faça deploy, ou apague/desative o Worker `falow` no painel da Cloudflare): **nunca deixe a Vercel e o Worker disparando a mesma fila** de atrasos ao mesmo tempo.
 
 ### Passo 14 — Limpar os tokens legados [SEM VOLTA FÁCIL]
 
@@ -174,20 +186,26 @@ update public.ig_accounts set access_token_enc = '', token_expires_at = null whe
 
 **Se algo der errado:** não há como recuperar os tokens apagados, e não precisa: essas contas estão desconectadas ou expiradas; quem quiser voltar reconecta pelo OAuth e ganha um token novo. Contas `active` não são tocadas.
 
-Se você já removeu a URL antiga do OAuth na Meta, este é o momento (a nova, `https://falow.app.br/api/auth/meta/callback`, fica).
+Se você **ainda não removeu** a URL antiga do OAuth na Meta (a que ficou ao lado da nova desde o passo 10), este é o momento de removê-la; a nova, `https://falow.app.br/api/auth/meta/callback`, fica.
 
 ### Passo 15 — Teste de isolamento contra o banco real
 
-Crie dois usuários de teste e rode o script (instruções logo abaixo). O resultado precisa ter `ok` em todas as linhas, em especial nas duas de `ig_accounts` ("insert direto recusado" e "update direto recusado") e em "cadastro público fechado".
+Crie dois usuários de teste e rode o script (instruções logo abaixo). O resultado precisa ter `ok` em todas as linhas, em especial nas duas de `ig_accounts` ("insert direto recusado" e "update direto recusado") e em "cadastro público fechado", e terminar com código de saída 0.
 
-**Se algo der errado:** uma linha `FAIL` é problema de segurança: pare, não abra a venda, e corrija a causa (0017 não aplicada, cadastro público ainda ligado, policy faltando) antes de seguir.
+O que o script prova, e o que não prova:
+
+- **Leitura:** o usuário B é um usuário de teste que **não é dono de nada** (sem @, sem assinatura, sem dados). O script tenta ler as 22 tabelas de dados e a `subscriptions` **sem nenhum filtro** e dá `FAIL` se B enxergar **qualquer** linha. Os dados reais do dono e dos clientes em produção são a "isca": se o RLS estivesse quebrado, B os veria. Ele só prova isolamento nas tabelas em que existem linhas de outras pessoas; numa tabela vazia no banco inteiro a leitura passaria de qualquer jeito (o dono usa o Falow, então as tabelas principais têm dados).
+- **Escrita em `ig_accounts`:** B não consegue inserir uma conta direto pela API e A não consegue alterar a própria. Para a escrita nas demais tabelas o script não faz teste: elas dependem das policies lidas nas migrations.
+- **Cadastro público:** só passa quando o Supabase responde que o cadastro está desativado. Qualquer outro erro (por exemplo limite de e-mails) sai como `INCONCLUSIVO`, **não conta como aprovado** e o código de saída é 2: corrija e rode de novo.
+
+**Se algo der errado:** uma linha `FAIL` é problema de segurança: pare, não abra a venda, e corrija a causa (0017 não aplicada, cadastro público ainda ligado, policy faltando) antes de seguir. Um `FAIL` de leitura em B pode também significar que B não é um usuário vazio (tem @ ou assinatura): confira no Supabase e, se for o caso, use um usuário B recém-criado. Código 1 = tem `FAIL`; código 2 = só inconclusivo.
 
 #### Como rodar o teste de isolamento
 
 O script `scripts/check-tenant-isolation.mjs` usa o `NEXT_PUBLIC_SUPABASE_URL` e a `NEXT_PUBLIC_SUPABASE_ANON_KEY` do seu `.env.local`, ou seja, **fala com o banco de produção**. Rode só depois dos passos 5 (cadastro desligado) e 12 (0017): antes disso ele escreveria de verdade em `ig_accounts` e, com o cadastro aberto, criaria um usuário e dispararia um e-mail de confirmação.
 
-1. Supabase → Authentication → Users → **Add user → Create new user**, duas vezes (`teste-a@seudominio.com` e `teste-b@seudominio.com`, senha qualquer com 8+ caracteres), marcando **Auto Confirm User**. Não crie assinatura para eles.
-2. Copie o UID do usuário A e crie uma linha de conta para ele (SQL Editor):
+1. Supabase → Authentication → Users → **Add user → Create new user**, duas vezes (`teste-a@seudominio.com` e `teste-b@seudominio.com`, senha qualquer com 8+ caracteres), marcando **Auto Confirm User**. Não crie assinatura para eles. **O usuário B tem que ser novo e ficar vazio**: não conecte Instagram nem crie nada com ele. Se B tiver dados próprios, as linhas dele aparecem e o script acusa `FAIL` por engano.
+2. Copie o UID do usuário **A** e crie uma linha de conta para ele (SQL Editor). Só o A recebe a linha; ela serve ao teste de alteração direta:
 
 ```sql
 insert into public.ig_accounts (user_id, ig_user_id, ig_username, access_token_enc, status)
@@ -210,12 +228,22 @@ Git Bash:
 TENANT_A_EMAIL=teste-a@seudominio.com TENANT_A_PASSWORD='<senha A>' TENANT_B_EMAIL=teste-b@seudominio.com TENANT_B_PASSWORD='<senha B>' node scripts/check-tenant-isolation.mjs
 ```
 
-4. Saída esperada: uma linha `ok   <tabela>` para cada tabela, depois `ok   ig_accounts: insert direto recusado`, `ok   ig_accounts: update direto recusado` e `ok   cadastro público fechado`; código de saída 0. Qualquer `FAIL` dá código 1.
-5. Limpeza: apague os dois usuários em Authentication → Users (a conta de teste do A some em cascata). Se o script chegou a criar um usuário `teste+<número>@falow.app.br` (só acontece com o cadastro aberto, e aí já saiu um `FAIL`), apague-o também.
+4. Saída esperada: uma linha `ok   <tabela>` para cada uma das 22 tabelas, `ok   subscriptions`, `ok   ig_accounts: insert direto recusado`, `ok   ig_accounts: update direto recusado` e `ok   cadastro público fechado`, fechando com `Tudo ok.`; código de saída 0. Qualquer `FAIL` dá código 1; `INCONCLUSIVO` sem `FAIL` dá código 2 (não vale como aprovado).
+5. Limpeza: apague os dois usuários em Authentication → Users (a conta de teste do A some em cascata). Se o script chegou a criar um usuário `teste+<número>@falow.app.br` (só acontece com o cadastro aberto, e aí já saiu um `FAIL`), apague-o também. Se saiu um `AVISO restauro não feito`, a linha de teste do A ficou com o `ig_username` alterado: não importa, ela some junto com o usuário A.
 
-### Passo 16 — Compra de teste e virada para o modo live
+### Passo 16 — Compra de teste (modo teste da Stripe)
 
-Seção 6. Só depois dela passar com as chaves de teste você troca para as chaves live e abre a venda.
+Roteiro da seção 6 (itens 1 a 10), com as chaves de teste. **Não apague o usuário de teste no fim**: o passo 17 o usa e já o apaga.
+
+### Passo 17 — Prova do cascade de exclusão (uma vez)
+
+Seção 9, bloco "Prova do cascade de exclusão". Usa o usuário de teste do passo 16 (com um @ de teste e pelo menos um lead num funil) e **tem que acontecer antes de virar para o modo live**, enquanto ainda dá para comprar com cartão de teste. A prova apaga o usuário de teste; se o cascade falhar, o contorno está no mesmo bloco.
+
+**Se algo der errado:** erro de chave estrangeira em `leads`/`pipeline_stages`: use o contorno do bloco e avise quem mantém o código (o purge diário falharia do mesmo jeito para clientes reais, então **não abra a venda** antes de resolver).
+
+### Passo 18 — Limpar as assinaturas de teste e virar para o modo live [SEM VOLTA FÁCIL]
+
+Seção 6, bloco "Virar para o modo live". Inclui: listar e apagar os usuários criados com cartão de teste, desativar o endpoint de webhook de teste na Stripe e trocar os três secrets para os valores live. Só depois disso a venda pode abrir (e o site pode ser divulgado).
 
 ---
 
@@ -312,7 +340,7 @@ Supabase → Authentication → **Emails → SMTP Settings** (em painéis antigo
 | Username | `resend` |
 | Password | a API key do Resend |
 
-Salvar. Opcional: em Authentication → **Rate Limits**, confira o limite de e-mails por hora (com SMTP próprio o padrão é baixo; se você espera muitas compras por hora, aumente).
+**Confira** host, porta e usuário na documentação de SMTP do Resend (Resend → Docs → SMTP) antes de salvar: esses valores foram escritos de memória e o Resend pode mudá-los. Salvar. Opcional: em Authentication → **Rate Limits**, confira o limite de e-mails por hora (com SMTP próprio o padrão é baixo; se você espera muitas compras por hora, aumente).
 
 ### 3.3 Desligar o cadastro público (obrigatório)
 
@@ -367,7 +395,7 @@ Teste rápido: na tela de login do app, "Esqueci minha senha" com o e-mail de um
 
 ## 4. Secrets do Worker
 
-Cada valor entra com `npx wrangler secret put NOME` **(você)**, na pasta do projeto. O comando pede o valor no terminal: digite ou cole **no prompt**. Não use `echo valor | ...`: o `echo` acrescenta quebra de linha ao valor. Confira o resultado com `npx wrangler secret list` (mostra só os nomes). Se o Worker `falow` ainda não existir, o wrangler pergunta se pode criá-lo para guardar o secret: responda sim.
+Cada valor entra com `npx wrangler secret put NOME` **(você)**, na pasta do projeto. O comando pede o valor no terminal: digite ou cole **no prompt**. Não use `echo valor | ...`: o `echo` acrescenta quebra de linha ao valor. Confira o resultado com `npx wrangler secret list` (mostra só os nomes). Se o Worker `falow` ainda não existir, o wrangler deve perguntar se pode criá-lo para guardar o secret (responda sim); **confira** na tela, porque esse comportamento foi descrito de memória e pode ser outro na sua versão do wrangler. Se o comando recusar, faça o primeiro `npm run deploy:cloudflare` antes dos secrets e depois coloque-os; a ordem do runbook (secrets antes do deploy) existe para o site já subir configurado, não é uma exigência técnica.
 
 A conta Cloudflare precisa estar no plano **Workers Paid** (os limites do gratuito não comportam o app).
 
@@ -385,7 +413,7 @@ A lista abaixo foi conferida contra o código (`src`, `scripts`, `worker.ts`, `w
 | `META_APP_SECRET` | Painel Meta → App settings → Basic → App Secret | O webhook aceita a assinatura gerada com este **ou** com o `INSTAGRAM_APP_SECRET` (`src/lib/meta/verify.ts`); configure os dois como hoje |
 | `META_VERIFY_TOKEN` | O mesmo valor que está hoje no painel Meta | Precisa ser idêntico ao digitado no webhook |
 | `NEXT_PUBLIC_APP_URL` | `https://falow.app.br` | **Também no build**. Sem barra no final. Também lido pelo `worker.ts` nos crons |
-| `TOKEN_ENCRYPTION_KEY` | **O mesmo valor de hoje** | Se for outro, os tokens do Instagram já gravados não abrem mais e todo @ precisa reconectar. Nunca gere um novo |
+| `TOKEN_ENCRYPTION_KEY` | **O mesmo valor de hoje.** Onde achar: no `.env.local` deste projeto ou no registro seguro onde você guardou as chaves. Variáveis marcadas como sensíveis na Vercel **não podem ser lidas de volta** pelo painel, então não conte com ela | Se for outro (ou se o valor foi perdido), os tokens do Instagram já gravados não abrem mais e **cada cliente precisa reconectar o @**. Nunca gere um novo sem aceitar isso |
 | `CRON_SECRET` | Valor inventado (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) | Sem ele, os dois crons respondem 503 e falham a cada execução |
 | `STRIPE_SECRET_KEY` | Seção 2.2 | `sk_test_...` agora; `sk_live_...` na virada final |
 | `STRIPE_WEBHOOK_SECRET` | Seção 2.6 | Ver 4.3 |
@@ -409,9 +437,29 @@ O Signing secret real só existe depois que o endpoint for criado (passo 9 da se
 
 ### 4.4 Variáveis `NEXT_PUBLIC_*` também no build
 
-As `NEXT_PUBLIC_*` são embutidas no código **na hora do build**, não lidas no Worker. Portanto `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_APP_URL` e `NEXT_PUBLIC_CONTACT_EMAIL` precisam existir no ambiente de quem roda `npm run deploy:cloudflare`. Como o deploy sai do seu computador, quem cobre isso é o `.env.local` da pasta do projeto.
+As `NEXT_PUBLIC_*` são embutidas no código **na hora do build**, não lidas no Worker. Portanto `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `NEXT_PUBLIC_APP_URL` e `NEXT_PUBLIC_CONTACT_EMAIL` precisam existir no ambiente de quem roda `npm run deploy:cloudflare` (ou `npm run build:cloudflare`).
 
-Antes de cada deploy de produção confira que o `.env.local` tem `NEXT_PUBLIC_APP_URL=https://falow.app.br` (e **não** `http://localhost:3000`, que ficaria gravado no site publicado: links de convite, redirects e URL de webhook errados).
+**Cuidado: o OpenNext embute no pacote TODOS os valores dos arquivos `.env*` presentes no build, não só os `NEXT_PUBLIC_*`.** (O código de partida do Worker, `node_modules/@opennextjs/cloudflare/dist/cli/templates/init.js`, carrega esses valores com `process.env[key] ??= ...`.) Duas consequências:
+
+1. Se o `.env.local` tiver `SUPABASE_SERVICE_ROLE_KEY`, `TOKEN_ENCRYPTION_KEY`, `STRIPE_SECRET_KEY` etc. de produção durante o build, esses valores vão **para dentro do código enviado** à Cloudflare.
+2. Um secret que você esqueceu de colocar com `wrangler secret put` não dá erro: o Worker cai, em silêncio, no valor que estava no `.env.local` (que pode ser de desenvolvimento ou de teste).
+
+Por isso, **faça o build de produção só com as variáveis `NEXT_PUBLIC_*` nos arquivos de ambiente**. Roteiro seguro, na pasta do projeto:
+
+1. Rode o `npm run check:schema` antes (ele precisa do `SUPABASE_SERVICE_ROLE_KEY` do `.env.local`).
+2. Mova o `.env.local` de lado (renomeie para `.env.guardado.local`, nome que o `.gitignore` já cobre; **não** o apague nem o commite) e crie um `.env.production.local` contendo **apenas** estas quatro linhas, com os valores de produção:
+
+```bash
+NEXT_PUBLIC_SUPABASE_URL=<Project URL do Supabase>
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
+NEXT_PUBLIC_APP_URL=https://falow.app.br
+NEXT_PUBLIC_CONTACT_EMAIL=<seu e-mail de contato>
+```
+
+3. Rode `npm run build:cloudflare` / `npm run deploy:cloudflare` e os `--dry-run` da seção 9.
+4. Depois do deploy, apague o `.env.production.local` e devolva o nome `.env.local` ao arquivo guardado (o teste de isolamento do passo 15 e o `check:schema` leem o `.env.local`). Confira que nenhum deles aparece no `git status`.
+
+`NEXT_PUBLIC_APP_URL` tem que ser `https://falow.app.br` (e **não** `http://localhost:3000`, que ficaria gravado no site publicado: links de convite, redirects e URL de webhook errados).
 
 ### 4.5 Crons
 
@@ -426,7 +474,7 @@ Conferir que existem: Cloudflare → Workers & Pages → `falow` → Settings �
 
 ### 4.6 Logs
 
-Para procurar mensagens depois (seção 8), os logs precisam estar ligados: Cloudflare → Workers & Pages → `falow` → **Observability** (ou Settings → Observability) → ligar **Workers Logs**. O `wrangler.toml` não tem bloco `[observability]`: se, depois de um deploy, a opção voltar a ficar desligada, acrescente `[observability]` com `enabled = true` ao `wrangler.toml` (uma mudança de duas linhas no repositório) e faça o deploy de novo. Para acompanhar ao vivo sem nada disso: `npx wrangler tail falow --format pretty` **(você)**.
+Para procurar mensagens depois (seção 8), os logs precisam estar ligados: Cloudflare → Workers & Pages → `falow` → **Observability** (ou Settings → Observability) → ligar **Workers Logs** (**confira** o nome do menu). O `wrangler.toml` **não tem** bloco `[observability]`, então a opção só existe se você ligar no painel, e **confira depois de cada deploy** se ela continua ligada: um `wrangler deploy` pode devolver a configuração ao que está no arquivo (comportamento escrito de memória). Se voltar a ficar desligada, acrescente `[observability]` com `enabled = true` ao `wrangler.toml` (uma mudança de duas linhas no repositório, a ser feita por quem mantém o código) e faça o deploy de novo. Para acompanhar ao vivo sem nada disso: `npx wrangler tail falow --format pretty` **(você)**.
 
 ---
 
@@ -453,7 +501,7 @@ Tem que responder `200` com corpo `123`. Qualquer outro valor de token responde 
 
 ## 6. Compra de teste
 
-Use as **chaves de teste** da Stripe (seção 2 em modo teste, secrets de teste no Worker, webhook de teste criado) e um e-mail seu que você acesse (um alias como `voce+teste1@gmail.com` serve).
+Este é o passo 16 da seção 1. Use as **chaves de teste** da Stripe (seção 2 em modo teste, secrets de teste no Worker, webhook de teste criado) e um e-mail seu que você acesse (um alias como `voce+teste1@gmail.com` serve). Lembrete: o site não deve ser divulgado até o passo 18.
 
 1. Abra `https://falow.app.br` (sem estar logado) e clique em **Assinar**. Vai para o checkout da Stripe em modo teste.
 2. Pague com o cartão `4242 4242 4242 4242`, validade futura qualquer, CVC qualquer, e o e-mail de teste.
@@ -466,14 +514,39 @@ Use as **chaves de teste** da Stripe (seção 2 em modo teste, secrets de teste 
 9. Mande outra DM para o @ de teste: o bot **não** responde (o log do Worker mostra `[meta] @<usuario> sem assinatura ativa: evento ignorado`; não vira linha em Logs do painel).
 10. Em `/assinatura`, clique **Reativar assinatura**, pague de novo com o cartão de teste. Volta `status = active`, `canceled_at` e `purge_after` vazios, o painel abre e o bot volta a responder, com as regras como estavam.
 
-Limpeza: apague o usuário de teste em Supabase → Authentication → Users (em cascata some a conta e os dados dele; veja o aviso do funil na seção 9).
+Limpeza: **o usuário de teste é apagado no passo 17 da seção 1** (prova do cascade, seção 9), que precisa dele com um lead num funil. Não o apague antes. Se for pular a prova do cascade (não recomendado), apague-o em Supabase → Authentication → Users (em cascata some a conta e os dados dele; veja o aviso do funil na seção 9).
 
 ### Virar para o modo live
 
-Só depois de todo o roteiro acima passar:
+Só depois de todo o roteiro acima passar e da prova do cascade (passo 17) ter sido feita. Este bloco é o passo 18 da seção 1.
 
-1. Stripe em modo **live**: repita 2.1 (produto e preço), 2.3 (só cartão), 2.4 (cancelar no fim das tentativas), 2.5 (portal) e 2.6 (webhook com os mesmos quatro eventos).
-2. Troque os três secrets, um a um, **(você)**:
+**1. Limpar as assinaturas de teste (antes de trocar as chaves).** Durante a janela de chaves de teste (do deploy do passo 7 até aqui) qualquer pessoa pode ter assinado com o cartão `4242`. Depois da troca de chaves nenhum webhook de teste chega mais e essas linhas ficariam `active` para sempre, com acesso completo e de graça. Liste tudo o que existe, **excluindo o dono**:
+
+```sql
+select s.user_id, u.email, s.status, s.updated_at, u.created_at as usuario_criado_em
+  from public.subscriptions s
+  join auth.users u on u.id = s.user_id
+ where s.user_id <> '<FALOW_OWNER_USER_ID>'
+ order by u.created_at;
+```
+
+Também confira usuários sem assinatura, de tentativas que não terminaram de pagar (o dono continua de fora):
+
+```sql
+select u.id, u.email, u.created_at
+  from auth.users u
+ where u.id <> '<FALOW_OWNER_USER_ID>'
+   and not exists (select 1 from public.subscriptions s where s.user_id = u.id)
+ order by u.created_at;
+```
+
+**Pare se a lista não for exatamente o que você espera**: ela só pode ter os seus usuários de teste (os e-mails que você usou nas compras de teste). Qualquer e-mail que você não reconhece é alguém que assinou com cartão de teste (aí o acesso dele é indevido e pode ser apagado) ou, pior, um cliente real que entrou por outro caminho: investigue antes de apagar. Quando a lista só tiver usuários de teste conhecidos, apague cada um em Supabase → Authentication → Users → o usuário → **Delete user** (a cascata leva a conta de Instagram, os contatos, os dados e a linha de `subscriptions`; se acusar erro de chave estrangeira em leads, use o contorno da seção 9). Rode o primeiro `select` de novo: tem que voltar **vazio**.
+
+**2. Desativar o webhook de teste.** Stripe em modo **teste** → Developers → Webhooks → o endpoint `https://falow.app.br/api/webhooks/stripe` → **Disable** (ou apague). Sem isso, eventos de teste continuariam chegando assinados com o secret de teste.
+
+**3. Stripe em modo live.** Repita 2.1 (produto e preço), 2.3 (só cartão), 2.4 (cancelar no fim das tentativas), 2.5 (portal) e 2.6 (webhook com os mesmos quatro eventos, agora com o endpoint do modo live).
+
+**4. Trocar os três secrets**, um a um, **(você)**:
 
 ```bash
 npx wrangler secret put STRIPE_SECRET_KEY
@@ -481,8 +554,8 @@ npx wrangler secret put STRIPE_PRICE_ID
 npx wrangler secret put STRIPE_WEBHOOK_SECRET
 ```
 
-   Com os valores **live** (`sk_live_...`, o `price_...` do live, o `whsec_...` do endpoint live). Eles valem na hora, sem novo deploy.
-3. Recomendado: uma compra real com o seu cartão, conferir que tudo chegou (convite, painel, linha em `subscriptions`) e reembolsar em seguida (seção 10c).
+   Com os valores **live** (`sk_live_...`, o `price_...` do live, o `whsec_...` do endpoint live). **Os três mudam de modo**: o `STRIPE_WEBHOOK_SECRET` de teste e o de live são diferentes (cada endpoint tem o seu), e o `STRIPE_PRICE_ID` do modo teste não existe no live (o checkout falharia). Eles valem na hora, sem novo deploy.
+**5. Compra real de conferência (recomendado).** Uma compra com o seu cartão, conferir que tudo chegou (convite, painel, linha em `subscriptions`) e reembolsar em seguida (seção 10c). Só depois disso divulgue o site.
 
 **Se algo der errado:** convite não chega: seção 3. Compra feita e nada na tabela: veja os eventos entregues no endpoint da Stripe (resposta 500/400 e o motivo) e o log do Worker; 400 "Assinatura inválida" é `STRIPE_WEBHOOK_SECRET` de outro modo/endpoint. Bot não responde com assinatura ativa: confira o status da linha e o log (`[meta] @... sem assinatura ativa: evento ignorado` indica que o status da linha não dá acesso).
 
@@ -573,7 +646,7 @@ Aprendidas nas revisões. A seção 1 diz em que momento cada bloco entra.
 - A zona `falow.app.br` precisa existir na sua conta Cloudflare (`custom_domain = true` falha sem ela).
 - `npx wrangler secret put CRON_SECRET` e os demais secrets da seção 4. Sem `CRON_SECRET` o cron falha com 503 uma vez por minuto.
 - Rode `npm run check:schema` com as credenciais de produção no ambiente (`NEXT_PUBLIC_SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`, que o script lê do `.env.local`) **depois** de aplicar a 0016. O build não chama mais esse gate. Saída esperada: `[schema] Banco compatível com o build.` Se ele listar `tabela: coluna ...`, falta migration (aplique as de `supabase/migrations`, na ordem, **até a 0016**; a 0017 só depois do deploy).
-- Rode o build e o empacotamento de teste **(você)**:
+- Rode o build e o empacotamento de teste **(você)**, já com o ambiente de build preparado como na seção 4.4 (só `NEXT_PUBLIC_*` nos arquivos `.env*`):
 
 ```bash
 npm run build:cloudflare
@@ -600,9 +673,9 @@ Só depois disso crie o endpoint do webhook na Stripe (seção 2.6) e troque o `
 
 ### Prova do cascade de exclusão (uma vez, num usuário de teste)
 
-Rode **um** `deleteUser` real num usuário de teste que tenha leads num funil, para provar a cascata `leads.stage_id → pipeline_stages ON DELETE RESTRICT` (lida e aceita nas revisões, nunca executada).
+Este bloco é o **passo 17** da seção 1 (depois da compra de teste do passo 16, antes de virar para o modo live no passo 18). Rode **um** `deleteUser` real num usuário de teste que tenha leads num funil, para provar a cascata `leads.stage_id → pipeline_stages ON DELETE RESTRICT` (lida e aceita nas revisões, nunca executada).
 
-1. Faça uma compra de teste (seção 6), conecte um @ de teste, abra o CRM e coloque pelo menos um lead num funil.
+1. Use o usuário da compra de teste (seção 6, passo 16): com o @ de teste conectado, abra o CRM e coloque pelo menos um lead num funil.
 2. Apague o usuário em Authentication → Users → Delete user. **Ou** teste o caminho real do purge: cancele a assinatura na hora, force o vencimento e dispare a rota:
 
 ```sql
@@ -617,7 +690,15 @@ curl -i https://falow.app.br/api/cron/purge -H "Authorization: Bearer <CRON_SECR
 ```
 
    Resposta `200` com o id dele em `purged`.
-3. Se falhar com erro de chave estrangeira em `leads`/`pipeline_stages`: o purge registra `[purge] <id> falhou` e não apaga ninguém pela metade. Contorno manual, e avise quem mantém o código:
+3. Se falhar com erro de chave estrangeira em `leads`/`pipeline_stages`: o purge registra `[purge] <id> falhou`. **Atenção: a falha pode deixar o usuário apagado só pela metade.** Os arquivos de `crm-uploads` são removidos **antes** do `deleteUser` (`src/lib/billing/purge.ts`); se o `deleteUser` falhar por chave estrangeira, o usuário e as linhas do banco continuam, mas os arquivos dele já foram. O job tenta de novo no dia seguinte (o usuário segue `canceled` e vencido) e falha do mesmo jeito até o problema ser resolvido. Contorno manual, e avise quem mantém o código. Antes de apagar, **liste** o que vai sair e confira que são só os leads do usuário de teste:
+
+```sql
+select l.id, l.account_id, l.ig_sender_id
+  from public.leads l
+ where l.account_id in (select id from public.ig_accounts where user_id = '<UID>');
+```
+
+   Se a lista não for exatamente a do usuário de teste, **pare**. Estando certa, apague:
 
 ```sql
 delete from public.leads where account_id in (select id from public.ig_accounts where user_id = '<UID>');
@@ -627,7 +708,7 @@ delete from public.leads where account_id in (select id from public.ig_accounts 
 
 ### Não promover a branch na Vercel
 
-Não promova esta branch no projeto da Vercel enquanto a produção estiver lá: sem o `vercel.json` ela perde o cron diário das sequências.
+Não promova esta branch no projeto da Vercel enquanto a produção estiver lá: sem o `vercel.json` ela perde o cron diário das sequências. Depois da virada, o projeto antigo da Vercel não pode continuar com o cron ligado: ver o passo 13 da seção 1.
 
 ### Crons
 
@@ -643,11 +724,24 @@ As páginas públicas (`/exclusao-de-dados`, `/termos-de-servico`) prometem que 
 
 Pedido de quem mandou DM ou comentou numa conta de cliente. O `ig_sender_id` aparece na tela de Logs do painel e na URL da conversa. Sempre filtre por **conta + remetente**: o mesmo remetente pode existir em contas de outros clientes e esses dados não podem ser tocados.
 
-1. Ache a conta (a que recebeu a interação):
+1. Ache a conta (a que recebeu a interação). **Pode voltar mais de uma linha**: o mesmo @ pode ter sido conectado por logins diferentes ao longo do tempo (o histórico de contas desconectadas continua na tabela). Veja o dono da linha e quando foi conectada:
 
 ```sql
-select id, ig_username, status from public.ig_accounts where ig_username = '<@ da conta, sem arroba>';
+select id, user_id, ig_username, status, connected_at
+  from public.ig_accounts
+ where ig_username = '<@ da conta, sem arroba>'
+ order by connected_at;
 ```
+
+   **Trate cada linha devolvida** (cada `id` é uma conta diferente, possivelmente de outro cliente): repita os passos 2 e 3 para cada `id` onde a pessoa realmente aparece. Se não der para saber qual é a conta certa, pergunte ao solicitante quando foi o contato e compare com `connected_at`. Para achar o id do remetente (`ig_sender_id`) a partir do @ dele, em cada conta:
+
+```sql
+select ig_sender_id, ig_sender_username
+  from public.conversations
+ where account_id = '<ID_DA_CONTA>' and ig_sender_username = '<@ do solicitante, sem arroba>';
+```
+
+   Se voltar mais de um `ig_sender_id` ou nenhum, **pare** e confirme com o solicitante antes de apagar.
 
 2. Opcional: se a conversa tiver anexos enviados pelo painel (arquivos em `crm-uploads`), liste antes de apagar as mensagens:
 
@@ -659,7 +753,16 @@ select id, attachments from public.messages
 
    e apague esses arquivos em Storage → `crm-uploads` → pasta `<ID_DA_CONTA>`. (Mídia recebida do lead guarda só a URL da CDN da Meta, que não é nossa.)
 
-3. Apague tudo do remetente naquela conta:
+3. Confirme antes o que vai ser apagado (conta e remetente certos, quantidades que fazem sentido):
+
+```sql
+select
+  (select count(*) from public.messages where account_id = '<ID_DA_CONTA>' and ig_sender_id = '<ID_DO_REMETENTE>') as mensagens,
+  (select count(*) from public.leads    where account_id = '<ID_DA_CONTA>' and ig_sender_id = '<ID_DO_REMETENTE>') as leads,
+  (select count(*) from public.conversations where account_id = '<ID_DA_CONTA>' and ig_sender_id = '<ID_DO_REMETENTE>') as conversas;
+```
+
+   Se os números não baterem com o que você espera, **pare**. Estando certo, apague tudo do remetente naquela conta:
 
 ```sql
 do $$
