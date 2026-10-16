@@ -922,7 +922,7 @@ Admin é o dono (`FALOW_OWNER_USER_ID`) mais os UUIDs da variável `FALOW_ADMIN_
 Em `https://falow.app.br/admin` (404 para quem não é admin):
 
 - Lista os clientes com e-mail, data de cadastro, último login, @ conectado, status e fim do período da assinatura, `purge_after`, cortesia e bloqueio.
-- **Cortesia:** dá acesso por um prazo, sem pagamento, com um motivo.
+- **Cortesia:** dá acesso por um prazo, sem pagamento, com um motivo. Cortesia para quem tem assinatura **cancelada** só adia o purge, não remarca: o `purge_after` continua o mesmo, e se ele já tiver passado quando a cortesia acabar, o cron do dia seguinte apaga tudo. O `/assinatura` do cliente mostra a cortesia, a data de exclusão e o botão Reativar.
 - **Bloqueio:** tira o acesso na hora (o painel redireciona para `/assinatura` com "Conta bloqueada" e o bot para de responder). O bloqueio prevalece sobre uma assinatura paga.
 - **Reenviar acesso:** reenvia o convite ou o link de nova senha.
 - Registra toda ação de escrita no registro de ações.

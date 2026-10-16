@@ -103,11 +103,44 @@ describe("/assinatura", () => {
     expect(html).not.toContain("Gerenciar");
   });
 
-  it("cortesia válida: mostra a data e o botão do painel", async () => {
+  it("cortesia válida sem assinatura: mostra a data, o botão do painel e o status normal", async () => {
     state.grant = { user_id: "c1", kind: "courtesy", expires_at: "2999-01-01T12:00:00Z" };
     const html = await render();
     expect(html).toContain("Cortesia válida até");
     expect(html).toContain("Ir para o painel");
+    expect(html).toContain("Sem assinatura");
+    expect(html).toContain("Reativar assinatura");
+  });
+
+  it("cancelada com cortesia válida: avisa a cortesia E a exclusão agendada, com Reativar", async () => {
+    state.row = { status: "canceled", purge_after: "2026-11-15T12:00:00Z" };
+    state.grant = { user_id: "c1", kind: "courtesy", expires_at: "2999-01-01T12:00:00Z" };
+    const html = await render();
+    expect(html).toContain("Cortesia válida até");
+    expect(html).toContain("Cancelada");
+    expect(html).toContain("15 de novembro de 2026");
+    expect(html).toContain("apagados");
+    expect(html).toContain("Reativar assinatura");
+    expect(html).toContain("/api/billing/checkout");
+    expect(html).toContain("Ir para o painel");
+  });
+
+  it("ativa com cortesia válida: mantém Gerenciar na Stripe, sem Reativar", async () => {
+    state.row = { status: "active", purge_after: null };
+    state.grant = { user_id: "c1", kind: "courtesy", expires_at: "2999-01-01T12:00:00Z" };
+    const html = await render();
+    expect(html).toContain("Cortesia válida até");
+    expect(html).toContain("Gerenciar na Stripe");
     expect(html).not.toContain("Reativar");
+  });
+
+  it("cortesia vencida: fluxo normal, sem a linha de cortesia", async () => {
+    state.row = { status: "canceled", purge_after: "2026-11-15T12:00:00Z" };
+    state.grant = { user_id: "c1", kind: "courtesy", expires_at: "2000-01-01T12:00:00Z" };
+    const html = await render();
+    expect(html).not.toContain("Cortesia válida até");
+    expect(html).toContain("O bot está pausado");
+    expect(html).toContain("Reativar assinatura");
+    expect(html).not.toContain("Ir para o painel");
   });
 });
