@@ -302,7 +302,8 @@ export default function PrivacidadePage() {
               <Term>Perfil do Instagram (foto, nome, seguidores):</Term>{" "}
               guardado junto da conversa enquanto ela existir, atualizado
               sempre que a foto muda ou expira. Some junto quando a conversa é
-              apagada, a pedido do titular ou pela desconexão da conta.
+              apagada, a pedido do titular ou quando os dados da assinatura são
+              apagados (veja abaixo).
             </li>
             <li>
               <Term>Estado das sequências:</Term> é apagado junto com os demais
@@ -315,13 +316,15 @@ export default function PrivacidadePage() {
             </li>
           </LegalList>
           <p>
-            Apagar a conta conectada no painel remove em cascata todas as
-            conversas, regras, sequências, execuções, contatos e logs vinculados
-            a ela.
+            Desconectar a conta do Instagram no painel só para as automações
+            dessa conta e apaga o token de acesso. As conversas, os contatos e
+            os demais registros continuam guardados enquanto a assinatura
+            existir. Para apagá-los antes, escreva para o contato no fim desta
+            página.
           </p>
           <LegalCallout title="Depois que a assinatura termina">
             <p>
-              Quando a assinatura é cancelada, as automações param na hora e os
+              Quando a assinatura termina, as automações param na hora e os
               dados ficam guardados por <Term>30 dias</Term>, para que o
               cliente possa reativar e encontrar tudo como estava. Passado esse
               prazo, contatos, conversas, tokens de acesso e arquivos são
