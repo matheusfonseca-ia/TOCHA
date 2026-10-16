@@ -30,11 +30,33 @@ export default async function AssinaturaPage() {
   if (!user) redirect("/login");
   if (isOwner(user.id)) redirect("/dashboard");
 
-  const { data: sub } = await supabase
+  const { data: sub, error } = await supabase
     .from("subscriptions")
     .select("*")
     .eq("user_id", user.id)
     .maybeSingle<Subscription>();
+
+  // Erro de leitura não é "sem assinatura": sem "Reativar" aqui, senão quem já paga
+  // abriria uma segunda assinatura.
+  if (error) {
+    console.error("[assinatura] falha ao ler a assinatura:", error.message);
+    return (
+      <main className="flex min-h-screen items-center justify-center p-4">
+        <Card className="w-full max-w-md space-y-5 p-6">
+          <h1 className="font-display text-xl font-semibold tracking-tight">Sua assinatura</h1>
+          <p>Não foi possível conferir sua assinatura agora. Tente de novo em instantes.</p>
+          {/* <a> comum (não Link): recarrega a página inteira e refaz a leitura no servidor. */}
+          <Button asChild className="w-full">
+            <a href="/assinatura">Tentar de novo</a>
+          </Button>
+          <form action={signOut}>
+            <button type="submit" className="text-sm text-muted-foreground underline">Sair</button>
+          </form>
+        </Card>
+      </main>
+    );
+  }
+
   const active = isAccessStatus(sub?.status);
 
   return (

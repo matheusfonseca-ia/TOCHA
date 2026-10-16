@@ -14,11 +14,15 @@ export async function POST() {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.redirect(new URL("/login", appUrl), 303);
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("subscriptions")
     .select("stripe_customer_id")
     .eq("user_id", user.id)
     .maybeSingle<{ stripe_customer_id: string }>();
+  if (error) {
+    console.error("[billing] falha ao ler a assinatura:", error.message);
+    return NextResponse.redirect(new URL("/assinatura", appUrl), 303);
+  }
   if (!data) return NextResponse.redirect(new URL("/assinatura", appUrl), 303);
 
   const session = await getStripe().billingPortal.sessions.create({

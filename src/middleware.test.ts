@@ -1,12 +1,13 @@
 // Porta de entrada do produto: quem passa, quem vai para /login e quem vai para /assinatura.
 // Supabase mockado; a decisão pura de rota está em src/lib/auth/routing.test.ts.
 import { NextRequest } from "next/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { state, createServerClient } = vi.hoisted(() => {
   const state = {
     user: null as null | { id: string },
     sub: null as null | { status: string },
+    error: null as null | { message: string },
     fromCalls: [] as string[],
   };
   const createServerClient = vi.fn(() => ({
@@ -16,7 +17,8 @@ const { state, createServerClient } = vi.hoisted(() => {
       const chain = {
         select: () => chain,
         eq: () => chain,
-        maybeSingle: async () => ({ data: state.sub, error: null }),
+        maybeSingle: async () =>
+          state.error ? { data: null, error: state.error } : { data: state.sub, error: null },
       };
       return chain;
     },
@@ -41,8 +43,13 @@ describe("middleware", () => {
   beforeEach(() => {
     state.user = null;
     state.sub = null;
+    state.error = null;
     state.fromCalls = [];
     createServerClient.mockClear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("atalhos publicos e /api nao tocam no Supabase", async () => {
@@ -98,5 +105,23 @@ describe("middleware", () => {
     // paginas publicas continuam abrindo
     expect(isNext(await middleware(req("/definir-senha")))).toBe(true);
     expect(isNext(await middleware(req("/assinatura/obrigado")))).toBe(true);
+  });
+
+  it("erro na consulta de subscriptions: continua fechado (vai para /assinatura) e registra o erro", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    state.user = { id: "u4" };
+    state.error = { message: "boom" };
+    const r = await middleware(req("/dashboard"));
+    expect(r.status).toBe(307);
+    expect(location(r)?.pathname).toBe("/assinatura");
+    expect(consoleError).toHaveBeenCalledWith("[middleware] falha ao ler subscriptions:", "boom");
+  });
+
+  it("sem erro na consulta nao registra nada no console.error", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    state.user = { id: "u4" };
+    state.sub = null;
+    await middleware(req("/dashboard"));
+    expect(consoleError).not.toHaveBeenCalled();
   });
 });

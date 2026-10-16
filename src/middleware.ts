@@ -47,11 +47,14 @@ export async function middleware(request: NextRequest) {
     if (isOwner(user.id)) {
       hasAccess = true;
     } else {
-      const { data: sub } = await supabase
+      const { data: sub, error } = await supabase
         .from("subscriptions")
         .select("status")
         .eq("user_id", user.id)
         .maybeSingle<{ status: string }>();
+      // Fail-closed: erro de leitura também manda para /assinatura, mas fica no log
+      // (a página mostra "não foi possível conferir", não "sem assinatura").
+      if (error) console.error("[middleware] falha ao ler subscriptions:", error.message);
       hasAccess = isAccessStatus(sub?.status);
     }
   }

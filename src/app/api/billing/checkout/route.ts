@@ -15,13 +15,20 @@ export async function POST() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { data: subscription } = user
+  const { data: subscription, error } = user
     ? await supabase
         .from("subscriptions")
         .select("status, stripe_customer_id")
         .eq("user_id", user.id)
         .maybeSingle<{ status: string; stripe_customer_id: string }>()
-    : { data: null };
+    : { data: null, error: null };
+
+  // Erro de leitura não é "sem assinatura": abrir um Checkout aqui criaria uma 2ª assinatura paga
+  // (por customer_email, em outro cliente da Stripe) para quem já paga.
+  if (error) {
+    console.error("[billing] falha ao ler a assinatura:", error.message);
+    return NextResponse.redirect(new URL("/assinatura", appUrl), 303);
+  }
 
   const decision = checkoutDecision({ userId: user?.id ?? null, owner: isOwner(user?.id), subscription });
   if (decision.kind === "dashboard") return NextResponse.redirect(new URL("/dashboard", appUrl), 303);
