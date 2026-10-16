@@ -1,4 +1,4 @@
-import { isAccessStatus, isOwner, type QueryClient } from "@/lib/billing/access";
+import { hasActiveAccess, isAccessStatus, isAdmin, type QueryClient } from "@/lib/billing/access";
 
 /**
  * Exclusão LGPD: 30 dias depois do cancelamento, apaga os arquivos do
@@ -23,7 +23,7 @@ export async function purgeExpiredUsers(deps: PurgeDeps): Promise<{ purged: stri
   }
   const now = (deps.now ?? (() => new Date()))();
   // Só `canceled` é apagado (incomplete/unpaid/paused nunca agendam purge). O
-  // `.neq` é a segunda camada de proteção do dono, além do isOwner() por linha.
+  // `.neq` é a segunda camada de proteção do dono, além do isAdmin() por linha.
   const { data } = await deps.admin
     .from("subscriptions")
     .select("user_id, status, purge_after")
@@ -34,7 +34,7 @@ export async function purgeExpiredUsers(deps: PurgeDeps): Promise<{ purged: stri
 
   const purged: string[] = [];
   for (const row of rows) {
-    if (!row.purge_after || isOwner(row.user_id) || isAccessStatus(row.status)) continue;
+    if (!row.purge_after || isAdmin(row.user_id) || isAccessStatus(row.status)) continue;
     try {
       // Releitura logo antes do que não tem volta: um webhook de reativação pode
       // ter chegado depois do select acima. Qualquer dúvida (inclusive erro) = pula.
@@ -46,6 +46,9 @@ export async function purgeExpiredUsers(deps: PurgeDeps): Promise<{ purged: stri
       const fresh = current as { status?: string; purge_after?: string | null } | null;
       // Date (não comparação de string): o Postgres devolve o timestamptz em outro formato; NaN também pula.
       if (rereadError || !fresh || fresh.status !== "canceled" || !fresh.purge_after || !(new Date(fresh.purge_after) < now)) continue;
+
+      // Admin e cortesia válida nunca são apagados (bloqueio + canceled segue o purge normal).
+      if (await hasActiveAccess(deps.admin, row.user_id, now)) continue;
 
       const { data: accounts } = await deps.admin.from("ig_accounts").select("id").eq("user_id", row.user_id);
       for (const account of (accounts ?? []) as { id: string }[]) await deps.removeUploads(account.id);

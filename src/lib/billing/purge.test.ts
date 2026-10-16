@@ -114,4 +114,25 @@ describe("purgeExpiredUsers", () => {
     expect(deps.removeUploads).not.toHaveBeenCalled();
     expect(deps.deleteUser).not.toHaveBeenCalled();
   });
+
+  it("não apaga admin da lista mesmo cancelado e vencido", async () => {
+    const A1 = "11111111-1111-4111-8111-111111111111";
+    vi.stubEnv("FALOW_ADMIN_USER_IDS", A1);
+    db.tables.subscriptions.push({ user_id: A1, stripe_customer_id: "c9", status: "canceled", purge_after: "2026-11-19T00:00:00Z" });
+    expect(await purgeExpiredUsers(deps)).toEqual({ purged: [] });
+    expect(deps.deleteUser).not.toHaveBeenCalled();
+  });
+
+  it("não apaga quem tem cortesia válida", async () => {
+    db.tables.subscriptions.push({ user_id: "venceu", stripe_customer_id: "c1", status: "canceled", purge_after: "2026-11-19T00:00:00Z" });
+    db.tables.access_grants.push({ user_id: "venceu", kind: "courtesy", expires_at: "2027-01-01T00:00:00Z", reason: "x", granted_by: "user-1" });
+    expect(await purgeExpiredUsers(deps)).toEqual({ purged: [] });
+    expect(deps.removeUploads).not.toHaveBeenCalled();
+  });
+
+  it("bloqueado com assinatura cancelada e vencida é apagado normalmente", async () => {
+    db.tables.subscriptions.push({ user_id: "venceu", stripe_customer_id: "c1", status: "canceled", purge_after: "2026-11-19T00:00:00Z" });
+    db.tables.access_grants.push({ user_id: "venceu", kind: "block", expires_at: null, reason: "x", granted_by: "user-1" });
+    expect(await purgeExpiredUsers(deps)).toEqual({ purged: ["venceu"] });
+  });
 });

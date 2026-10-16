@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createFakeAdmin, type FakeSupabase, type TableName } from "@/lib/sequences/__tests__/fake-supabase";
-import { accountHasAccess, hasActiveAccess, isAccessStatus, isOwner } from "@/lib/billing/access";
+import { accountHasAccess, hasActiveAccess, isAccessStatus, isAdmin, isOwner } from "@/lib/billing/access";
 
 describe("regra de acesso", () => {
   let db: FakeSupabase;
@@ -120,5 +120,93 @@ describe("regra de acesso", () => {
       expect(await accountHasAccess(db.client, "nao-existe")).toBe(false);
       expect(consoleError).not.toHaveBeenCalled();
     });
+  });
+});
+
+const A1 = "11111111-1111-4111-8111-111111111111";
+const A2 = "22222222-2222-4222-8222-222222222222";
+
+describe("isAdmin", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("dono é sempre admin", () => {
+    expect(isAdmin("user-1")).toBe(true);
+  });
+  it("lê a lista com espaços, quebra de linha e itens vazios", () => {
+    vi.stubEnv("FALOW_ADMIN_USER_IDS", ` ${A1} ,
+${A2}
+,, `);
+    expect(isAdmin(A1)).toBe(true);
+    expect(isAdmin(A2)).toBe(true);
+    expect(isAdmin("33333333-3333-4333-8333-333333333333")).toBe(false);
+  });
+  it("descarta item que não é UUID (ex.: e-mail) e registra", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubEnv("FALOW_ADMIN_USER_IDS", `matheus@exemplo.com,${A1}`);
+    expect(isAdmin("matheus@exemplo.com")).toBe(false);
+    expect(isAdmin(A1)).toBe(true);
+    expect(spy).toHaveBeenCalled();
+  });
+  it("variável vazia = só o dono", () => {
+    vi.stubEnv("FALOW_ADMIN_USER_IDS", "");
+    expect(isAdmin(A1)).toBe(false);
+    expect(isAdmin(null)).toBe(false);
+  });
+});
+
+describe("hasActiveAccess com access_grants", () => {
+  const NOW = new Date("2026-10-16T12:00:00Z");
+  let db: FakeSupabase;
+  beforeEach(() => {
+    db = createFakeAdmin();
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("admin da lista tem acesso sem assinatura", async () => {
+    vi.stubEnv("FALOW_ADMIN_USER_IDS", A1);
+    expect(await hasActiveAccess(db.client, A1, NOW)).toBe(true);
+  });
+  it("bloqueio vence a assinatura ativa", async () => {
+    db.tables.subscriptions.push({ user_id: "c1", stripe_customer_id: "cus_1", status: "active" });
+    db.tables.access_grants.push({ user_id: "c1", kind: "block", expires_at: null, reason: "abuso", granted_by: "user-1" });
+    expect(await hasActiveAccess(db.client, "c1", NOW)).toBe(false);
+  });
+  it("bloqueio não vale contra admin", async () => {
+    db.tables.access_grants.push({ user_id: "user-1", kind: "block", expires_at: null, reason: "x", granted_by: "user-1" });
+    expect(await hasActiveAccess(db.client, "user-1", NOW)).toBe(true);
+  });
+  it("cortesia válida dá acesso sem assinatura", async () => {
+    db.tables.access_grants.push({ user_id: "c2", kind: "courtesy", expires_at: "2026-11-16T00:00:00Z", reason: "parceiro", granted_by: "user-1" });
+    expect(await hasActiveAccess(db.client, "c2", NOW)).toBe(true);
+  });
+  it("cortesia vencida não dá acesso; cai para a assinatura", async () => {
+    db.tables.access_grants.push({ user_id: "c3", kind: "courtesy", expires_at: "2026-10-01T00:00:00Z", reason: "x", granted_by: "user-1" });
+    expect(await hasActiveAccess(db.client, "c3", NOW)).toBe(false);
+    db.tables.subscriptions.push({ user_id: "c3", stripe_customer_id: "cus_3", status: "active" });
+    expect(await hasActiveAccess(db.client, "c3", NOW)).toBe(true);
+  });
+  it("erro ao ler access_grants = sem acesso + log", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const failing = {
+      from: (table: string) =>
+        table === "access_grants"
+          ? { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null, error: { message: "boom" } }) }) }) }
+          : db.client.from(table as never),
+    };
+    db.tables.subscriptions.push({ user_id: "c4", stripe_customer_id: "cus_4", status: "active" });
+    expect(await hasActiveAccess(failing, "c4", NOW)).toBe(false);
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining("access_grants"), "boom");
+  });
+  it("accountHasAccess respeita o bloqueio (bot e cron param)", async () => {
+    db.tables.ig_accounts.push({ id: "acc-c5", user_id: "c5", ig_user_id: "5", status: "active" });
+    db.tables.subscriptions.push({ user_id: "c5", stripe_customer_id: "cus_5", status: "active" });
+    db.tables.access_grants.push({ user_id: "c5", kind: "block", expires_at: null, reason: "x", granted_by: "user-1" });
+    expect(await accountHasAccess(db.client, "acc-c5")).toBe(false);
   });
 });
