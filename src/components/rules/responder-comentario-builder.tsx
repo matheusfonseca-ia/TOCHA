@@ -319,7 +319,7 @@ export function ResponderComentarioBuilder({
     .map((link) => ({ title: link.title || "Link", url: link.url }));
 
   return (
-    <div className="animate-fade-up">
+    <div className="max-w-[1240px] animate-fade-up">
       <div className="mb-6 flex items-center justify-between gap-4">
         <Button
           asChild
@@ -339,7 +339,7 @@ export function ResponderComentarioBuilder({
         </Button>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_340px]">
         <div className="space-y-6">
           <Card>
             <CardContent className="space-y-5 p-6">

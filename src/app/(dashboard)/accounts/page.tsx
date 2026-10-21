@@ -104,50 +104,57 @@ export default async function AccountsPage({
           </Button>
         </EmptyState>
       ) : (
-        <div className="space-y-3">
+        // Cartões de conta em grade: 1 coluna no celular, 2 a partir de sm e
+        // 3 em 2xl (área útil >= ~1200px).
+        <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
           {accounts.map((account, i) => (
             <AccountCard key={account.id} account={account} index={i} />
           ))}
         </div>
       )}
 
-      <AiSettingsCard status={aiStatus} />
+      {/* Configurações da conta lado a lado em xl (IA mais larga, webhook ao
+          lado); empilhadas abaixo disso. O [&>*]:mt-0 anula a margem própria
+          do AiSettingsCard, o espaçamento fica por conta do gap da grade. */}
+      <div className="mt-8 grid items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] [&>*]:mt-0">
+        <AiSettingsCard status={aiStatus} />
 
-      <Card className="mt-8 animate-fade-up">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Webhook className="h-4 w-4 text-muted-foreground" />
-            Configuração do webhook no painel Meta
-          </CardTitle>
-          <CardDescription>
-            No app Meta (developers.facebook.com), no produto Instagram →
-            Configure webhooks, preencha:
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="text-sm">
-          <div className="flex flex-wrap items-center gap-2 border-b border-border/50 py-2.5">
-            <span className="w-28 shrink-0 text-muted-foreground">
-              Callback URL
-            </span>
-            <code className="max-w-full break-all rounded-md border border-border/70 bg-background/50 px-2 py-1 font-mono text-xs">
-              {webhookUrl}
-            </code>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 py-2.5">
-            <span className="w-28 shrink-0 text-muted-foreground">
-              Verify token
-            </span>
-            <code className="max-w-full break-all rounded-md border border-border/70 bg-background/50 px-2 py-1 font-mono text-xs">
-              valor de META_VERIFY_TOKEN no seu .env
-            </code>
-          </div>
-          <p className="pt-2 text-xs text-muted-foreground">
-            Assine o campo <code className="font-mono">messages</code>. Em
-            desenvolvimento, exponha o localhost com um túnel (ngrok,
-            cloudflared).
-          </p>
-        </CardContent>
-      </Card>
+        <Card className="animate-fade-up">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Webhook className="h-4 w-4 text-muted-foreground" />
+              Configuração do webhook no painel Meta
+            </CardTitle>
+            <CardDescription>
+              No app Meta (developers.facebook.com), no produto Instagram →
+              Configure webhooks, preencha:
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="text-sm">
+            <div className="flex flex-wrap items-center gap-2 border-b border-border/50 py-2.5">
+              <span className="w-28 shrink-0 text-muted-foreground">
+                Callback URL
+              </span>
+              <code className="max-w-full break-all rounded-md border border-border/70 bg-background/50 px-2 py-1 font-mono text-xs">
+                {webhookUrl}
+              </code>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 py-2.5">
+              <span className="w-28 shrink-0 text-muted-foreground">
+                Verify token
+              </span>
+              <code className="max-w-full break-all rounded-md border border-border/70 bg-background/50 px-2 py-1 font-mono text-xs">
+                valor de META_VERIFY_TOKEN no seu .env
+              </code>
+            </div>
+            <p className="pt-2 text-xs text-muted-foreground">
+              Assine o campo <code className="font-mono">messages</code>. Em
+              desenvolvimento, exponha o localhost com um túnel (ngrok,
+              cloudflared).
+            </p>
+          </CardContent>
+        </Card>
+      </div>
     </>
   );
 }

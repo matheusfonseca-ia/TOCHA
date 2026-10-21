@@ -1,25 +1,44 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { checkFollow, FOLLOW_RECHECK_DELAY_MS } from "./check";
-import { FOLLOW_GATE_DEFAULTS, followGateCopy, isFollowGateOn } from "./copy";
+import {
+  FOLLOW_GATE_DEFAULTS,
+  followGateCopy,
+  followGateMessageText,
+  isFollowGateOn,
+} from "./copy";
 import { followGateFieldsForSave, followGateFormFrom, followGatePreviewCopy } from "./form";
 import { isHeldByFollowGate } from "./gate";
 import { followCheckPayload, parseFollowCheckPayload, profileUrl } from "./payload";
 import {
   copyFollowGateColumns,
   followGateColumns,
+  hasFollowGateVariants,
   isMissingFollowGateColumn,
+  isMissingFollowGateVariantsColumn,
   withoutFollowGateColumns,
+  withoutFollowGateVariantColumns,
 } from "./schema";
 
-const { getFollowsBusinessMock, sleepMock } = vi.hoisted(() => ({
+const { getFollowsBusinessMock, sleepMock, sendTemplateButtonsMock } = vi.hoisted(() => ({
   getFollowsBusinessMock: vi.fn(async (_token: string, _id: string) => true),
   sleepMock: vi.fn(async (_ms: number) => {}),
+  sendTemplateButtonsMock: vi.fn(
+    async (_token: string, _to: string, _text: string, _buttons: unknown[]) => {}
+  ),
 }));
 
 vi.mock("@/lib/meta/graph", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/meta/graph")>()),
   getFollowsBusiness: getFollowsBusinessMock,
+  sendTemplateButtonsMessage: sendTemplateButtonsMock,
+}));
+
+// O @ do link vem do perfil sincronizado; aqui basta devolver o da conta.
+vi.mock("@/lib/meta/account-profile", () => ({
+  syncAccountProfile: vi.fn(async (_admin: unknown, account: { ig_username: string }) => ({
+    ig_username: account.ig_username,
+  })),
 }));
 
 vi.mock("@/lib/utils", async (importOriginal) => ({
@@ -74,7 +93,12 @@ describe("textos do portão", () => {
 
 describe("formulário da tela", () => {
   it("automação nova começa desligada e com a copy padrão preenchida", () => {
-    expect(followGateFormFrom(undefined)).toEqual({ enabled: false, ...FOLLOW_GATE_DEFAULTS });
+    expect(followGateFormFrom(undefined)).toEqual({
+      enabled: false,
+      ...FOLLOW_GATE_DEFAULTS,
+      textVariants: [],
+      retryVariants: [],
+    });
   });
 
   it("texto igual ao padrão vai vazio no save (nulo no banco); texto próprio vai como está", () => {
@@ -85,7 +109,34 @@ describe("formulário da tela", () => {
       follow_gate_follow_label: "",
       follow_gate_confirm_label: "",
       follow_gate_retry_text: "",
+      follow_gate_text_variants: [],
+      follow_gate_retry_variants: [],
     });
+  });
+
+  it("carrega as variações salvas; coluna fora do formato vira lista vazia", () => {
+    const form = followGateFormFrom({
+      follow_gate_text_variants: ["V2", "V3"],
+      follow_gate_retry_variants: "lixo" as never,
+    });
+    expect(form.textVariants).toEqual(["V2", "V3"]);
+    expect(form.retryVariants).toEqual([]);
+  });
+
+  it("save das variações: sem vazias nem repetidas, e apagar o principal promove a 1ª variação", () => {
+    const base = followGateFormFrom(undefined);
+    expect(
+      followGateFieldsForSave({
+        ...base,
+        text: "Principal",
+        textVariants: [" V2 ", "", "Principal", "V2"],
+      })
+    ).toMatchObject({ follow_gate_text: "Principal", follow_gate_text_variants: ["V2"] });
+
+    // Principal apagado: a 1ª variação vira o principal, o padrão não entra no sorteio.
+    expect(
+      followGateFieldsForSave({ ...base, text: "  ", textVariants: ["V2", "V3"] })
+    ).toMatchObject({ follow_gate_text: "V2", follow_gate_text_variants: ["V3"] });
   });
 
   it("prévia: nula com o portão desligado; campo apagado mostra o padrão", () => {
@@ -110,6 +161,24 @@ describe("colunas no save e no duplicar", () => {
       follow_gate_confirm_label: null,
       follow_gate_retry_text: null,
     });
+  });
+
+  it("variações só entram quando vieram no input (ausente não apaga, lista vazia grava nulo)", () => {
+    const semVariacoes = followGateColumns({ follow_gate_enabled: true });
+    expect("follow_gate_text_variants" in semVariacoes).toBe(false);
+    expect("follow_gate_retry_variants" in semVariacoes).toBe(false);
+
+    expect(
+      followGateColumns({
+        follow_gate_enabled: true,
+        follow_gate_text_variants: [" A ", ""],
+        follow_gate_retry_variants: [],
+      })
+    ).toMatchObject({ follow_gate_text_variants: ["A"], follow_gate_retry_variants: null });
+  });
+
+  it("sem follow_gate_enabled nem as variações mexem no salvo", () => {
+    expect(followGateColumns({ follow_gate_text_variants: ["A"] })).toEqual({});
   });
 
   it("duplicar copia o portão; regra lida antes da migration não ganha colunas", () => {
@@ -142,6 +211,104 @@ describe("banco sem a migration 0007", () => {
     expect(
       withoutFollowGateColumns({ keyword: "oi", follow_gate_enabled: false, follow_gate_text: null })
     ).toEqual({ keyword: "oi" });
+  });
+});
+
+describe("banco sem a migration 0017", () => {
+  it("reconhece só as colunas de variações do portão", () => {
+    expect(
+      isMissingFollowGateVariantsColumn({
+        code: "PGRST204",
+        message: "Could not find the 'follow_gate_text_variants' column of 'rules' in the schema cache",
+      })
+    ).toBe(true);
+    expect(
+      isMissingFollowGateVariantsColumn({ code: "42703", message: "column rules.follow_gate_retry_variants does not exist" })
+    ).toBe(true);
+    expect(
+      isMissingFollowGateVariantsColumn({
+        code: "PGRST204",
+        message: "Could not find the 'follow_gate_enabled' column of 'rules' in the schema cache",
+      })
+    ).toBe(false);
+    expect(isMissingFollowGateVariantsColumn(null)).toBe(false);
+  });
+
+  it("tira só as colunas de variações e mantém o resto do portão", () => {
+    expect(
+      withoutFollowGateVariantColumns({
+        keyword: "oi",
+        follow_gate_enabled: true,
+        follow_gate_text: "x",
+        follow_gate_text_variants: ["a"],
+        follow_gate_retry_variants: null,
+      })
+    ).toEqual({ keyword: "oi", follow_gate_enabled: true, follow_gate_text: "x" });
+  });
+
+  it("só avisa quando havia variações para gravar", () => {
+    expect(hasFollowGateVariants({ follow_gate_text_variants: ["a"] })).toBe(true);
+    expect(hasFollowGateVariants({ follow_gate_text_variants: null, follow_gate_retry_variants: [] })).toBe(false);
+  });
+});
+
+describe("sorteio das mensagens do portão", () => {
+  const rule = {
+    follow_gate_text: "Principal",
+    follow_gate_text_variants: ["Outra A", "Outra B"],
+    follow_gate_retry_text: null,
+    follow_gate_retry_variants: ["Retry B"],
+  };
+
+  it("sorteia entre o principal e as variações da mensagem do portão", () => {
+    expect(followGateMessageText(rule, false, () => 0)).toBe("Principal");
+    expect(followGateMessageText(rule, false, () => 0.4)).toBe("Outra A");
+    expect(followGateMessageText(rule, false, () => 0.99)).toBe("Outra B");
+  });
+
+  it("com again sorteia na mensagem de ainda não segue (principal vazio = texto padrão)", () => {
+    expect(followGateMessageText(rule, true, () => 0)).toBe(FOLLOW_GATE_DEFAULTS.retryText);
+    expect(followGateMessageText(rule, true, () => 0.99)).toBe("Retry B");
+  });
+
+  it("sem variações devolve o principal ou o padrão, sem sortear", () => {
+    expect(followGateMessageText({ follow_gate_text: "Só eu" }, false, () => 0.99)).toBe("Só eu");
+    expect(followGateMessageText({}, false)).toBe(FOLLOW_GATE_DEFAULTS.text);
+    expect(followGateMessageText({ follow_gate_text_variants: null }, true)).toBe(
+      FOLLOW_GATE_DEFAULTS.retryText
+    );
+  });
+
+  it("variação repetida ou vazia não pesa no sorteio", () => {
+    const dup = { follow_gate_text: "A", follow_gate_text_variants: ["A", "  ", "B"] };
+    // Pool real: A e B. 0.6 cai no B (metade de cima).
+    expect(followGateMessageText(dup, false, () => 0.6)).toBe("B");
+    expect(followGateMessageText(dup, false, () => 0.1)).toBe("A");
+  });
+
+  it("sendFollowGateMessage manda o texto sorteado (e o da repetição com again)", async () => {
+    const admin = {
+      from: () => ({
+        select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: null }) }) }),
+        update: () => ({ eq: () => ({}) }),
+      }),
+    };
+    const { sendFollowGateMessage } = await import("./gate");
+    const account = { id: "a1", ig_username: "conta" } as never;
+
+    await sendFollowGateMessage(admin as never, "t", account, rule as never, "s1", {
+      again: false,
+      confirmPayload: "p",
+      random: () => 0.99,
+    });
+    await sendFollowGateMessage(admin as never, "t", account, rule as never, "s1", {
+      again: true,
+      confirmPayload: "p",
+      random: () => 0.99,
+    });
+
+    expect(sendTemplateButtonsMock.mock.calls[0][2]).toBe("Outra B");
+    expect(sendTemplateButtonsMock.mock.calls[1][2]).toBe("Retry B");
   });
 });
 

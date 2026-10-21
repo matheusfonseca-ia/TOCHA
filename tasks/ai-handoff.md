@@ -1,9 +1,38 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20260930-122649-claude"
-Status: concluído
-Resumo: chave da IA (OpenRouter) agora é POR USUÁRIO, cadastrada na tela Contas (módulo src/modules/ai-settings), criptografada em user_ai_settings (migration 0016 aplicada). OPENROUTER_API_KEY do ambiente virou só o padrão da instalação. Em produção (Worker 60d4c16d). Falta: usuário cadastrar a própria chave em Contas e testar o botão de IA; push para o tocha.
+Última tag: "HANDOFF-falow-20261021-200949-claude"
+Status: em andamento
+Resumo: rodada de UI (sidebar recolhível, telas largas até 1600px, Automação estilo n8n) + IA (seleção múltipla pras variações, variações no portão de seguidor, provedor OpenRouter/OpenAI). Base feita; 4 agentes trabalhando na pasta principal com arquivos separados. Plano em tasks/todo.md (topo). À parte: logo Falow trocada pelo vetor oficial da LP (commitada, sai no deploy da rodada).
+
+---
+
+## [HANDOFF · falow · 2026-10-21T20:09:49-03:00 · claude]
+Status: concluído (falta só ir pra produção junto com o deploy da rodada)
+Objetivo: corrigir a logo da barra lateral, que estava errada.
+Feito:
+- `src/components/brand/falow-logo.tsx`: `FalowMark` com a geometria oficial do símbolo (viewBox 64, medida no vetor da LP) e `FalowLogo` virou a assinatura inteira num SVG só (símbolo + lettering "falow" em vetor, não mais fonte). Path do lettering em `falow-wordmark.ts`, copiado de `falow-lp/src/shared/ui/falowWordmark.js`.
+- `src/app/icon.svg` (favicon) com o mesmo símbolo oficial.
+- Conferido lado a lado com a logo da LP em fundo claro e escuro; tsc limpo.
+Próximo passo:
+- Sai em produção no deploy da rodada atual (não deployei sozinho pra não publicar o trabalho pela metade dos agentes).
+Arquivos tocados: src/components/brand/falow-logo.tsx, src/components/brand/falow-wordmark.ts, src/app/icon.svg, src/app/page.tsx, src/app/(legal)/layout.tsx.
+Decisões/contexto: **API mudou**: `FalowLogo` agora só aceita `className` e o tamanho é a altura (padrão `h-6`, ex.: `className="h-7"`). `markClassName`/`textClassName` não existem mais. Pra sidebar recolhida usar `<FalowMark className="h-6 w-6" />`. Fonte da marca: `D:/Projetos-vibeocding/eu/CIPHER - MATHEUS FONSECA/falow/falow-lp` (brandMark.js, design-system §2 e §7.3: não remontar o wordmark com fonte). Tela de login ainda mostra "falow" em fonte (h1 embaixo do símbolo), não mexi.
+Tag: "HANDOFF-falow-20261021-200949-claude"
+
+---
+
+## [HANDOFF · falow · 2026-10-21T20:03:03-03:00 · claude]
+Status: em andamento
+Objetivo: sidebar recolhível animada, telas sem faixa vazia em monitor grande, Automação no estilo n8n, IA com seleção múltipla/variações e chave OpenAI.
+Feito:
+- Base: módulo `src/modules/app-shell/` (cookie `falow-sidebar`, `AppShellProvider`/`useAppShell`, `getSidebarCollapsed` em server.ts, teste), `--sidebar-w` registrada com `@property` e animada em `.app-shell` (globals.css), layout com container `max-w-[1600px]` e `md:pl-[var(--sidebar-w)]`, inbox-shell/funil/sequence-editor com `md:left-[var(--sidebar-w)]`.
+Próximo passo:
+- Agentes: Shell (sidebar no módulo app-shell), Automação (`src/modules/automations/`), Telas (dashboard/contatos/contas/logs/builders), IA (diálogo multi-seleção, migrations 0017 variações do portão e 0018 provedor).
+- Depois: revisão dirigida, build em 2 etapas, QA no Chrome, aplicar 0017/0018 no Supabase, commit e deploy.
+Arquivos tocados: src/modules/app-shell/*, src/app/(dashboard)/layout.tsx, src/app/globals.css, src/modules/crm/inbox/components/inbox-shell.tsx, src/app/(dashboard)/crm/funil/page.tsx, src/components/sequences/sequence-editor.tsx, tasks/todo.md.
+Decisões/contexto: decisões confirmadas pelo usuário estão no topo de tasks/todo.md. Sem worktree (lição de 24/09 sobre junction de node_modules): agentes na pasta principal, cada um com seus arquivos, sem build/commit.
+Tag: "HANDOFF-falow-20261021-200303-claude"
 
 ---
 

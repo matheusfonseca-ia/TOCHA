@@ -1,13 +1,19 @@
 "use client";
 
 import { Check, Plus, X } from "lucide-react";
+import { toast } from "sonner";
 
 import { SmartTextField } from "@/components/fields/smart-text-field";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { AiFieldKind } from "@/lib/ai/fields";
 import type { FieldPromptContext } from "@/lib/ai/prompt";
-import { addVariant, allVariants } from "@/lib/rules/variants";
+import {
+  addVariant,
+  addVariants,
+  allVariants,
+  describeAddVariants,
+} from "@/lib/rules/variants";
 import { cn } from "@/lib/utils";
 
 const MAX_VARIANTS = 10;
@@ -21,6 +27,13 @@ interface VariantListProps {
   /** Variantes extras (2ª em diante). */
   extras: string[];
   onExtrasChange: (extras: string[]) => void;
+  /**
+   * Troca principal e variantes de uma vez (textos prontos e IA mexem nos
+   * dois). Necessário quando o dono guarda os dois no mesmo objeto: duas
+   * chamadas seguidas de onPrimaryChange/onExtrasChange partiriam do mesmo
+   * estado velho e a segunda apagaria a primeira.
+   */
+  onBothChange?: (next: { primary: string; extras: string[] }) => void;
   maxLength: number;
   placeholder?: string;
   rows?: number;
@@ -28,11 +41,13 @@ interface VariantListProps {
   presets?: readonly string[];
   /**
    * Liga os atalhos do campo (textos salvos e IA). Com ele, gerar pode
-   * cadastrar as sugestões todas de uma vez como variantes.
+   * marcar várias sugestões e mandá-las para as variações.
    */
   field?: AiFieldKind;
   accountId?: string | null;
   context?: FieldPromptContext;
+  /** Frase de rodapé; o padrão serve às respostas do comentário. */
+  hint?: string;
 }
 
 /**
@@ -49,6 +64,7 @@ export function VariantList({
   onPrimaryChange,
   extras,
   onExtrasChange,
+  onBothChange,
   maxLength,
   placeholder,
   rows = 3,
@@ -56,6 +72,7 @@ export function VariantList({
   field,
   accountId,
   context,
+  hint = "O Falow sorteia uma variante a cada disparo, para as respostas não ficarem todas iguais.",
 }: VariantListProps) {
   const canAddMore = extras.length + 1 < MAX_VARIANTS;
   const current = allVariants(primary, extras);
@@ -68,13 +85,38 @@ export function VariantList({
     onExtrasChange([...extras, ""]);
   }
 
+  function commit(next: { primary: string; extras: string[] }) {
+    const primaryChanged = next.primary !== primary;
+    const extrasChanged = next.extras !== extras;
+    if (!primaryChanged && !extrasChanged) return;
+    if (onBothChange) {
+      onBothChange(next);
+      return;
+    }
+    if (primaryChanged) onPrimaryChange(next.primary);
+    if (extrasChanged) onExtrasChange(next.extras);
+  }
+
   function applyPresets(texts: readonly string[]) {
-    const next = texts.reduce(
-      (acc, text) => addVariant(acc.primary, acc.extras, text, MAX_VARIANTS),
-      { primary, extras }
+    commit(
+      texts.reduce(
+        (acc, text) => addVariant(acc.primary, acc.extras, text, MAX_VARIANTS),
+        { primary, extras }
+      )
     );
-    if (next.primary !== primary) onPrimaryChange(next.primary);
-    if (next.extras !== extras) onExtrasChange(next.extras);
+  }
+
+  /**
+   * Sugestões marcadas na janela da IA: principal vazio recebe a 1ª, o resto
+   * vira variação, sem duplicar e respeitando o limite (regra em
+   * `addVariants`). Avisa o que entrou e o que ficou de fora.
+   */
+  function applyGenerated(texts: string[]) {
+    const result = addVariants(primary, extras, texts, MAX_VARIANTS);
+    commit(result);
+    const message = describeAddVariants(result, MAX_VARIANTS);
+    if (result.cut > 0 || result.added === 0) toast.warning(message);
+    else toast.success(message);
   }
 
   function updateVariant(index: number, value: string) {
@@ -103,7 +145,7 @@ export function VariantList({
             rows={rows}
             accountId={accountId}
             context={context}
-            onGenerateMany={applyPresets}
+            onGenerateMany={applyGenerated}
           />
         ) : (
           <>
@@ -215,10 +257,7 @@ export function VariantList({
         </div>
       )}
 
-      <p className="text-xs text-muted-foreground">
-        O Falow sorteia uma variante a cada disparo, para as respostas não
-        ficarem todas iguais.
-      </p>
+      <p className="text-xs text-muted-foreground">{hint}</p>
     </div>
   );
 }

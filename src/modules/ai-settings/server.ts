@@ -1,8 +1,9 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { decryptToken } from "@/lib/crypto";
-import { isMissingTable } from "@/lib/db/missing";
+import { isMissingColumn, isMissingTable } from "@/lib/db/missing";
 import { aiConfigFromEnv, type AiConfig } from "@/lib/ai/provider";
+import { inferProviderFromKey, isAiProviderId, type AiProviderId } from "@/lib/ai/providers";
 import { createClient } from "@/lib/supabase/server";
 
 import { resolveAiConfig } from "./services/resolve-config";
@@ -16,9 +17,18 @@ import { keyHint } from "./utils/key-hint";
 
 export const AI_SETTINGS_TABLE = "user_ai_settings";
 
+/** Coluna da migration 0018; banco sem ela cai na inferência pelo prefixo da chave. */
+export const PROVIDER_COLUMN = "provider";
+
 interface UserRow {
   api_key_enc: string;
   model: string | null;
+  provider?: string | null;
+}
+
+/** Provedor guardado; sem a coluna (ou valor estranho) deduz pelo prefixo da chave. */
+function providerOf(row: UserRow, apiKey: string): AiProviderId {
+  return isAiProviderId(row.provider) ? row.provider : inferProviderFromKey(apiKey);
 }
 
 async function readUserRow(
@@ -27,11 +37,14 @@ async function readUserRow(
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return { row: null, migrationMissing: false, authenticated: false };
 
-  const { data, error } = await supabase
-    .from(AI_SETTINGS_TABLE)
-    .select("api_key_enc, model")
-    .eq("user_id", auth.user.id)
-    .maybeSingle();
+  const read = (columns: string) =>
+    supabase.from(AI_SETTINGS_TABLE).select(columns).eq("user_id", auth.user!.id).maybeSingle();
+
+  let { data, error } = await read(`api_key_enc, model, ${PROVIDER_COLUMN}`);
+  // Migration 0018 ainda não aplicada: lê sem a coluna do provedor.
+  if (isMissingColumn(error, PROVIDER_COLUMN)) {
+    ({ data, error } = await read("api_key_enc, model"));
+  }
 
   if (isMissingTable(error, AI_SETTINGS_TABLE)) {
     return { row: null, migrationMissing: true, authenticated: true };
@@ -55,18 +68,24 @@ export async function getEffectiveAiConfig(): Promise<AiConfig | null> {
   if (!authenticated) return null;
   const apiKey = row ? decryptOrNull(row.api_key_enc) : null;
 
-  return resolveAiConfig(apiKey ? { apiKey, model: row!.model } : null, aiConfigFromEnv());
+  return resolveAiConfig(
+    apiKey ? { apiKey, model: row!.model, provider: providerOf(row!, apiKey) } : null,
+    aiConfigFromEnv()
+  );
 }
 
 export async function getAiSettingsStatus(): Promise<AiSettingsStatus> {
   const { row, migrationMissing } = await readUserRow(createClient());
   const apiKey = row ? decryptOrNull(row.api_key_enc) : null;
+  const installation = aiConfigFromEnv();
 
   return {
     hasUserKey: apiKey !== null,
     keyHint: apiKey ? keyHint(apiKey) : null,
+    provider: apiKey ? providerOf(row!, apiKey) : null,
     model: apiKey ? row!.model : null,
-    installationKey: aiConfigFromEnv() !== null,
+    installationKey: installation !== null,
+    installationProvider: installation?.provider ?? null,
     migrationMissing,
   };
 }

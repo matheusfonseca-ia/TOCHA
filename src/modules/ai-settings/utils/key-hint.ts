@@ -4,7 +4,8 @@ export function keyHint(apiKey: string): string {
   return trimmed.length <= 4 ? "••••" : `••••${trimmed.slice(-4)}`;
 }
 
-/** Modelo da OpenRouter tem a forma `provedor/nome` (ex.: anthropic/claude-sonnet-4.5). */
-export function isValidModelId(model: string): boolean {
-  return /^[\w.-]+\/[\w.:-]+$/.test(model.trim());
-}
+/**
+ * Formato do id do modelo por provedor (OpenRouter `provedor/nome`, OpenAI só
+ * o nome). Mora em `@/lib/ai/providers`, junto do catálogo dos provedores.
+ */
+export { isValidModelId } from "@/lib/ai/providers";

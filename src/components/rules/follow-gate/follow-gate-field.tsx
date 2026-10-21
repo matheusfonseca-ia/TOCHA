@@ -1,17 +1,21 @@
 "use client";
 
-import { SmartTextField } from "@/components/fields/smart-text-field";
+import { VariantList } from "@/components/rules/variants/variant-list";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Textarea } from "@/components/ui/textarea";
 import { FOLLOW_GATE_DEFAULTS, FOLLOW_GATE_LIMITS } from "@/lib/follow-gate/copy";
 import type { FollowGateForm } from "@/lib/follow-gate/form";
+
+const VARIANTS_HINT = "O Falow sorteia um dos textos a cada envio.";
 
 /**
  * Interruptor "Seguir para liberar" + textos do portão, usado nas telas de
  * automação de DM e de comentário. Quem não segue a conta recebe esta
  * mensagem no lugar do conteúdo, com os botões de seguir e "Já segui".
+ *
+ * As duas mensagens (a do portão e a de "ainda não segue") aceitam variações:
+ * o Falow sorteia uma delas a cada envio, como na resposta pública do comentário.
  */
 export function FollowGateField({
   value,
@@ -52,17 +56,22 @@ export function FollowGateField({
             <Label htmlFor="follow-gate-text" className="text-xs text-muted-foreground">
               Mensagem para quem ainda não segue
             </Label>
-            <SmartTextField
-              id="follow-gate-text"
+            <VariantList
+              idPrefix="follow-gate-text"
               field="followGateText"
               rows={3}
+              maxLength={FOLLOW_GATE_LIMITS.text}
               placeholder={FOLLOW_GATE_DEFAULTS.text}
-              value={value.text}
-              onChange={(text) => set({ text })}
+              primary={value.text}
+              onPrimaryChange={(text) => set({ text })}
+              extras={value.textVariants}
+              onExtrasChange={(textVariants) => set({ textVariants })}
+              onBothChange={(next) =>
+                set({ text: next.primary, textVariants: next.extras })
+              }
               accountId={accountId}
-              hideCounter
+              hint={VARIANTS_HINT}
             />
-            <CharCount value={value.text} />
           </div>
 
           <div className="grid gap-2 sm:grid-cols-2">
@@ -96,17 +105,22 @@ export function FollowGateField({
             <Label htmlFor="follow-gate-retry" className="text-xs text-muted-foreground">
               Se tocarem na confirmação sem seguir
             </Label>
-            <SmartTextField
-              id="follow-gate-retry"
+            <VariantList
+              idPrefix="follow-gate-retry"
               field="followGateRetry"
               rows={2}
+              maxLength={FOLLOW_GATE_LIMITS.text}
               placeholder={FOLLOW_GATE_DEFAULTS.retryText}
-              value={value.retryText}
-              onChange={(retryText) => set({ retryText })}
+              primary={value.retryText}
+              onPrimaryChange={(retryText) => set({ retryText })}
+              extras={value.retryVariants}
+              onExtrasChange={(retryVariants) => set({ retryVariants })}
+              onBothChange={(next) =>
+                set({ retryText: next.primary, retryVariants: next.extras })
+              }
               accountId={accountId}
-              hideCounter
+              hint={VARIANTS_HINT}
             />
-            <CharCount value={value.retryText} />
           </div>
 
           <p className="text-xs text-muted-foreground">
@@ -117,13 +131,5 @@ export function FollowGateField({
         </div>
       )}
     </div>
-  );
-}
-
-function CharCount({ value }: { value: string }) {
-  return (
-    <p className="text-right text-xs text-muted-foreground">
-      {value.length}/{FOLLOW_GATE_LIMITS.text}
-    </p>
   );
 }

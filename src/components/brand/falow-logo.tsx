@@ -34,8 +34,18 @@ export function FalowMark({ className }: { className?: string }) {
  * proporção e respiro entre símbolo e palavra já são os da marca. A altura
  * vem do className (padrão h-6) e a largura acompanha. O lettering usa
  * currentColor pra seguir o tema (text-foreground).
+ *
+ * `wordmarkClassName` vai só no grupo da palavra: a sidebar recolhida usa pra
+ * apagar o "falow" e deixar o símbolo parado no mesmo lugar (sem trocar de
+ * SVG, então não há pulo). Só opacidade aí: o grupo já tem transform SVG.
  */
-export function FalowLogo({ className }: { className?: string }) {
+export function FalowLogo({
+  className,
+  wordmarkClassName,
+}: {
+  className?: string;
+  wordmarkClassName?: string;
+}) {
   return (
     <svg
       viewBox="629.94 475.74 2912.06 688.66"
@@ -52,7 +62,10 @@ export function FalowLogo({ className }: { className?: string }) {
         strokeLinecap="round"
       />
       <circle cx={723.79} cy={582.65} r={77.3} fill="#FFD43B" />
-      <g transform="translate(0,1695) scale(0.1,-0.1)">
+      <g
+        transform="translate(0,1695) scale(0.1,-0.1)"
+        className={wordmarkClassName}
+      >
         <path fill="currentColor" fillRule="evenodd" d={FALOW_WORDMARK_D} />
       </g>
     </svg>

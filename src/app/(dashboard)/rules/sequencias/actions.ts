@@ -441,7 +441,8 @@ export async function deleteSequence(id: string): Promise<SequenceActionResult> 
 
   if (error) return { error: "Não foi possível excluir a sequência." };
 
-  revalidatePath("/rules/sequencias");
+  // "layout": as contagens das abas moram no layout de /rules.
+  revalidatePath("/rules", "layout");
   revalidatePath("/dashboard");
   return {};
 }
@@ -490,7 +491,7 @@ export async function duplicateSequence(
     return { error: "Não foi possível duplicar a sequência. Tente novamente." };
   }
 
-  revalidatePath("/rules/sequencias");
+  revalidatePath("/rules", "layout");
   revalidatePath("/dashboard");
   return { id: data.id as string };
 }

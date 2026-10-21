@@ -942,7 +942,7 @@ function EditorInner({
   );
 
   return (
-    <div className="fixed inset-y-0 left-0 right-0 z-50 flex flex-col gap-3 overflow-hidden bg-background p-3 md:left-60 md:gap-4 md:p-4">
+    <div className="fixed inset-y-0 left-0 right-0 z-50 flex flex-col gap-3 overflow-hidden bg-background p-3 md:left-[var(--sidebar-w)] md:gap-4 md:p-4">
       {/* ── Barra superior: breadcrumb, nome, conta, status, salvar ────── */}
       <div className="flex flex-wrap items-center gap-3">
         <button

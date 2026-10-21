@@ -2,14 +2,20 @@
 
 import { revalidatePath } from "next/cache";
 
+import {
+  AI_PROVIDERS,
+  isAiProviderId,
+  isValidModelId,
+  modelFormatHint,
+  type AiProviderId,
+} from "@/lib/ai/providers";
 import { encryptToken } from "@/lib/crypto";
-import { isMissingTable } from "@/lib/db/missing";
+import { isMissingColumn, isMissingTable } from "@/lib/db/missing";
 import { createClient } from "@/lib/supabase/server";
 
-import { AI_SETTINGS_TABLE, getAiSettingsStatus } from "./server";
-import { verifyOpenRouterKey } from "./services/verify-key";
+import { AI_SETTINGS_TABLE, getAiSettingsStatus, PROVIDER_COLUMN } from "./server";
+import { verifyAiKey } from "./services/verify-key";
 import type { AiSettingsActionResult } from "./types";
-import { isValidModelId } from "./utils/key-hint";
 
 const MIGRATION_ERROR =
   "Para guardar a chave, aplique a migration 0016_user_ai_settings.sql no Supabase.";
@@ -20,18 +26,24 @@ function refreshPanel() {
 }
 
 /**
- * Guarda a chave (e o modelo) do usuário logado. Chave vazia com chave já
- * cadastrada = só troca o modelo, sem exigir digitar a chave de novo.
+ * Guarda a chave (e o modelo) do usuário logado, com o provedor escolhido
+ * (OpenRouter ou OpenAI). Chave vazia com chave já cadastrada = só troca o
+ * modelo, sem exigir digitar a chave de novo. Trocar de provedor sempre exige
+ * colar a chave do provedor novo.
  */
 export async function saveAiSettings(input: {
   apiKey?: string;
   model?: string;
+  provider?: AiProviderId;
 }): Promise<AiSettingsActionResult> {
   const apiKey = input.apiKey?.trim() ?? "";
   const model = input.model?.trim() ?? "";
+  // Cliente antigo sem provedor continua sendo OpenRouter.
+  const provider: AiProviderId = isAiProviderId(input.provider) ? input.provider : "openrouter";
+  const label = AI_PROVIDERS[provider].label;
 
-  if (model && !isValidModelId(model)) {
-    return { ok: false, error: "Modelo no formato provedor/nome, por exemplo anthropic/claude-sonnet-4.5." };
+  if (model && !isValidModelId(model, provider)) {
+    return { ok: false, error: modelFormatHint(provider) };
   }
 
   const supabase = createClient();
@@ -41,7 +53,10 @@ export async function saveAiSettings(input: {
   if (!apiKey) {
     const status = await getAiSettingsStatus();
     if (status.migrationMissing) return { ok: false, error: MIGRATION_ERROR };
-    if (!status.hasUserKey) return { ok: false, error: "Cole a chave da OpenRouter." };
+    if (!status.hasUserKey) return { ok: false, error: `Cole a chave da ${label}.` };
+    if (status.provider !== provider) {
+      return { ok: false, error: `Para trocar para a ${label}, cole a chave da ${label}.` };
+    }
 
     const { error } = await supabase
       .from(AI_SETTINGS_TABLE)
@@ -53,13 +68,13 @@ export async function saveAiSettings(input: {
     return { ok: true };
   }
 
-  const verdict = await verifyOpenRouterKey(apiKey);
+  const verdict = await verifyAiKey(provider, apiKey);
   if (!verdict.ok) {
     return {
       ok: false,
       error:
         verdict.reason === "invalid"
-          ? "A OpenRouter não aceitou essa chave. Confere se copiou inteira."
+          ? `A ${label} não aceitou essa chave. Confere se é a chave da ${label} e se copiou inteira.`
           : "Não consegui validar a chave agora. Tenta de novo em instantes.",
     };
   }
@@ -71,15 +86,20 @@ export async function saveAiSettings(input: {
     return { ok: false, error: "TOKEN_ENCRYPTION_KEY não está configurada nesta instalação." };
   }
 
-  const { error } = await supabase.from(AI_SETTINGS_TABLE).upsert(
-    {
-      user_id: auth.user.id,
-      api_key_enc: encrypted,
-      model: model || null,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id" }
-  );
+  const row = {
+    user_id: auth.user.id,
+    api_key_enc: encrypted,
+    model: model || null,
+    updated_at: new Date().toISOString(),
+  };
+  let { error } = await supabase
+    .from(AI_SETTINGS_TABLE)
+    .upsert({ ...row, [PROVIDER_COLUMN]: provider }, { onConflict: "user_id" });
+  // Migration 0018 ainda não aplicada: guarda sem o provedor. A leitura deduz
+  // pelo prefixo da chave (sk-or- é OpenRouter), então a chave continua valendo.
+  if (isMissingColumn(error, PROVIDER_COLUMN)) {
+    ({ error } = await supabase.from(AI_SETTINGS_TABLE).upsert(row, { onConflict: "user_id" }));
+  }
 
   if (isMissingTable(error, AI_SETTINGS_TABLE)) return { ok: false, error: MIGRATION_ERROR };
   if (error) return { ok: false, error: "Não foi possível guardar a chave. Tenta de novo." };

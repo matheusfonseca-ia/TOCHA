@@ -2,6 +2,140 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Largura da sidebar do painel. Registrada pra poder ser animada: a transição
+   fica na própria variável, então sidebar, conteúdo (padding) e telas em tela
+   cheia (left) andam juntos no mesmo quadro. Estado vem do data-sidebar que o
+   AppShellProvider (modules/app-shell) põe no wrapper. */
+@property --sidebar-w {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 15rem;
+}
+
+.app-shell {
+  --sidebar-w: 15rem;
+  /* Arranque rápido e cauda longa: a barra responde na hora e assenta macia */
+  --shell-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  transition: --sidebar-w 300ms var(--shell-ease);
+}
+
+.app-shell[data-sidebar="collapsed"] {
+  --sidebar-w: 4rem;
+  /* Recolhendo: os rótulos começam a sumir antes e a barra vem logo atrás */
+  transition-delay: 80ms;
+}
+
+/* Coreografia da sidebar (modules/app-shell), só do md pra cima: no celular é
+   drawer e fica sempre com rótulos. Abrindo, a barra cresce na hora e os
+   rótulos entram com atraso; recolhendo, os rótulos saem em 120ms e a barra
+   encolhe atrás. Nada aqui muda posição horizontal de ícone: o que some tem
+   largura fixa e só é cortado pelo overflow da sidebar.
+   - shell-label: rótulo. Some só visualmente, segue no leitor de tela (é o
+     nome acessível dos links quando ela está recolhida).
+   - shell-expanded-only / shell-collapsed-only: controles de um estado só.
+     Saem com visibility: hidden, então também saem do Tab e do leitor.
+   - shell-wordmark: o "falow" do logo (só opacidade, o <g> tem transform SVG). */
+@media (min-width: 768px) {
+  .app-shell .shell-label,
+  .app-shell .shell-expanded-only {
+    transition:
+      opacity 200ms ease-out 120ms,
+      transform 280ms cubic-bezier(0.16, 1, 0.3, 1) 120ms,
+      visibility 0s linear 0s;
+  }
+
+  .app-shell[data-sidebar="collapsed"] .shell-label,
+  .app-shell[data-sidebar="collapsed"] .shell-expanded-only {
+    opacity: 0;
+    transform: translateX(-4px);
+    pointer-events: none;
+    /* ease-out na saída: aos 80ms (quando a barra começa a encolher) o
+       rótulo já está quase todo apagado */
+    transition:
+      opacity 120ms ease-out,
+      transform 120ms ease-out,
+      visibility 0s linear 120ms;
+  }
+
+  .app-shell[data-sidebar="collapsed"] .shell-expanded-only {
+    visibility: hidden;
+  }
+
+  .app-shell .shell-collapsed-only {
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      opacity 100ms ease-in,
+      visibility 0s linear 100ms;
+  }
+
+  .app-shell[data-sidebar="collapsed"] .shell-collapsed-only {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition:
+      opacity 180ms ease-out 240ms,
+      visibility 0s linear 0s;
+  }
+
+  .app-shell .shell-wordmark {
+    transition: opacity 200ms ease-out 120ms;
+  }
+
+  .app-shell[data-sidebar="collapsed"] .shell-wordmark {
+    opacity: 0;
+    transition: opacity 120ms ease-out;
+  }
+
+  /* Não lidas: quando a pílula sai, a bolinha surge no canto do ícone, no
+     fim do encolhimento, com um leve "pop" pra mostrar pra onde o número foi */
+  .app-shell .shell-unread-dot {
+    opacity: 0;
+    visibility: hidden;
+    transform: scale(0.6);
+    transition:
+      opacity 100ms ease-in,
+      transform 100ms ease-in,
+      visibility 0s linear 100ms;
+  }
+
+  .app-shell[data-sidebar="collapsed"] .shell-unread-dot {
+    opacity: 1;
+    visibility: visible;
+    transform: scale(1);
+    transition:
+      opacity 160ms ease-out 260ms,
+      transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1) 260ms,
+      visibility 0s linear 0s;
+  }
+
+  /* Rodapé: tema e sair empilhados (recolhida) são mais altos que a linha do
+     e-mail (aberta). A altura anima com a mesma curva e atraso da largura. */
+  .app-shell .shell-footer-actions {
+    height: 2.25rem;
+    overflow: hidden;
+    transition: height 300ms var(--shell-ease);
+  }
+
+  .app-shell[data-sidebar="collapsed"] .shell-footer-actions {
+    height: 4.625rem;
+    transition-delay: 80ms;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-shell,
+  .app-shell .shell-label,
+  .app-shell .shell-expanded-only,
+  .app-shell .shell-collapsed-only,
+  .app-shell .shell-wordmark,
+  .app-shell .shell-unread-dot,
+  .app-shell .shell-footer-actions {
+    transition: none !important;
+  }
+}
+
 @layer base {
   :root {
     /* Paleta Falow — Clear White + Falow Black + Falow Green + Trigger Yellow */

@@ -144,6 +144,8 @@ describe("followGateFieldsForSave (texto igual ao padrão grava vazio)", () => {
     expect(fields.follow_gate_follow_label).toBe("");
     expect(fields.follow_gate_confirm_label).toBe("");
     expect(fields.follow_gate_retry_text).toBe("");
+    expect(fields.follow_gate_text_variants).toEqual([]);
+    expect(fields.follow_gate_retry_variants).toEqual([]);
   });
 
   it("round-trip completo texto padrão -> followGateColumns grava nulo no banco", () => {
@@ -323,7 +325,7 @@ describe("saveRule: round-trip com o banco", () => {
     });
     fake.tables.rules.push(rule);
 
-    // rules-manager.tsx nunca espalha followGateFields* no input.
+    // modules/automations/components/rules-manager.tsx nunca espalha followGateFields* no input.
     const result = await saveRule(baseInput({ id: rule.id, name: "Renomeada" }));
 
     expect(result.error).toBeUndefined();
@@ -333,6 +335,103 @@ describe("saveRule: round-trip com o banco", () => {
     expect(saved.follow_gate_text).toBe("Não pode se perder");
     expect(saved.follow_gate_follow_label).toBe("Seguir perfil");
     expect(saved.follow_gate_confirm_label).toBe("Já segui");
+  });
+
+  it("grava as variações das duas mensagens (vazias e espaços saem, lista vazia vira nulo)", async () => {
+    const result = await saveRule(
+      baseInput({
+        follow_gate_enabled: true,
+        follow_gate_text: "Principal",
+        follow_gate_text_variants: [" Outra ", "", "  "],
+        follow_gate_retry_variants: [],
+      })
+    );
+    expect(result.error).toBeUndefined();
+    const saved = fake.tables.rules[0];
+    expect(saved.follow_gate_text_variants).toEqual(["Outra"]);
+    expect(saved.follow_gate_retry_variants).toBeNull();
+  });
+
+  it("round-trip pelo formulário: variações carregadas e reenviadas voltam iguais", async () => {
+    const rule = makeRule({
+      follow_gate_enabled: true,
+      follow_gate_text: "Principal",
+      follow_gate_text_variants: ["V2", "V3"],
+      follow_gate_retry_text: "Tenta de novo",
+      follow_gate_retry_variants: ["R2"],
+    });
+    fake.tables.rules.push(rule);
+
+    const form = followGateFormFrom(rule);
+    expect(form.textVariants).toEqual(["V2", "V3"]);
+    const result = await saveRule(baseInput({ id: rule.id, ...followGateFieldsForSave(form) }));
+
+    expect(result.error).toBeUndefined();
+    const saved = fake.tables.rules[0];
+    expect(saved.follow_gate_text_variants).toEqual(["V2", "V3"]);
+    expect(saved.follow_gate_retry_variants).toEqual(["R2"]);
+  });
+
+  it("diálogo da lista (sem os campos do portão) NÃO apaga as variações salvas", async () => {
+    const rule = makeRule({
+      follow_gate_enabled: true,
+      follow_gate_text: "Principal",
+      follow_gate_text_variants: ["V2"],
+      follow_gate_retry_variants: ["R2"],
+    });
+    fake.tables.rules.push(rule);
+
+    const result = await saveRule(baseInput({ id: rule.id, name: "Renomeada" }));
+    expect(result.error).toBeUndefined();
+    const saved = fake.tables.rules[0];
+    expect(saved.name).toBe("Renomeada");
+    expect(saved.follow_gate_text_variants).toEqual(["V2"]);
+    expect(saved.follow_gate_retry_variants).toEqual(["R2"]);
+  });
+
+  it("portão enviado sem o campo de variações mantém as salvas; lista vazia explícita apaga", async () => {
+    const rule = makeRule({
+      follow_gate_enabled: true,
+      follow_gate_text_variants: ["V2"],
+    });
+    fake.tables.rules.push(rule);
+
+    await saveRule(baseInput({ id: rule.id, follow_gate_enabled: true }));
+    expect(fake.tables.rules[0].follow_gate_text_variants).toEqual(["V2"]);
+
+    await saveRule(
+      baseInput({ id: rule.id, follow_gate_enabled: true, follow_gate_text_variants: [] })
+    );
+    expect(fake.tables.rules[0].follow_gate_text_variants).toBeNull();
+  });
+
+  it("recusa variação acima de 640 caracteres e mais de 10 variações", async () => {
+    const long = await saveRule(
+      baseInput({ follow_gate_enabled: true, follow_gate_text_variants: ["a".repeat(641)] })
+    );
+    expect(long.error).toMatch(/640/);
+
+    const many = await saveRule(
+      baseInput({
+        follow_gate_enabled: true,
+        follow_gate_retry_variants: Array.from({ length: 11 }, (_, i) => `v${i}`),
+      })
+    );
+    expect(many.error).toMatch(/10 variações/);
+  });
+
+  it("duplicar copia as variações do portão", async () => {
+    const rule = makeRule({
+      follow_gate_enabled: true,
+      follow_gate_text_variants: ["V2"],
+      follow_gate_retry_variants: ["R2"],
+    });
+    fake.tables.rules.push(rule);
+
+    await duplicateRule(rule.id);
+    const copy = fake.tables.rules.find((r) => r.id !== rule.id)!;
+    expect(copy.follow_gate_text_variants).toEqual(["V2"]);
+    expect(copy.follow_gate_retry_variants).toEqual(["R2"]);
   });
 
   it("duplicar automação com o portão ligado: copia enabled e textos para a cópia", async () => {
@@ -534,6 +633,80 @@ describe("saveRule: fallback sem a migration 0007 (update)", () => {
   });
 });
 
+/**
+ * Banco com a 0007 mas sem a 0017: só as colunas de variações são recusadas
+ * (o PostgREST cita a primeira coluna desconhecida).
+ */
+function createNo0017Client() {
+  const calls: FakeRow[] = [];
+  return {
+    calls,
+    client: {
+      from(_table: string) {
+        const run = (payload: FakeRow) => {
+          const self = {
+            eq: () => self,
+            select: () => self,
+            maybeSingle: () => self,
+            then(resolve: (v: { data: FakeRow | null; error: FakeRow | null }) => unknown) {
+              calls.push(payload);
+              if ("follow_gate_text_variants" in payload || "follow_gate_retry_variants" in payload) {
+                return Promise.resolve(
+                  resolve({
+                    data: null,
+                    error: {
+                      code: "PGRST204",
+                      message:
+                        "Could not find the 'follow_gate_text_variants' column of 'rules' in the schema cache",
+                    },
+                  })
+                );
+              }
+              return Promise.resolve(resolve({ data: { id: "new-rule-id" }, error: null }));
+            },
+          };
+          return self;
+        };
+        return { insert: run, update: run };
+      },
+    },
+  };
+}
+
+describe("saveRule: fallback sem a migration 0017 (variações do portão)", () => {
+  it("portão ligado com variações: salva o portão sem elas e avisa da 0017", async () => {
+    const noVariants = createNo0017Client();
+    setClient(noVariants.client);
+
+    const result = await saveRule(
+      baseInput({
+        follow_gate_enabled: true,
+        follow_gate_text: "Principal",
+        follow_gate_text_variants: ["V2"],
+      })
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.warning).toMatch(/0017/);
+    expect(noVariants.calls).toHaveLength(2);
+    expect(noVariants.calls[1].follow_gate_enabled).toBe(true);
+    expect(noVariants.calls[1].follow_gate_text).toBe("Principal");
+    expect("follow_gate_text_variants" in noVariants.calls[1]).toBe(false);
+  });
+
+  it("sem variações para gravar: salva sem erro e sem aviso", async () => {
+    const noVariants = createNo0017Client();
+    setClient(noVariants.client);
+
+    const result = await saveRule(
+      baseInput({ follow_gate_enabled: true, follow_gate_text_variants: [] })
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.warning).toBeUndefined();
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════════════
 // 5. Smoke de render (renderToString) dos componentes de UI
 // ═══════════════════════════════════════════════════════════════════════
@@ -557,7 +730,15 @@ describe("render smoke: FollowGateField", () => {
     const html = tryRender(
       "FollowGateField (desligado)",
       createElement(FollowGateField, {
-        value: { enabled: false, text: "", followLabel: "", confirmLabel: "", retryText: "" },
+        value: {
+          enabled: false,
+          text: "",
+          followLabel: "",
+          confirmLabel: "",
+          retryText: "",
+          textVariants: [],
+          retryVariants: [],
+        },
         onChange: () => {},
         username: "conta_teste",
         label: "Só responder para quem segue seu perfil",
@@ -580,6 +761,8 @@ describe("render smoke: FollowGateField", () => {
           followLabel: "Seguir",
           confirmLabel: "Já segui",
           retryText: "Tenta de novo",
+          textVariants: ["Outro jeito de pedir"],
+          retryVariants: [],
         },
         onChange: () => {},
         username: "conta_teste",
@@ -598,6 +781,9 @@ describe("render smoke: FollowGateField", () => {
     expect(html).toContain('maxLength="20"');
     // React SSR insere comentários de hidratação entre expressões JSX
     // adjacentes ("@<!-- -->conta_teste"), então checa as partes separadas.
+    // A 1ª mensagem tem uma variação cadastrada: aparece o rótulo da 2ª.
+    expect(html).toContain("Remover variante 2");
+    expect(html).toContain("Outro jeito de pedir");
     expect(html).toContain("abre o perfil @");
     expect(html).toContain("conta_teste");
     expect(html).toContain("o link");

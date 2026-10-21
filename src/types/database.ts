@@ -82,6 +82,9 @@ export interface Rule {
   follow_gate_follow_label?: string | null;
   follow_gate_confirm_label?: string | null;
   follow_gate_retry_text?: string | null;
+  /** Variantes extras (2ª em diante) das duas mensagens do portão; sorteadas junto com o texto principal. Migration 0017. */
+  follow_gate_text_variants?: string[] | null;
+  follow_gate_retry_variants?: string[] | null;
   /** Pasta de organização; nulo = "Sem pasta". Migration 0010. */
   folder_id?: string | null;
   created_at: string;

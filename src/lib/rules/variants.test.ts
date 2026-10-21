@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { addVariant, allVariants, pickVariant } from "@/lib/rules/variants";
+import {
+  addVariant,
+  addVariants,
+  allVariants,
+  cleanVariantList,
+  describeAddVariants,
+  pickVariant,
+} from "@/lib/rules/variants";
 
 describe("allVariants", () => {
   it("coloca a primária na frente das extras", () => {
@@ -97,5 +104,66 @@ describe("pickVariant", () => {
       expect(picked).not.toBeNull();
       expect(pool.has(picked as string)).toBe(true);
     }
+  });
+});
+
+describe("addVariants", () => {
+  it("com o principal vazio, a 1ª vira o principal e as demais viram variações", () => {
+    expect(addVariants("", [], ["A", "B", "C"], 10)).toEqual({
+      primary: "A",
+      extras: ["B", "C"],
+      added: 3,
+      duplicates: 0,
+      cut: 0,
+    });
+  });
+
+  it("com o principal preenchido, todas entram como variações", () => {
+    const result = addVariants("Oi!", [], ["A", "B"], 10);
+    expect(result.primary).toBe("Oi!");
+    expect(result.extras).toEqual(["A", "B"]);
+    expect(result.added).toBe(2);
+  });
+
+  it("não duplica o que já existe nem repetidas entre as escolhidas", () => {
+    const result = addVariants("Oi!", ["A"], [" A ", "B", "B", "Oi!"], 10);
+    expect(result.extras).toEqual(["A", "B"]);
+    expect(result.added).toBe(1);
+    expect(result.duplicates).toBe(3);
+  });
+
+  it("respeita o máximo de variações e conta o que foi cortado", () => {
+    const result = addVariants("P", ["A"], ["B", "C", "D", "E"], 4);
+    expect(allVariants(result.primary, result.extras)).toEqual(["P", "A", "B", "C"]);
+    expect(result.added).toBe(2);
+    expect(result.cut).toBe(2);
+  });
+
+  it("ocupa variações em branco antes de crescer a lista", () => {
+    const result = addVariants("P", ["", "A"], ["B"], 3);
+    expect(result.extras).toEqual(["B", "A"]);
+    expect(result.cut).toBe(0);
+  });
+
+  it("ignora texto vazio", () => {
+    expect(addVariants("", [], ["  ", ""], 10)).toMatchObject({ added: 0, cut: 0, duplicates: 0 });
+  });
+});
+
+describe("describeAddVariants", () => {
+  it("avisa quando cortou", () => {
+    const text = describeAddVariants({ primary: "", extras: [], added: 2, duplicates: 0, cut: 3 }, 10);
+    expect(text).toContain("2 sugestões adicionadas");
+    expect(text).toContain("limite é de 10");
+    expect(text).toContain("3 ficaram de fora");
+  });
+});
+
+describe("cleanVariantList", () => {
+  it("apara, descarta vazias e devolve nulo quando não sobra nada", () => {
+    expect(cleanVariantList([" A ", "", "  "])).toEqual(["A"]);
+    expect(cleanVariantList(["", " "])).toBeNull();
+    expect(cleanVariantList(undefined)).toBeNull();
+    expect(cleanVariantList(null)).toBeNull();
   });
 });

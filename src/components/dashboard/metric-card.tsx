@@ -68,14 +68,14 @@ export function MetricCard({
       className="stagger-item"
       style={{ "--stagger-index": index } as React.CSSProperties}
     >
-      <CardContent className="p-5">
+      <CardContent className="p-5 xl:p-6">
         <div className="flex items-center justify-between gap-2">
           <p className="text-[13px] font-medium text-muted-foreground">
             {label}
           </p>
           {icon}
         </div>
-        <p className="mt-3 font-display text-[28px] font-semibold leading-none tracking-tight tabular-nums">
+        <p className="mt-3 font-display text-[28px] font-semibold leading-none tracking-tight tabular-nums xl:text-[32px]">
           {display}
         </p>
         {hint && (

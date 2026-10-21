@@ -5,7 +5,7 @@ import { sleep } from "@/lib/utils";
 import type { IgAccount, Rule } from "@/types/database";
 
 import { checkFollow } from "./check";
-import { followGateCopy } from "./copy";
+import { followGateCopy, followGateMessageText } from "./copy";
 import { followCheckPayload, profileUrl } from "./payload";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -70,7 +70,7 @@ export async function holdUnlessFollowing(
 }
 
 /**
- * Mensagem do portão: texto (ou o "ainda não", com `again`) + botão que abre
+ * Mensagem do portão: texto sorteado (ou o "ainda não", com `again`) + botão que abre
  * o perfil + "Já segui" com `confirmPayload`. Automação usa
  * `falow:follow_check:<rule>`; o nó Automação de um workflow usa um payload
  * de sequência, que retoma o próprio run. O @ do link vem do Instagram na
@@ -82,11 +82,17 @@ export async function sendFollowGateMessage(
   account: IgAccount,
   rule: Rule,
   senderId: string,
-  { again, confirmPayload }: { again: boolean; confirmPayload: string }
+  {
+    again,
+    confirmPayload,
+    random,
+  }: { again: boolean; confirmPayload: string; random?: () => number }
 ): Promise<void> {
   const copy = followGateCopy(rule);
   const { ig_username } = await syncAccountProfile(admin, account, token);
-  await sendTemplateButtonsMessage(token, senderId, again ? copy.retryText : copy.text, [
+  // Sorteia entre o texto principal e as variações cadastradas (migration 0017).
+  const text = followGateMessageText(rule, again, random);
+  await sendTemplateButtonsMessage(token, senderId, text, [
     { type: "web_url", title: copy.followLabel, url: profileUrl(ig_username) },
     { type: "postback", title: copy.confirmLabel, payload: confirmPayload },
   ]);

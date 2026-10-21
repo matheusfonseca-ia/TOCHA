@@ -54,7 +54,7 @@ const failures = checks.filter(Boolean);
 if (failures.length) {
   console.error("[schema] O banco da Vercel não acompanha o código deste commit:");
   for (const failure of failures) console.error(`  ${failure}`);
-  console.error("[schema] Aplique as migrations de supabase/migrations (0002 a 0013) neste projeto antes do deploy.");
+  console.error("[schema] Aplique as migrations de supabase/migrations (0002 a 0018) neste projeto antes do deploy.");
   process.exit(1);
 }
 

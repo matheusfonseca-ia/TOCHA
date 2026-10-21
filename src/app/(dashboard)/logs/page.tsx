@@ -111,14 +111,14 @@ export default async function LogsPage({
                   </TableCell>
                   <TableCell>
                     <p
-                      className="max-w-[280px] truncate text-sm"
+                      className="max-w-[280px] truncate text-sm xl:max-w-[440px] 2xl:max-w-[640px]"
                       title={log.message_text ?? undefined}
                     >
                       {log.message_text ?? "(sem texto)"}
                     </p>
                     {log.error_detail && (
                       <p
-                        className="max-w-[280px] truncate text-xs text-red-600 dark:text-red-400"
+                        className="max-w-[280px] truncate text-xs xl:max-w-[440px] 2xl:max-w-[640px] text-red-600 dark:text-red-400"
                         title={log.error_detail}
                       >
                         {log.error_detail}

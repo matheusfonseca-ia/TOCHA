@@ -79,3 +79,89 @@ export function pickVariant(
   // (não deveria, mas Math.random nunca devolve 1; só por segurança).
   return variants[Math.min(index, variants.length - 1)];
 }
+
+/**
+ * Limpa uma lista de variantes extras para gravar: apara as pontas e descarta
+ * vazias. Devolve `null` (não `[]`) quando não sobra nenhuma, igual às colunas
+ * `*_variants` que gravam nulo em vez de array vazio.
+ */
+export function cleanVariantList(variants: string[] | null | undefined): string[] | null {
+  const cleaned = (variants ?? []).map((v) => v.trim()).filter(Boolean);
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+export interface AddVariantsResult {
+  primary: string;
+  extras: string[];
+  /** Quantas sugestões de fato entraram. */
+  added: number;
+  /** Quantas já estavam cadastradas (ou repetidas entre as escolhidas). */
+  duplicates: number;
+  /** Quantas ficaram de fora por passar do máximo de variantes. */
+  cut: number;
+}
+
+/**
+ * Cadastra várias sugestões de uma vez (janela "Escrever com IA"). Segue a
+ * regra de `addVariant` para cada texto, em ordem: com o texto principal
+ * vazio a 1ª escolhida vira o principal e as demais viram variações; com ele
+ * preenchido todas entram como variações. Texto repetido não duplica e o que
+ * passar de `max` variantes no total é cortado e contado em `cut`, para a
+ * tela avisar.
+ */
+export function addVariants(
+  primary: string,
+  extras: string[],
+  texts: readonly string[],
+  max: number
+): AddVariantsResult {
+  let current = { primary, extras };
+  let added = 0;
+  let duplicates = 0;
+  let cut = 0;
+
+  for (const text of texts) {
+    const trimmed = text.trim();
+    if (!trimmed) continue;
+    if (allVariants(current.primary, current.extras).includes(trimmed)) {
+      duplicates += 1;
+      continue;
+    }
+    const next = addVariant(current.primary, current.extras, trimmed, max);
+    if (next.primary === current.primary && next.extras === current.extras) {
+      cut += 1;
+      continue;
+    }
+    current = next;
+    added += 1;
+  }
+
+  return { ...current, added, duplicates, cut };
+}
+
+/** Frase curta do que aconteceu ao cadastrar sugestões, para o aviso na tela. */
+export function describeAddVariants(result: AddVariantsResult, max: number): string {
+  const parts: string[] = [];
+  parts.push(
+    result.added === 0
+      ? "Nenhuma sugestão nova entrou."
+      : result.added === 1
+        ? "1 sugestão adicionada."
+        : `${result.added} sugestões adicionadas.`
+  );
+  if (result.duplicates > 0) {
+    parts.push(
+      result.duplicates === 1
+        ? "1 já estava cadastrada."
+        : `${result.duplicates} já estavam cadastradas.`
+    );
+  }
+  if (result.cut > 0) {
+    parts.push(
+      `O limite é de ${max} variações no total, então ${
+        result.cut === 1 ? "1 ficou" : `${result.cut} ficaram`
+      } de fora.`
+    );
+  }
+  return parts.join(" ");
+}

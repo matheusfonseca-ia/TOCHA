@@ -1,3 +1,50 @@
+# Falow: sidebar recolhível, telas largas, Automação estilo n8n, IA com variações e OpenAI
+
+Planejado em 2026-10-21. Status: **em andamento**.
+
+## Pedido
+1. Recolher a sidebar com animação fluida e bem feita.
+2. Repaginar as telas (menos Conversas) pra não sobrar espaço vazio nas laterais em monitor grande.
+3. Automação: as listas ficam cortadas; reestruturar inspirado na lista de workflows do n8n.
+4. "Escrever com IA": selecionar mais de uma sugestão e mandar pras variações.
+5. Chave de IA da OpenRouter OU da OpenAI.
+
+## Decisões (confirmadas com o usuário)
+- Automação: abas Automações | Workflow no topo, barra busca + status + ordenar, pastas como
+  cartões acima da lista, cada item numa linha larga (sem tabela com min-width).
+- Largura: fluida até 1600px.
+- Variações: checkbox nas sugestões onde já há variantes (resposta pública, boas-vindas) e
+  variações novas nas 2 mensagens do portão de seguidor (migration 0017, envio sorteia).
+- Agentes: Opus no Shell e na Automação, Sonnet em Telas, IA e revisão.
+
+## Causa do corte e do espaço vazio
+`max-w-6xl` (1152px) no layout; em /rules cabiam menu de seção 176px + pastas 192px + tabela
+`min-w-[700px]` (sobram ~670px). Largura da sidebar (240px) fixa em 4 lugares (`md:ml-60` no
+layout, `md:left-60` em inbox-shell, funil e sequence-editor).
+
+## Plano
+- [x] Base (Claude principal): módulo `src/modules/app-shell/` (cookie `falow-sidebar`,
+      provider com `collapsed/toggle`), `--sidebar-w` registrada com `@property` e animada,
+      container `max-w-[1600px]`, trocar os 4 pontos fixos por `var(--sidebar-w)`.
+- [x] Agente Shell (Opus): sidebar recolhível no módulo app-shell (rótulos somem antes de
+      encolher, ícones parados, tooltip, badge vira bolinha, Ctrl+B, reduced motion).
+- [x] Agente Automação (Opus): `src/modules/automations/`, abas no topo, toolbar, pastas em
+      cartões, linhas largas pra automações e workflows.
+- [x] Agente Telas (Sonnet): Dashboard, Contatos, Contas, Logs, Nova automação e builders
+      usando a largura.
+- [x] Agente IA (Sonnet): seleção múltipla no diálogo, variações no portão (0017), provedor
+      OpenRouter/OpenAI por usuário (0018). Padrão OpenAI: `gpt-6-luna` (conferido, 22/09/2026).
+- [x] Revisão dirigida (Sonnet): 1 alto + 7 médios. Corrigidos pelo principal: seleção
+      múltipla perdia a 1ª sugestão no portão (`onBothChange` no VariantList), tooltips presos,
+      data de criação no fuso UTC, restauração de filtros escondendo item novo (só ordenação
+      volta), OpenAI 403 bloqueando chave restrita, guard da Vercel exigindo 0017, contagem das
+      abas velha (`revalidatePath("/rules", "layout")`). Mantido de propósito: ordem padrão
+      "Atualizado recentemente".
+- [ ] Integração: tsc, testes, build em 2 etapas, QA no Chrome (1280 e 1920 via iframe
+      escalado), migrations no Supabase, commit, deploy.
+
+---
+
 # Falow: CRM de conversas (Inbox estilo WhatsApp + Funil Kanban)
 
 Planejado em 2026-09-28. Status: **Fases 0 a 9 em produção em 28/09/2026** (Worker fd0cae14,

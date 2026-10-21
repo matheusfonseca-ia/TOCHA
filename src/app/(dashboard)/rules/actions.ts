@@ -13,9 +13,13 @@ import {
   copyFollowGateColumns,
   FOLLOW_GATE_MIGRATION_ERROR,
   followGateColumns,
+  FOLLOW_GATE_VARIANTS_MIGRATION_WARNING,
   followGateFields,
+  hasFollowGateVariants,
   isMissingFollowGateColumn,
+  isMissingFollowGateVariantsColumn,
   withoutFollowGateColumns,
+  withoutFollowGateVariantColumns,
 } from "@/lib/follow-gate/schema";
 import { keywordTerms } from "@/lib/rules/engine";
 import { automationRuleIdsOf } from "@/lib/sequences/graph";
@@ -304,18 +308,30 @@ export async function saveRule(raw: RuleInput): Promise<ActionResult> {
   };
   let saved = await write(row);
 
+  // Banco ainda sem a migration 0017: salva sem as variações do portão e avisa
+  // (só se havia o que gravar). Vem antes do tratamento da 0007 porque o erro
+  // de uma coluna de variação também cita "follow_gate_".
+  let variantsWarning: string | undefined;
+  if (saved.error && isMissingFollowGateVariantsColumn(saved.error)) {
+    if (hasFollowGateVariants(row)) variantsWarning = FOLLOW_GATE_VARIANTS_MIGRATION_WARNING;
+    saved = await write(withoutFollowGateVariantColumns(row));
+  }
+
   // Banco ainda sem a migration 0007: salva sem o portão enquanto ele está
   // desligado; ligado, avisa o que falta em vez de um erro genérico.
   if (saved.error && isMissingFollowGateColumn(saved.error)) {
     if (row.follow_gate_enabled) return { error: FOLLOW_GATE_MIGRATION_ERROR };
     saved = await write(withoutFollowGateColumns(row));
+    // O portão inteiro ficou de fora: o aviso das variações não se aplica.
+    variantsWarning = undefined;
   }
 
   if (saved.error) {
     return { error: "Não foi possível salvar a regra. Tente novamente." };
   }
 
-  revalidatePath("/rules");
+  // "layout": as contagens das abas moram no layout de /rules.
+  revalidatePath("/rules", "layout");
   revalidatePath("/dashboard");
 
   const warning = input.is_active
@@ -330,7 +346,8 @@ export async function saveRule(raw: RuleInput): Promise<ActionResult> {
       })) ?? undefined)
     : undefined;
 
-  return warning ? { warning } : {};
+  const combined = [warning, variantsWarning].filter(Boolean).join(" ");
+  return combined ? { warning: combined } : {};
 }
 
 export async function toggleRule(
@@ -404,7 +421,8 @@ export async function deleteRule(id: string): Promise<ActionResult> {
 
   if (error) return { error: "Não foi possível excluir a regra." };
 
-  revalidatePath("/rules");
+  // "layout": as contagens das abas moram no layout de /rules.
+  revalidatePath("/rules", "layout");
   revalidatePath("/dashboard");
   return {};
 }
@@ -469,7 +487,8 @@ export async function duplicateRule(id: string): Promise<ActionResult> {
     return { error: "Não foi possível duplicar a automação. Tente novamente." };
   }
 
-  revalidatePath("/rules");
+  // "layout": as contagens das abas moram no layout de /rules.
+  revalidatePath("/rules", "layout");
   revalidatePath("/dashboard");
   return { id: data.id as string };
 }

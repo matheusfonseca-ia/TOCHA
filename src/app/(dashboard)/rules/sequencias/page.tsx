@@ -2,14 +2,14 @@ import Link from "next/link";
 import { Instagram } from "lucide-react";
 
 import { EmptyState } from "@/components/empty-state";
+import { Button } from "@/components/ui/button";
+import { listFolders } from "@/app/(dashboard)/rules/folders-actions";
+import { createClient } from "@/lib/supabase/server";
 import {
   SequencesManager,
   type SequenceStats,
   type SequenceWithAccount,
-} from "@/components/sequences/sequences-manager";
-import { Button } from "@/components/ui/button";
-import { listFolders } from "@/app/(dashboard)/rules/folders-actions";
-import { createClient } from "@/lib/supabase/server";
+} from "@/modules/automations";
 
 export default async function SequenciasPage() {
   const supabase = createClient();

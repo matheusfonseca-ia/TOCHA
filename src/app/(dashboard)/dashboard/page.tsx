@@ -163,9 +163,12 @@ export default async function DashboardPage() {
         />
       </div>
 
-      <div className="mt-6 grid gap-6 lg:grid-cols-5">
+      {/* Em lg (sidebar aberta, ~1040px) o gráfico fica com ~60%; em 2xl (até
+          1600px) a coluna da lista ganha largura fixa confortável e o gráfico
+          ocupa o resto, ganhando altura para acompanhar as 8 linhas recentes. */}
+      <div className="mt-6 grid items-stretch gap-6 lg:grid-cols-5 2xl:grid-cols-[minmax(0,1fr)_440px]">
         <Card
-          className="stagger-item lg:col-span-3"
+          className="stagger-item flex flex-col lg:col-span-3 2xl:col-span-1"
           style={{ "--stagger-index": 4 } as React.CSSProperties}
         >
           <CardHeader>
@@ -174,13 +177,13 @@ export default async function DashboardPage() {
               Mensagens recebidas × respondidas (14 dias)
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="flex-1">
             <ActivityChart data={chartData} />
           </CardContent>
         </Card>
 
         <Card
-          className="stagger-item lg:col-span-2"
+          className="stagger-item lg:col-span-2 2xl:col-span-1"
           style={{ "--stagger-index": 5 } as React.CSSProperties}
         >
           <CardHeader>
@@ -197,7 +200,7 @@ export default async function DashboardPage() {
             {recent.map((item) => (
               <div
                 key={item.id}
-                className="flex items-center justify-between gap-3 border-b border-border/50 py-3 last:border-0"
+                className="flex items-center justify-between gap-3 border-b border-border/50 py-3 last:border-0 2xl:py-3.5"
               >
                 <div className="min-w-0">
                   <p className="truncate text-sm">

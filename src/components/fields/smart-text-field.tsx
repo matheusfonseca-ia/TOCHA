@@ -30,8 +30,8 @@ import { cn } from "@/lib/utils";
  * porque o que muda entre um campo e outro é só o `field` — dele saem o
  * limite, o papel no prompt e quais presets aparecem primeiro.
  *
- * Os dois botões somem sozinhos quando não têm o que oferecer: sem
- * OPENROUTER_API_KEY não tem ✨, sem a migration 0009 não tem 📌.
+ * Os dois botões somem sozinhos quando não têm o que oferecer: sem chave de
+ * IA (do usuário ou da instalação) não tem ✨, sem a migration 0009 não tem 📌.
  */
 export interface SmartTextFieldProps {
   id?: string;
@@ -47,7 +47,7 @@ export interface SmartTextFieldProps {
   presets?: MessagePreset[];
   aiEnabled?: boolean;
   context?: FieldPromptContext;
-  /** Só onde existe lista de variantes: "cadastrar as 5 de uma vez". */
+  /** Só onde existe lista de variantes: marcar várias sugestões e mandar pras variações. */
   onGenerateMany?: (texts: string[]) => void;
   /** Esconde o contador (quem já mostra o próprio). */
   hideCounter?: boolean;
@@ -184,7 +184,8 @@ export function SmartTextField({
           field={field}
           context={context}
           onPick={onChange}
-          onPickAll={onGenerateMany}
+          onPickMany={onGenerateMany}
+          primaryEmpty={value.trim().length === 0}
         />
       )}
     </div>

@@ -3,8 +3,9 @@ import { redirect } from "next/navigation";
 import { isAiEnabled } from "@/app/(dashboard)/rules/ai-actions";
 import { listPresets } from "@/app/(dashboard)/rules/presets-actions";
 import { SmartFieldsProvider } from "@/components/fields/smart-fields-context";
-import { Sidebar } from "@/components/layout/sidebar";
 import { createClient } from "@/lib/supabase/server";
+import { AppShellProvider, Sidebar } from "@/modules/app-shell";
+import { getSidebarCollapsed } from "@/modules/app-shell/server";
 import { getUnreadTotal } from "@/modules/crm/server";
 
 export default async function DashboardLayout({
@@ -27,16 +28,18 @@ export default async function DashboardLayout({
     getUnreadTotal(supabase),
   ]);
 
+  // Conteúdo fluido até 1600px: em monitor grande ocupa a tela em vez de
+  // sobrar faixa vazia dos lados, sem esticar sem fim em ultrawide.
   return (
-    <div className="min-h-screen">
+    <AppShellProvider initialCollapsed={getSidebarCollapsed()}>
       <Sidebar userEmail={user.email ?? ""} crmUnread={crmUnread} />
-      <main className="min-h-screen md:ml-60">
-        <div className="mx-auto max-w-6xl p-4 pb-12 sm:p-6 lg:p-8">
+      <main className="min-h-screen md:pl-[var(--sidebar-w)]">
+        <div className="mx-auto w-full max-w-[1600px] p-4 pb-12 sm:p-6 lg:p-8 2xl:px-10">
           <SmartFieldsProvider presets={presets} aiEnabled={aiEnabled}>
             {children}
           </SmartFieldsProvider>
         </div>
       </main>
-    </div>
+    </AppShellProvider>
   );
 }

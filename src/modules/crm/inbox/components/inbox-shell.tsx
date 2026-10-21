@@ -53,7 +53,7 @@ export function InboxShell({
   }, [selectedId, unread]);
 
   return (
-    <div className="fixed inset-x-0 bottom-0 top-14 z-30 flex bg-background md:left-60 md:top-0">
+    <div className="fixed inset-x-0 bottom-0 top-14 z-30 flex bg-background md:left-[var(--sidebar-w)] md:top-0">
       <aside
         className={cn(
           "min-h-0 w-full shrink-0 flex-col border-r border-border/70 lg:flex lg:w-[320px] xl:w-[340px]",

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, Sparkles } from "lucide-react";
+import { Check, Loader2, Sparkles } from "lucide-react";
 
 import { generateForField } from "@/app/(dashboard)/rules/ai-actions";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { aiFieldSpec, type AiFieldKind } from "@/lib/ai/fields";
 import type { FieldPromptContext } from "@/lib/ai/prompt";
+import { cn } from "@/lib/utils";
 
 /**
  * Janela do botão ✨. O campo já sabe o próprio limite e o próprio papel, então
@@ -29,7 +30,8 @@ export function AiGenerateDialog({
   field,
   context,
   onPick,
-  onPickAll,
+  onPickMany,
+  primaryEmpty = false,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -37,20 +39,30 @@ export function AiGenerateDialog({
   context?: FieldPromptContext;
   /** Usar uma sugestão (substitui o conteúdo do campo). */
   onPick: (text: string) => void;
-  /** Só nos campos com variantes: cadastrar todas de uma vez. */
-  onPickAll?: (texts: string[]) => void;
+  /**
+   * Só nos campos com variantes: as sugestões viram itens marcáveis e o botão
+   * principal manda as marcadas pras variações (quem chama aplica a regra e
+   * avisa se algo ficou de fora).
+   */
+  onPickMany?: (texts: string[]) => void;
+  /** Texto principal do campo ainda vazio: a 1ª marcada vai virar o principal. */
+  primaryEmpty?: boolean;
 }) {
   const spec = aiFieldSpec(field);
   const [instruction, setInstruction] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  /** Posições (em `suggestions`) marcadas; só usado quando há `onPickMany`. */
+  const [selected, setSelected] = useState<number[]>([]);
 
-  const count = onPickAll ? 5 : 3;
+  const count = onPickMany ? 5 : 3;
+  const allSelected = suggestions.length > 0 && selected.length === suggestions.length;
 
   async function generate() {
     setLoading(true);
     setError(null);
+    setSelected([]);
     const result = await generateForField({ field, count, instruction, context });
     setLoading(false);
 
@@ -62,9 +74,29 @@ export function AiGenerateDialog({
     setSuggestions(result.suggestions);
   }
 
+  function toggle(index: number) {
+    setSelected((current) =>
+      current.includes(index) ? current.filter((i) => i !== index) : [...current, index]
+    );
+  }
+
+  function toggleAll() {
+    setSelected(allSelected ? [] : suggestions.map((_, i) => i));
+  }
+
+  function addSelected() {
+    // Na ordem em que aparecem, não na ordem dos cliques: a 1ª da lista é a
+    // que vira o texto principal.
+    const texts = [...selected].sort((a, b) => a - b).map((i) => suggestions[i]);
+    if (texts.length === 0) return;
+    onPickMany?.(texts);
+    close(false);
+  }
+
   function close(next: boolean) {
     onOpenChange(next);
     if (!next) {
+      setSelected([]);
       setSuggestions([]);
       setError(null);
       setInstruction("");
@@ -107,7 +139,7 @@ export function AiGenerateDialog({
 
         {error && <p className="text-sm text-destructive">{error}</p>}
 
-        {suggestions.length > 0 && (
+        {suggestions.length > 0 && !onPickMany && (
           <div className="space-y-2">
             {suggestions.map((suggestion) => (
               <button
@@ -122,21 +154,70 @@ export function AiGenerateDialog({
                 {suggestion}
               </button>
             ))}
+          </div>
+        )}
 
-            {onPickAll && suggestions.length > 1 && (
-              <Button
+        {suggestions.length > 0 && onPickMany && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                {primaryEmpty
+                  ? "Marque as que quiser. A primeira marcada vira o texto principal e as outras viram variações."
+                  : "Marque as que quiser. Elas entram como variações novas."}
+              </p>
+              <button
                 type="button"
-                variant="outline"
-                size="sm"
-                className="w-full"
-                onClick={() => {
-                  onPickAll(suggestions);
-                  close(false);
-                }}
+                onClick={toggleAll}
+                className="shrink-0 text-xs font-medium text-primary hover:underline"
               >
-                Cadastrar as {suggestions.length} como variantes
-              </Button>
-            )}
+                {allSelected ? "Limpar seleção" : "Selecionar todas"}
+              </button>
+            </div>
+
+            <div role="group" aria-label="Sugestões" className="space-y-2">
+              {suggestions.map((suggestion, index) => {
+                const checked = selected.includes(index);
+                return (
+                  <button
+                    key={`${index}-${suggestion}`}
+                    type="button"
+                    role="checkbox"
+                    aria-checked={checked}
+                    onClick={() => toggle(index)}
+                    className={cn(
+                      "flex w-full items-start gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      checked
+                        ? "border-primary bg-primary/10"
+                        : "border-border/70 bg-secondary/20 hover:border-primary/50 hover:bg-secondary/50"
+                    )}
+                  >
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
+                        checked
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-background"
+                      )}
+                    >
+                      {checked && <Check className="h-3 w-3" />}
+                    </span>
+                    <span className="min-w-0 flex-1">{suggestion}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <Button
+              type="button"
+              className="w-full"
+              disabled={selected.length === 0}
+              onClick={addSelected}
+            >
+              {selected.length === 0
+                ? "Marque as sugestões que quer usar"
+                : `Adicionar ${selected.length} às variações`}
+            </Button>
           </div>
         )}
       </DialogContent>

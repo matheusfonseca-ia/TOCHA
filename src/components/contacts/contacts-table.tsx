@@ -84,7 +84,7 @@ export function ContactsTable({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-0 flex-1 sm:max-w-sm">
+        <div className="relative min-w-0 flex-1 sm:max-w-sm xl:max-w-md">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="search"
@@ -159,7 +159,7 @@ export function ContactsTable({
                     return (
                       <TableCell key={key}>
                         {value ? (
-                          <p className="max-w-[220px] truncate text-sm" title={String(value)}>
+                          <p className="max-w-[220px] truncate text-sm xl:max-w-[320px] 2xl:max-w-[420px]" title={String(value)}>
                             {String(value)}
                           </p>
                         ) : (
@@ -170,7 +170,7 @@ export function ContactsTable({
                   })}
                   <TableCell>
                     {c.tags?.length ? (
-                      <div className="flex max-w-[240px] flex-wrap gap-1">
+                      <div className="flex max-w-[240px] flex-wrap gap-1 xl:max-w-[340px] 2xl:max-w-[440px]">
                         {c.tags.map((tag) => (
                           <Badge key={tag} variant="muted">
                             {tag}

@@ -2,13 +2,10 @@ import Link from "next/link";
 import { Instagram } from "lucide-react";
 
 import { EmptyState } from "@/components/empty-state";
-import {
-  RulesManager,
-  type RuleWithAccount,
-} from "@/components/rules/rules-manager";
 import { Button } from "@/components/ui/button";
 import { listFolders } from "@/app/(dashboard)/rules/folders-actions";
 import { createClient } from "@/lib/supabase/server";
+import { RulesManager, type RuleWithAccount } from "@/modules/automations";
 
 export default async function RulesPage() {
   const supabase = createClient();

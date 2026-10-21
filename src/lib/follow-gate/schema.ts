@@ -1,14 +1,28 @@
 import { z } from "zod";
 
+import { isMissingColumn, type PostgrestLikeError } from "@/lib/db/missing";
+import { cleanVariantList } from "@/lib/rules/variants";
 import type { Rule } from "@/types/database";
 
-import { FOLLOW_GATE_LIMITS } from "./copy";
+import { FOLLOW_GATE_LIMITS, FOLLOW_GATE_MAX_VARIANTS } from "./copy";
 
 const label = (what: string) =>
   z
     .string()
     .trim()
     .max(FOLLOW_GATE_LIMITS.label, `${what}: máximo de ${FOLLOW_GATE_LIMITS.label} caracteres (limite da Meta).`)
+    .optional();
+
+/** Lista de variações extras de uma das mensagens do portão. */
+const variantList = (what: string) =>
+  z
+    .array(
+      z
+        .string()
+        .trim()
+        .max(FOLLOW_GATE_LIMITS.text, `${what}: máximo de ${FOLLOW_GATE_LIMITS.text} caracteres.`)
+    )
+    .max(FOLLOW_GATE_MAX_VARIANTS, `${what}: no máximo ${FOLLOW_GATE_MAX_VARIANTS} variações.`)
     .optional();
 
 /**
@@ -30,6 +44,10 @@ export const followGateFields = {
     .trim()
     .max(FOLLOW_GATE_LIMITS.text, `Mensagem de ainda não segue: máximo de ${FOLLOW_GATE_LIMITS.text} caracteres.`)
     .optional(),
+  // Variações extras (2ª em diante) de cada mensagem. Ausente = não mexe nas
+  // salvas (o diálogo de edição rápida da lista não conhece as variações).
+  follow_gate_text_variants: variantList("Variações da mensagem do portão"),
+  follow_gate_retry_variants: variantList("Variações da mensagem de ainda não segue"),
 };
 
 type FollowGateInput = {
@@ -38,6 +56,8 @@ type FollowGateInput = {
   follow_gate_follow_label?: string;
   follow_gate_confirm_label?: string;
   follow_gate_retry_text?: string;
+  follow_gate_text_variants?: string[];
+  follow_gate_retry_variants?: string[];
 };
 
 type FollowGateColumns = Pick<
@@ -47,9 +67,15 @@ type FollowGateColumns = Pick<
   | "follow_gate_follow_label"
   | "follow_gate_confirm_label"
   | "follow_gate_retry_text"
+  | "follow_gate_text_variants"
+  | "follow_gate_retry_variants"
 >;
 
-/** Colunas a gravar; texto vazio grava nulo (= texto padrão no envio). */
+/**
+ * Colunas a gravar; texto vazio grava nulo (= texto padrão no envio). As
+ * variações só entram quando vieram no input (lista vazia grava nulo): quem
+ * regrava a linha sem conhecê-las não apaga as salvas.
+ */
 export function followGateColumns(input: FollowGateInput): FollowGateColumns {
   if (input.follow_gate_enabled === undefined) return {};
   return {
@@ -58,7 +84,37 @@ export function followGateColumns(input: FollowGateInput): FollowGateColumns {
     follow_gate_follow_label: input.follow_gate_follow_label?.trim() || null,
     follow_gate_confirm_label: input.follow_gate_confirm_label?.trim() || null,
     follow_gate_retry_text: input.follow_gate_retry_text?.trim() || null,
+    ...(input.follow_gate_text_variants !== undefined && {
+      follow_gate_text_variants: cleanVariantList(input.follow_gate_text_variants),
+    }),
+    ...(input.follow_gate_retry_variants !== undefined && {
+      follow_gate_retry_variants: cleanVariantList(input.follow_gate_retry_variants),
+    }),
   };
+}
+
+export const FOLLOW_GATE_VARIANTS_MIGRATION_WARNING =
+  "As variações do portão não foram salvas. Aplique a migration 0017_follow_gate_variants.sql no Supabase para usá-las.";
+
+const VARIANT_COLUMNS = ["follow_gate_text_variants", "follow_gate_retry_variants"] as const;
+
+/** Banco sem a migration 0017: o PostgREST recusa só as colunas de variações. */
+export function isMissingFollowGateVariantsColumn(
+  error: PostgrestLikeError | null | undefined
+): boolean {
+  return VARIANT_COLUMNS.some((column) => isMissingColumn(error, column));
+}
+
+/** Mesma linha sem as colunas de variações, para salvar num banco sem a migration 0017. */
+export function withoutFollowGateVariantColumns<T extends Record<string, unknown>>(row: T): T {
+  return Object.fromEntries(
+    Object.entries(row).filter(([key]) => !(VARIANT_COLUMNS as readonly string[]).includes(key))
+  ) as T;
+}
+
+/** A linha traz variações de verdade para gravar (vale avisar se o banco não tem a coluna). */
+export function hasFollowGateVariants(row: FollowGateColumns): boolean {
+  return Boolean(row.follow_gate_text_variants?.length || row.follow_gate_retry_variants?.length);
 }
 
 export const FOLLOW_GATE_MIGRATION_ERROR =
@@ -88,5 +144,12 @@ export function copyFollowGateColumns(original: FollowGateColumns): FollowGateCo
     follow_gate_follow_label: original.follow_gate_follow_label ?? null,
     follow_gate_confirm_label: original.follow_gate_confirm_label ?? null,
     follow_gate_retry_text: original.follow_gate_retry_text ?? null,
+    // Regra lida antes da migration 0017 não tem as colunas: não inventa.
+    ...(original.follow_gate_text_variants !== undefined && {
+      follow_gate_text_variants: original.follow_gate_text_variants,
+    }),
+    ...(original.follow_gate_retry_variants !== undefined && {
+      follow_gate_retry_variants: original.follow_gate_retry_variants,
+    }),
   };
 }

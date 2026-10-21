@@ -3,19 +3,14 @@
 import { useMemo, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { formatDistanceToNow } from "date-fns";
-import { ptBR } from "date-fns/locale";
 import {
   Copy,
   FolderInput,
-  Image as ImageIcon,
   MessageCircle,
   MessageSquareText,
   MoreHorizontal,
-  MousePointerClick,
   Pencil,
   Plus,
-  Search,
   Timer,
   Trash2,
   Zap,
@@ -23,11 +18,6 @@ import {
 import { toast } from "sonner";
 
 import { EmptyState } from "@/components/empty-state";
-import { FolderRail, UNFILED } from "@/components/folders/folder-rail";
-import {
-  MoveToFolderDialog,
-  type MoveTarget,
-} from "@/components/folders/move-to-folder-dialog";
 import { ExpiryBadge } from "@/components/expiry/expiry-badge";
 import { ExpiryDialog, type ExpiryTarget } from "@/components/expiry/expiry-dialog";
 import { ExpiryField } from "@/components/expiry/expiry-field";
@@ -35,7 +25,6 @@ import type { Folder } from "@/lib/folders/folders";
 import { canEditInBuilder } from "@/lib/rules/edit-rule";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -60,14 +49,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -80,7 +61,6 @@ import type {
   MediaMode,
   MediaRef,
   ReplyType,
-  Rule,
   TriggerType,
 } from "@/types/database";
 import {
@@ -92,26 +72,20 @@ import {
   type RuleInput,
 } from "@/app/(dashboard)/rules/actions";
 
-export type RuleWithAccount = Rule & {
-  ig_accounts: { ig_username: string } | null;
-};
-
-interface AccountOption {
-  id: string;
-  ig_username: string;
-}
-
-const MATCH_LABELS: Record<MatchType, string> = {
-  exact: "Mensagem exata",
-  contains: "Contém a palavra",
-  starts_with: "Começa com",
-};
-
-const REPLY_ICONS: Record<ReplyType, typeof MessageSquareText> = {
-  text: MessageSquareText,
-  image: ImageIcon,
-  buttons: MousePointerClick,
-};
+import { useListView } from "../hooks/use-list-view";
+import type { AccountOption, RuleWithAccount } from "../types";
+import { ruleAdapter, ruleTitle, ruleTriggerLine } from "../utils/display";
+import {
+  applyListView,
+  DEFAULT_VIEW,
+  isFiltered,
+  sanitizeView,
+  viewFolderCounts,
+} from "../utils/list-view";
+import { AutomationList, AutomationRow, FolderChip, NoResults } from "./automation-row";
+import { FolderBreadcrumb, FolderCards } from "./folder-cards";
+import { ListToolbar } from "./list-toolbar";
+import { MoveToFolderDialog, type MoveTarget } from "./move-to-folder-dialog";
 
 interface ButtonSlot {
   title: string;
@@ -231,13 +205,12 @@ export function RulesManager({
   rules: RuleWithAccount[];
   accounts: AccountOption[];
   executionCounts: Record<string, number>;
-  /** Vazio quando a migration 0010 ainda não foi aplicada: a coluna some. */
+  /** Vazio quando a migration 0010 ainda não foi aplicada: a grade de pastas some. */
   folders?: Folder[];
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
   const [form, setForm] = useState<FormState>(() =>
     emptyForm(accounts[0]?.id ?? "")
   );
@@ -250,22 +223,25 @@ export function RulesManager({
   const [editUsage, setEditUsage] = useState<string[]>([]);
   const editRequestRef = useRef<string | null>(null);
   const [expiryTarget, setExpiryTarget] = useState<ExpiryTarget | null>(null);
-  /** null = todas; "" = sem pasta; id = a pasta. */
-  const [folder, setFolder] = useState<string | null>(null);
   const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
 
-  const filteredRules = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const known = new Set(folders.map((f) => f.id));
-    return rules.filter((rule) => {
-      if (q && ![rule.name, rule.keyword].some((v) => v?.toLowerCase().includes(q))) {
-        return false;
-      }
-      if (folder === null) return true;
-      const current = rule.folder_id && known.has(rule.folder_id) ? rule.folder_id : UNFILED;
-      return current === folder;
-    });
-  }, [rules, query, folder, folders]);
+  const { view: rawView, update, reset } = useListView("falow:automations:rules");
+  const folderIds = useMemo(() => new Set(folders.map((f) => f.id)), [folders]);
+  const folderById = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders]);
+  const accountIds = useMemo(() => new Set(accounts.map((a) => a.id)), [accounts]);
+  const view = useMemo(
+    () => sanitizeView(rawView, { folderIds, accountIds }),
+    [rawView, folderIds, accountIds]
+  );
+  const adapter = useMemo(() => ruleAdapter(executionCounts), [executionCounts]);
+  const filteredRules = useMemo(
+    () => applyListView(rules, view, adapter, folderIds),
+    [rules, view, adapter, folderIds]
+  );
+  const counts = useMemo(
+    () => viewFolderCounts(rules, view, adapter, folders),
+    [rules, view, adapter, folders]
+  );
 
   const patch = (partial: Partial<FormState>) =>
     setForm((f) => ({ ...f, ...partial }));
@@ -388,218 +364,168 @@ export function RulesManager({
     );
   }
 
+  const folderCards = (
+    <FolderCards
+      folders={folders}
+      counts={counts}
+      accountId={accounts[0]?.id}
+      selected={view.folder}
+      onSelect={(folder) => update({ folder })}
+    />
+  );
+  // Só a pasta aberta, sem outro filtro: a lista vazia é pasta vazia, não busca sem resultado.
+  const onlyFolder =
+    view.folder !== null && !isFiltered({ ...view, folder: DEFAULT_VIEW.folder });
+
   return (
     <>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div className="relative w-full max-w-xs">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/60" />
-          <Input
-            placeholder="Pesquisar automações..."
-            className="pl-8"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </div>
-        <Button asChild>
-          <Link href="/rules/nova">
-            <Plus />
-            Nova automação
-          </Link>
-        </Button>
-      </div>
+      <div className="space-y-4">
+        <ListToolbar
+          view={view}
+          onChange={update}
+          onReset={reset}
+          searchPlaceholder="Pesquisar automações..."
+          gender="f"
+          showKind
+          accounts={accounts}
+          trailing={folders.length === 0 ? folderCards : undefined}
+        />
 
-      <div className="flex flex-col gap-4 sm:flex-row">
-        {folders.length > 0 || accounts.length > 0 ? (
-          <FolderRail
-            folders={folders}
-            items={rules}
-            accountId={accounts[0]?.id}
-            selected={folder}
-            onSelect={setFolder}
+        {folders.length > 0 && folderCards}
+
+        {view.folder !== null && (
+          <FolderBreadcrumb
+            folder={view.folder ? (folderById.get(view.folder) ?? null) : null}
+            onBack={() => update({ folder: null })}
           />
-        ) : null}
-        <div className="min-w-0 flex-1">
-      {filteredRules.length === 0 ? (
-        <Card className="animate-fade-up">
-          <p className="px-6 py-16 text-center text-sm text-muted-foreground">
-            Nenhuma automação encontrada aqui.
-          </p>
-        </Card>
-      ) : (
-        <Card className="animate-fade-up overflow-hidden">
-          <Table className="min-w-[700px]">
-            <TableHeader>
-              <TableRow className="hover:bg-transparent">
-                <TableHead>Automação</TableHead>
-                <TableHead>Responder com</TableHead>
-                <TableHead className="text-center">Execuções</TableHead>
-                <TableHead className="text-center">Ativa</TableHead>
-                <TableHead>Modificado</TableHead>
-                <TableHead className="w-12" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredRules.map((rule) => {
-                const ReplyIcon = REPLY_ICONS[rule.reply_type];
-                const isComment = rule.trigger_type === "comment";
-                const keywordLabel =
-                  rule.keyword ?? (isComment ? "Qualquer comentário" : "");
-                const title = rule.name?.trim() || keywordLabel || "Sem nome";
-                const matchLabel = rule.comment_any_word
-                  ? "Qualquer comentário"
-                  : MATCH_LABELS[rule.match_type];
-                const subtitle = rule.name?.trim()
-                  ? `${keywordLabel} · ${matchLabel}`
-                  : matchLabel;
-                return (
-                  <TableRow
-                    key={rule.id}
-                    className="cursor-pointer"
-                    onClick={() =>
-                      canEditInBuilder(rule)
-                        ? router.push(`/rules/${rule.id}/editar`)
-                        : openEdit(rule)
-                    }
-                  >
-                    <TableCell>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <Badge variant={rule.is_active ? "success" : "muted"}>
-                            {rule.is_active ? "Ativa" : "Pausada"}
-                          </Badge>
-                          <ExpiryBadge
-                            expiresAt={rule.expires_at}
-                            expireAction={rule.expire_action}
-                          />
-                          {rule.follow_gate_enabled && (
-                            <Badge variant="outline">Só seguidores</Badge>
-                          )}
-                          {isComment ? (
-                            <MessageCircle className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
-                          ) : (
-                            <MessageSquareText className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
-                          )}
-                          <span className="max-w-[220px] truncate text-sm font-medium">
-                            {title}
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-muted-foreground/80">
-                          {subtitle}
-                        </p>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-start gap-2">
-                        <ReplyIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground/60" />
-                        <div className="min-w-0">
-                          <p className="max-w-[260px] truncate text-sm">
-                            {rule.reply_type === "image"
-                              ? "Imagem"
-                              : (rule.reply_text ?? "")}
-                          </p>
-                          {rule.reply_type === "buttons" && (
-                            <p className="text-[11px] text-muted-foreground/80">
-                              {(rule.reply_buttons ?? []).length} botão(ões)
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-center text-sm tabular-nums text-muted-foreground">
-                      {executionCounts[rule.id] ?? 0}
-                    </TableCell>
-                    <TableCell
-                      className="text-center"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Switch
-                        checked={rule.is_active}
-                        onCheckedChange={(next) => handleToggle(rule, next)}
-                        disabled={isPending}
+        )}
+
+        {filteredRules.length === 0 ? (
+          <NoResults
+            message={
+              onlyFolder
+                ? "Nenhuma automação nesta pasta ainda. Use “Mover para pasta” no menu de uma automação para trazê-la pra cá."
+                : "Nenhuma automação encontrada com esses filtros."
+            }
+            onReset={onlyFolder ? undefined : reset}
+          />
+        ) : (
+          <AutomationList>
+            {filteredRules.map((rule, index) => {
+              const isComment = rule.trigger_type === "comment";
+              const title = ruleTitle(rule);
+              const builder = canEditInBuilder(rule);
+              const folder =
+                view.folder === null && rule.folder_id
+                  ? folderById.get(rule.folder_id)
+                  : undefined;
+              return (
+                <AutomationRow
+                  key={rule.id}
+                  index={index}
+                  icon={isComment ? MessageCircle : MessageSquareText}
+                  title={title}
+                  href={builder ? `/rules/${rule.id}/editar` : undefined}
+                  onOpen={builder ? undefined : () => openEdit(rule)}
+                  triggerLine={ruleTriggerLine(rule)}
+                  updatedAt={rule.updated_at}
+                  createdAt={rule.created_at}
+                  gender="f"
+                  badges={
+                    <>
+                      <ExpiryBadge
+                        expiresAt={rule.expires_at}
+                        expireAction={rule.expire_action}
                       />
-                    </TableCell>
-                    <TableCell
-                      className="whitespace-nowrap text-xs text-muted-foreground"
-                      title={new Date(rule.updated_at).toLocaleString("pt-BR")}
-                    >
-                      {formatDistanceToNow(new Date(rule.updated_at), {
-                        addSuffix: true,
-                        locale: ptBR,
-                      })}
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                      {rule.follow_gate_enabled && (
+                        <Badge variant="outline">Só seguidores</Badge>
+                      )}
+                      {accounts.length > 1 && rule.ig_accounts?.ig_username && (
+                        <Badge variant="outline">@{rule.ig_accounts.ig_username}</Badge>
+                      )}
+                      {folder && <FolderChip folder={folder} />}
+                    </>
+                  }
+                  metrics={[
+                    {
+                      value: executionCounts[rule.id] ?? 0,
+                      singular: "execução",
+                      plural: "execuções",
+                    },
+                  ]}
+                  active={rule.is_active}
+                  onToggle={(next) => handleToggle(rule, next)}
+                  toggleDisabled={isPending}
+                  menu={
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button variant="ghost" size="icon" aria-label={`Ações de ${title}`}>
+                          <MoreHorizontal className="h-4 w-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        <DropdownMenuItem
+                          onClick={() =>
+                            builder
+                              ? router.push(`/rules/${rule.id}/editar`)
+                              : openEdit(rule)
+                          }
+                        >
+                          <Pencil />
+                          Editar
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          disabled={isPending}
+                          onClick={() => handleDuplicate(rule)}
+                        >
+                          <Copy />
+                          Duplicar
+                        </DropdownMenuItem>
+                        {folders.length > 0 && (
                           <DropdownMenuItem
                             onClick={() =>
-                              canEditInBuilder(rule)
-                                ? router.push(`/rules/${rule.id}/editar`)
-                                : openEdit(rule)
-                            }
-                          >
-                            <Pencil />
-                            Editar
-                          </DropdownMenuItem>
-                          <DropdownMenuItem
-                            disabled={isPending}
-                            onClick={() => handleDuplicate(rule)}
-                          >
-                            <Copy />
-                            Duplicar
-                          </DropdownMenuItem>
-                          {folders.length > 0 && (
-                            <DropdownMenuItem
-                              onClick={() =>
-                                setMoveTarget({
-                                  kind: "rule",
-                                  id: rule.id,
-                                  name: title,
-                                  folderId: rule.folder_id ?? null,
-                                })
-                              }
-                            >
-                              <FolderInput />
-                              Mover para pasta
-                            </DropdownMenuItem>
-                          )}
-                          <DropdownMenuItem
-                            onClick={() =>
-                              setExpiryTarget({
+                              setMoveTarget({
+                                kind: "rule",
                                 id: rule.id,
                                 name: title,
-                                expires_at: rule.expires_at,
-                                expire_action: rule.expire_action,
+                                folderId: rule.folder_id ?? null,
                               })
                             }
                           >
-                            <Timer />
-                            {rule.expires_at
-                              ? "Estender expiração"
-                              : "Tornar temporária"}
+                            <FolderInput />
+                            Mover para pasta
                           </DropdownMenuItem>
-                          <DropdownMenuItem
-                            className="text-destructive focus:text-destructive"
-                            onClick={() => openDelete(rule)}
-                          >
-                            <Trash2 />
-                            Excluir
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </Card>
-      )}
-        </div>
+                        )}
+                        <DropdownMenuItem
+                          onClick={() =>
+                            setExpiryTarget({
+                              id: rule.id,
+                              name: title,
+                              expires_at: rule.expires_at,
+                              expire_action: rule.expire_action,
+                            })
+                          }
+                        >
+                          <Timer />
+                          {rule.expires_at
+                            ? "Estender expiração"
+                            : "Tornar temporária"}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          className="text-destructive focus:text-destructive"
+                          onClick={() => openDelete(rule)}
+                        >
+                          <Trash2 />
+                          Excluir
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  }
+                />
+              );
+            })}
+          </AutomationList>
+        )}
       </div>
 
       <MoveToFolderDialog

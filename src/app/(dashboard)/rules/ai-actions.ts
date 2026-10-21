@@ -10,8 +10,8 @@ import { getEffectiveAiConfig } from "@/modules/ai-settings/server";
  * cliente manda só o campo, a instrução e o contexto, e recebe as sugestões
  * prontas.
  *
- * A chave é a do usuário logado (tela Contas), com `OPENROUTER_API_KEY` da
- * instalação como padrão. Sem nenhuma das duas, `isAiEnabled` devolve false e
+ * A chave é a do usuário logado (tela Contas, OpenRouter ou OpenAI), com a da
+ * instalação (`OPENROUTER_API_KEY`, depois `OPENAI_API_KEY`) como padrão. Sem nenhuma, `isAiEnabled` devolve false e
  * a UI nem mostra o botão.
  */
 
@@ -31,7 +31,7 @@ export async function generateForField(input: {
   if (!config) {
     return {
       error:
-        "IA sem chave. Cadastre a sua chave da OpenRouter na tela Contas.",
+        "IA sem chave. Cadastre a sua chave da OpenRouter ou da OpenAI na tela Contas.",
     };
   }
 

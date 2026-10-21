@@ -1,30 +1,84 @@
 import { aiFieldSpec, type AiFieldKind } from "@/lib/ai/fields";
 import { parseSuggestions } from "@/lib/ai/parse";
 import { buildFieldPrompt, type FieldPromptContext } from "@/lib/ai/prompt";
+import {
+  AI_PROVIDERS,
+  OPENROUTER_DEFAULT_MODEL,
+  type AiProviderId,
+} from "@/lib/ai/providers";
 
 /**
- * Provedor do botão ✨. Fala com a OpenRouter (uma chave, qualquer modelo),
- * que é o que combina com um produto que cada um hospeda do próprio jeito.
+ * Provedor do botão ✨. Fala com a OpenRouter (uma chave, qualquer modelo) ou
+ * direto com a OpenAI, conforme a chave cadastrada (tela Contas) ou a da
+ * instalação.
  *
- * Sem `OPENROUTER_API_KEY` a config é nula e o botão nem aparece na tela —
- * o resto do Falow segue funcionando igual.
+ * Sem nenhuma chave a config é nula e o botão nem aparece na tela. O resto do
+ * Falow segue funcionando igual.
  */
 
-const ENDPOINT = "https://openrouter.ai/api/v1/chat/completions";
-export const DEFAULT_MODEL = "anthropic/claude-sonnet-4.5";
+/** Modelo padrão da OpenRouter (mantido com este nome por compatibilidade). */
+export const DEFAULT_MODEL = OPENROUTER_DEFAULT_MODEL;
 
 export interface AiConfig {
+  provider: AiProviderId;
   apiKey: string;
   model: string;
 }
 
+/**
+ * Chave padrão da instalação. Prioridade: OpenRouter, depois OpenAI. A chave
+ * do usuário (tela Contas) vence as duas, em `resolveAiConfig`.
+ */
 export function aiConfigFromEnv(
   env: Record<string, string | undefined> = process.env
 ): AiConfig | null {
-  const apiKey = env.OPENROUTER_API_KEY?.trim();
-  if (!apiKey) return null;
+  const openRouterKey = env.OPENROUTER_API_KEY?.trim();
+  if (openRouterKey) {
+    return {
+      provider: "openrouter",
+      apiKey: openRouterKey,
+      model: env.OPENROUTER_MODEL?.trim() || AI_PROVIDERS.openrouter.defaultModel,
+    };
+  }
 
-  return { apiKey, model: env.OPENROUTER_MODEL?.trim() || DEFAULT_MODEL };
+  const openAiKey = env.OPENAI_API_KEY?.trim();
+  if (openAiKey) {
+    return {
+      provider: "openai",
+      apiKey: openAiKey,
+      model: env.OPENAI_MODEL?.trim() || AI_PROVIDERS.openai.defaultModel,
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Corpo da chamada de chat completions. A OpenRouter aceita `temperature`; a
+ * OpenAI não recebe: os modelos atuais dela são de raciocínio (gpt-5 em
+ * diante, o1/o3/o4) e recusam qualquer valor diferente do padrão com 400.
+ */
+export function buildChatRequest(
+  config: AiConfig,
+  system: string,
+  user: string
+): { url: string; headers: Record<string, string>; body: Record<string, unknown> } {
+  const info = AI_PROVIDERS[config.provider];
+  return {
+    url: info.endpoint,
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: {
+      model: config.model,
+      ...(config.provider === "openrouter" && { temperature: 0.9 }),
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    },
+  };
 }
 
 export interface GenerateFieldInput {
@@ -50,22 +104,13 @@ export async function generateFieldSuggestions(
   const spec = aiFieldSpec(input.field);
   const { system, user } = buildFieldPrompt(input);
 
+  const request = buildChatRequest(config, system, user);
   let res: Response;
   try {
-    res = await fetchImpl(ENDPOINT, {
+    res = await fetchImpl(request.url, {
       method: "POST",
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: config.model,
-        temperature: 0.9,
-        messages: [
-          { role: "system", content: system },
-          { role: "user", content: user },
-        ],
-      }),
+      headers: request.headers,
+      body: JSON.stringify(request.body),
       signal: AbortSignal.timeout(30_000),
     });
   } catch {
@@ -77,7 +122,7 @@ export async function generateFieldSuggestions(
       error:
         res.status === 429
           ? "A IA está ocupada agora. Tenta de novo em alguns segundos."
-          : `A IA respondeu ${res.status}. Confere sua chave da OpenRouter na tela Contas.`,
+          : `A IA respondeu ${res.status}. Confere sua chave da ${AI_PROVIDERS[config.provider].label} na tela Contas.`,
     };
   }
 
