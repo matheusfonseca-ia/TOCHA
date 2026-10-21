@@ -1,9 +1,27 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20261021-200949-claude"
-Status: em andamento
-Resumo: rodada de UI (sidebar recolhível, telas largas até 1600px, Automação estilo n8n) + IA (seleção múltipla pras variações, variações no portão de seguidor, provedor OpenRouter/OpenAI). Base feita; 4 agentes trabalhando na pasta principal com arquivos separados. Plano em tasks/todo.md (topo). À parte: logo Falow trocada pelo vetor oficial da LP (commitada, sai no deploy da rodada).
+Última tag: "HANDOFF-falow-20261021-205843-claude"
+Status: bloqueado
+Resumo: rodada (sidebar recolhível, telas até 1600px, Automação estilo n8n, IA com variações e OpenAI) pronta e commitada (b84169c, em cima do logo novo f66770c). 684 testes, tsc ok, revisão corrigida. Build do Worker morto por falta de RAM: faltam build em 2 etapas, deploy, migrations 0017/0018 e QA.
+
+---
+
+## [HANDOFF · falow · 2026-10-21T20:58:43-03:00 · claude]
+Status: bloqueado
+Objetivo: publicar a rodada de UI + IA (ver entrada de 20:03 e topo de tasks/todo.md).
+Feito:
+- 4 agentes entregaram: `src/modules/app-shell/` (sidebar recolhível, Ctrl+B, tooltips), `src/modules/automations/` (abas, toolbar com estado na URL, pastas em cartões, linhas largas), telas redistribuídas, IA (seleção múltipla → variações, variações no portão com 0017, provedor OpenRouter/OpenAI com 0018, padrão OpenAI `gpt-6-luna`).
+- Revisão dirigida: 1 alto + 7 médios corrigidos (lista em tasks/todo.md). 684/684 testes, tsc limpo, etapa 1 do build passou antes das correções.
+- Commit local b84169c (sem as imagens soltas da raiz). O logo novo (f66770c) foi preservado: a sidebar só ganhou a prop opcional `wordmarkClassName` no `FalowLogo`.
+Próximo passo:
+- Com RAM livre: `NEXT_PRIVATE_STANDALONE=true NEXT_PRIVATE_OUTPUT_TRACE_ROOT=<raiz> npm run build`, depois `npx opennextjs-cloudflare build --skipNextBuild`, depois `npx wrangler deploy` (token DEPLOY). O app tolera o banco sem 0017/0018. Esse deploy leva junto o logo novo.
+- Aplicar 0017 e 0018 no SQL Editor do Supabase (projeto ntzwudcauohpilbdwiyx), pelo método do clipboard.
+- QA no Chrome: sidebar (animação, Ctrl+B, recarregar recolhida), /rules e /rules/sequencias em 1280 e 1920 (iframe escalado), builders, Contas (card de IA com OpenAI), portão com seleção múltipla.
+- Push: `! git -C "D:/Projetos-vibeocding/eu/falow-instalacaonamaquina" push tocha main:main`.
+Arquivos tocados: ver `git show --stat b84169c`.
+Decisões/contexto: só a ordenação da lista volta do sessionStorage (filtros não voltam, pra não esconder item recém-criado). OpenAI 403 em /v1/models conta como chave válida (chave restrita). Ordem padrão da lista é "Atualizado recentemente" (antes era prioridade).
+Tag: "HANDOFF-falow-20261021-205843-claude"
 
 ---
 
