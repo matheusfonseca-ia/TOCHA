@@ -13,7 +13,7 @@ export default function LegalLayout({
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-10 border-b border-border bg-background/85 backdrop-blur">
         <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-between gap-3 px-6 py-4">
-          <FalowLogo markClassName="h-7 w-7" textClassName="text-base" />
+          <FalowLogo className="h-7" />
           <LegalNav />
         </div>
       </header>
