@@ -177,7 +177,7 @@ export default async function DashboardPage() {
               Mensagens recebidas × respondidas (14 dias)
             </CardDescription>
           </CardHeader>
-          <CardContent className="flex-1">
+          <CardContent className="flex min-h-0 flex-1 flex-col">
             <ActivityChart data={chartData} />
           </CardContent>
         </Card>

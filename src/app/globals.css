@@ -5,11 +5,14 @@
 /* Largura da sidebar do painel. Registrada pra poder ser animada: a transição
    fica na própria variável, então sidebar, conteúdo (padding) e telas em tela
    cheia (left) andam juntos no mesmo quadro. Estado vem do data-sidebar que o
-   AppShellProvider (modules/app-shell) põe no wrapper. */
+   AppShellProvider (modules/app-shell) põe no wrapper.
+   initial-value em px, não rem: o valor inicial tem que ser computacionalmente
+   independente, e com rem o navegador descarta o @property inteiro (a variável
+   deixa de ser registrada e a largura pula em vez de animar). */
 @property --sidebar-w {
   syntax: "<length>";
   inherits: true;
-  initial-value: 15rem;
+  initial-value: 240px;
 }
 
 .app-shell {

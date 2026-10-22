@@ -16,10 +16,11 @@ export interface ActivityPoint {
   respondidas: number;
 }
 
-// Altura cresce com a largura útil: acompanha a lista de recentes ao lado.
+// Empilhado (abaixo de lg) tem altura fixa; lado a lado com a lista de
+// recentes, estica até o fim do card pra não sobrar faixa vazia embaixo.
 export function ActivityChart({ data }: { data: ActivityPoint[] }) {
   return (
-    <div className="h-[280px] w-full xl:h-[320px] 2xl:h-[420px]">
+    <div className="h-[280px] w-full lg:h-auto lg:min-h-[300px] lg:flex-1">
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
           <defs>

@@ -84,7 +84,7 @@ export function AutomationHeader({ counts }: { counts: AutomationCounts }) {
 
       <nav
         aria-label="Seções de automação"
-        className="-mt-5 mb-6 flex gap-6 overflow-x-auto border-b border-border/70"
+        className="-mt-5 mb-6 flex gap-6 overflow-x-auto overflow-y-hidden border-b border-border/70"
       >
         {tabs.map((tab) => (
           <Link

@@ -319,7 +319,7 @@ export function ResponderComentarioBuilder({
     .map((link) => ({ title: link.title || "Link", url: link.url }));
 
   return (
-    <div className="max-w-[1240px] animate-fade-up">
+    <div className="max-w-[1240px] animate-fade-up 2xl:max-w-none">
       <div className="mb-6 flex items-center justify-between gap-4">
         <Button
           asChild
@@ -339,7 +339,9 @@ export function ResponderComentarioBuilder({
         </Button>
       </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,1fr)_340px]">
+      {/* 2xl: formulário em largura de leitura e a prévia centralizada no
+          espaço que sobra, em vez de uma faixa vazia à direita. */}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px] 2xl:grid-cols-[minmax(0,880px)_minmax(340px,1fr)]">
         <div className="space-y-6">
           <Card>
             <CardContent className="space-y-5 p-6">
@@ -618,7 +620,7 @@ export function ResponderComentarioBuilder({
           </Card>
         </div>
 
-        <div className="xl:sticky xl:top-8 xl:self-start">
+        <div className="xl:sticky xl:top-8 xl:self-start 2xl:justify-self-center">
           <p className="mb-3 text-center text-xs font-medium uppercase tracking-wide text-muted-foreground xl:text-left">
             Visualização
           </p>
