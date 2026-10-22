@@ -1,9 +1,24 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20261021-205843-claude"
+Última tag: "HANDOFF-falow-20261021-210315-claude"
 Status: bloqueado
-Resumo: rodada (sidebar recolhível, telas até 1600px, Automação estilo n8n, IA com variações e OpenAI) pronta e commitada (b84169c, em cima do logo novo f66770c). 684 testes, tsc ok, revisão corrigida. Build do Worker morto por falta de RAM: faltam build em 2 etapas, deploy, migrations 0017/0018 e QA.
+Resumo: rodada (sidebar recolhível, telas até 1600px, Automação estilo n8n, IA com variações e OpenAI) pronta e commitada (b84169c, em cima do logo novo f66770c). 684 testes, tsc ok, revisão corrigida. Build do Worker morto por falta de RAM: faltam build em 2 etapas, deploy, migrations 0017/0018 e QA. Produção hoje = f66770c (só a logo nova, Worker 58a78b74), a rodada ainda não está no ar.
+
+---
+
+## [HANDOFF · falow · 2026-10-21T21:03:15-03:00 · claude]
+Status: concluído
+Objetivo: publicar só a logo nova, num deploy separado da rodada (pedido do usuário).
+Feito:
+- Build do commit f66770c numa pasta limpa fora do repo (`git archive` + `.env.local` + cópia real do node_modules com robocopy /XJ, sem junction), build em 2 etapas, `wrangler deploy`: Worker 58a78b74 em falow.methodgrowthhub.com.br. Pacote conferido: tinha a logo nova e nada do app-shell.
+- Conferido em produção: `/`, `/privacidade`, `/login` 200 com a logo/símbolo novos, `/icon.svg` novo. Sidebar não conferida logada (Chrome sem sessão), usa o mesmo componente da home.
+- Pasta temporária apagada (checada sem links antes).
+Próximo passo:
+- Nenhum pra logo. O deploy da rodada (b84169c) continua pendente, ver entrada de 20:58. O build dela provavelmente morreu por RAM porque rodou junto com este.
+Arquivos tocados: só este handoff.
+Decisões/contexto: deploy separado sem build na pasta principal porque ela tinha trabalho de agente sem commit naquele momento. Antes do deploy, produção era 60d4c16d (= 0165376), então f66770c publicou só a diferença da logo.
+Tag: "HANDOFF-falow-20261021-210315-claude"
 
 ---
 
