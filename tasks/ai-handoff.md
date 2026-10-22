@@ -1,9 +1,27 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20261021-210315-claude"
-Status: bloqueado
-Resumo: rodada (sidebar recolhível, telas até 1600px, Automação estilo n8n, IA com variações e OpenAI) pronta e commitada (b84169c, em cima do logo novo f66770c). 684 testes, tsc ok, revisão corrigida. Build do Worker morto por falta de RAM: faltam build em 2 etapas, deploy, migrations 0017/0018 e QA. Produção hoje = f66770c (só a logo nova, Worker 58a78b74), a rodada ainda não está no ar.
+Última tag: "HANDOFF-falow-20261021-222920-claude"
+Status: concluído
+Resumo: rodada de UI + IA em produção (Worker c0a57a7a = 87e3d98, inclui o logo novo). Migrations 0017 e 0018 aplicadas e conferidas. QA logado feito em 1280 e 1920. Falta: usuário recadastrar a chave da OpenRouter (a salva deu 401) e testar a seleção múltipla da IA no portão; push para o tocha.
+
+---
+
+## [HANDOFF · falow · 2026-10-21T22:29:20-03:00 · claude]
+Status: concluído
+Objetivo: publicar e conferir a rodada de UI + IA.
+Feito:
+- Build em 2 etapas e deploy (7d5b23b3), depois ajustes do QA (87e3d98) e novo deploy: Worker c0a57a7a.
+- Migrations 0017 (follow_gate_text_variants/follow_gate_retry_variants jsonb) e 0018 (user_ai_settings.provider + check) aplicadas no SQL Editor por setValue no Monaco, hash do texto conferido no navegador (95272393fcb57e21), colunas e constraint conferidas no information_schema/pg_constraint.
+- QA logado: sidebar anima de verdade (240 → 64px em ~350ms, ícones parados), tooltip, recarregar recolhida sem pulo, Conversas acompanha a largura; Automação/Workflow, Dashboard, Contas, Contatos, Logs e builder com variações do portão em 1280 e 1920 (iframe escalado).
+- Corrigidos no QA: `@property` com `initial-value: 15rem` descartado pelo Chrome (agora 240px), rolagem fantasma nas abas, gráfico do Dashboard com faixa vazia, builder com vazio à direita em 1920.
+Próximo passo:
+- Usuário: colar a chave da OpenRouter de novo em Contas ("Guardar" valida na hora) e testar marcar várias sugestões no portão de seguidor.
+- Usuário: fechar a aba do SQL Editor no Chrome (ficou com "Unsaved edits", trava o fechamento pelo MCP).
+- Push: `! git -C "D:/Projetos-vibeocding/eu/falow-instalacaonamaquina" push tocha main:main`.
+Arquivos tocados: ver `git show --stat 87e3d98`; tasks/todo.md, tasks/lessons.md.
+Decisões/contexto: a chave salva respondeu 401 na OpenRouter; o código monta a requisição como antes (mesmo endpoint e Bearer), então é provável chave revogada. Conferir a chave decifrando foi bloqueado pelo classificador (Credential Materialization) e não foi contornado.
+Tag: "HANDOFF-falow-20261021-222920-claude"
 
 ---
 

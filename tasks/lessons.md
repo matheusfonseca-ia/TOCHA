@@ -1,5 +1,10 @@
 # Lessons
 
+## 2026-10-21 · @property com rem e QA que mede em vez de olhar
+- Erro (meu, na base da sidebar): `@property --sidebar-w { initial-value: 15rem }`. O valor inicial tem que ser computacionalmente independente; com rem o Chrome descarta a regra inteira, a variável não fica registrada e a transição vira pulo. tsc, testes e build passam igual.
+- Regra: `@property` sempre com `initial-value` em px (ou outro valor absoluto). Animação no QA se confere medindo quadro a quadro (requestAnimationFrame + getBoundingClientRect), não por screenshot parado.
+- Regra: antes de buildar, conferir se outra sessão do Claude está rodando build/deploy no mesmo PC (handoff/memória). Dois builds juntos estouram a RAM e o Claude Code mata o de background.
+
 ## 2026-09-29 · Vercel não é do usuário
 - Erro: tratei o build da Vercel (disparado pelo push para o `tocha`) como entrega e pedi para aplicar migrations no Supabase dela. A Vercel é de um sócio do TOCHA; o usuário não usa.
 - Regra: produção do Falow = Cloudflare Worker + Supabase `falow`. Falha de build da Vercel não é pendência nem motivo para segurar push.

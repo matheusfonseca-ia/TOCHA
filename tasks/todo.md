@@ -1,6 +1,7 @@
 # Falow: sidebar recolhível, telas largas, Automação estilo n8n, IA com variações e OpenAI
 
-Planejado em 2026-10-21. Status: **em andamento**.
+Planejado em 2026-10-21. Status: **em produção em 21/10/2026** (Worker c0a57a7a, migrations
+0017 e 0018 aplicadas e conferidas no catálogo).
 
 ## Pedido
 1. Recolher a sidebar com animação fluida e bem feita.
@@ -40,8 +41,21 @@ layout, `md:left-60` em inbox-shell, funil e sequence-editor).
       volta), OpenAI 403 bloqueando chave restrita, guard da Vercel exigindo 0017, contagem das
       abas velha (`revalidatePath("/rules", "layout")`). Mantido de propósito: ordem padrão
       "Atualizado recentemente".
-- [ ] Integração: tsc, testes, build em 2 etapas, QA no Chrome (1280 e 1920 via iframe
+- [x] Integração: tsc, testes, build em 2 etapas, QA no Chrome (1280 e 1920 via iframe
       escalado), migrations no Supabase, commit, deploy.
+
+## Revisão (21/10/2026)
+- Entregue: b84169c (rodada) + 87e3d98 (ajustes do QA), deploy c0a57a7a. 684 testes, tsc ok.
+- QA logado: sidebar anima 240 → 64px em ~350ms com ícones parados, tooltip, bolinha 9+,
+  recarregar recolhida sem pulo, Conversas acompanha; /rules e /rules/sequencias em 1280 e
+  1920 sem corte (1920: ~40px de margem com sidebar aberta); Dashboard, Contas (seletor
+  OpenRouter | OpenAI), Contatos, Logs e builder com variações no portão.
+- Bugs pegos no QA e corrigidos: `@property` com `initial-value: 15rem` era descartado pelo
+  navegador (largura pulava); rolagem vertical fantasma nas abas; faixa vazia no gráfico do
+  Dashboard; builder com ~285px vazios à direita em 1920.
+- Não testado de ponta a ponta: geração com IA (a chave OpenRouter salva respondeu 401;
+  o código monta a requisição igual antes, provável chave revogada). Usuário recadastra em
+  Contas e testa a seleção múltipla no portão.
 
 ---
 
