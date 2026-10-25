@@ -21,7 +21,8 @@ Planejado em 2026-10-24. Origem: `/code-review` sobre `f66770c..HEAD` (15 achado
       revalida o layout; contagens das abas só onde as abas aparecem; gráfico do Dashboard
       sem loop de altura; plural via `countLabel`.
 - [x] Principal: tsc, testes, build em 2 etapas, deploy.
-- [ ] Aplicar a 0019 em produção e conferir (extensão do Chrome desconectada nesta sessão).
+- [x] Aplicar a 0019 em produção e conferir: aplicada pelo usuário no SQL Editor em 24/10;
+      conferido pela API (linha com provider null, coluna fora de `required`, sem default).
 - [ ] QA visual no navegador: diálogo da IA ("Usar como principal"), lista por prioridade,
       gráfico do Dashboard em 1280 e 1920.
 

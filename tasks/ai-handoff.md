@@ -1,9 +1,24 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20261024-220002-claude"
-Status: bloqueado
-Resumo: correções do code review em produção (commit 29950e6, Worker c6f30cb0). Falta aplicar a migration 0019 no SQL Editor (extensão do Chrome desconectada) e o QA visual; push para o tocha.
+Última tag: "HANDOFF-falow-20261024-220916-claude"
+Status: em andamento
+Resumo: correções do code review em produção (commit 29950e6, Worker c6f30cb0) e migration 0019 aplicada e conferida. Falta QA visual logado e push para o tocha.
+
+---
+
+## [HANDOFF · falow · 2026-10-24T22:09:16-03:00 · claude]
+Status: em andamento
+Objetivo: fechar as correções do code review.
+Feito:
+- Usuário aplicou a 0019 no SQL Editor. Conferido pelo PostgREST: a única linha de user_ai_settings está com provider null; no OpenAPI a coluna saiu de `required`, sem default, comentário novo.
+Próximo passo:
+- Usuário: abrir Contas e ver de qual provedor o card diz que é a chave; testar "Escrever com IA" ("Usar como principal" e seleção múltipla).
+- QA visual (extensão do Chrome não conectou; Playwright preso no perfil do projeto upwork): lista de automações por prioridade, gráfico do Dashboard em 1280 e 1920.
+- Push: `! git -C "D:/Projetos-vibeocding/eu/falow-instalacaonamaquina" push tocha main:main`.
+Arquivos tocados: tasks/todo.md, tasks/ai-handoff.md.
+Decisões/contexto: nenhuma nova.
+Tag: "HANDOFF-falow-20261024-220916-claude"
 
 ---
 
