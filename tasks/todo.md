@@ -1,3 +1,43 @@
+# Falow: correções do code review da rodada de UI e IA
+
+Planejado em 2026-10-24. Origem: `/code-review` sobre `f66770c..HEAD` (15 achados).
+
+## Conferido antes
+- 0018 já aplicada em produção (`provider text not null default 'openrouter'`).
+- 1 linha em `user_ai_settings`, `provider = openrouter`, salva em 21/10 19:55 (antes da 0018).
+  Se for chave da OpenAI, é o bug do achado 1 e explica o 401.
+- Correção de dados sem decifrar chave: migration 0019 deixa a coluna nullable sem default e
+  zera `provider` onde é `openrouter`. `inferProviderFromKey` resolve pelo prefixo (`sk-or-` é
+  OpenRouter, outra `sk-` é OpenAI), então chave OpenRouter de verdade continua igual.
+
+## Plano (3 agentes Sonnet em paralelo, arquivos separados)
+- [x] Agente IA: 0019 + providerOf, modelo herdado por provedor (resolve-config), mensagens
+      404/400/5xx (provider.ts), leitura sem query que falha (server.ts), código morto,
+      copy de UI saindo de `lib/ai/providers.ts` pro módulo `ai-settings`.
+- [x] Agente Variações: diálogo da IA volta a permitir substituir o texto principal e ignora
+      resposta atrasada; limite de extras = total - 1; `isMissingFollowGateColumn` sem regex
+      frouxo nem ordem frágil no saveRule; um só MAX_VARIANTS.
+- [x] Agente Automação: ordenação por prioridade (ordem do engine) na lista; saveSequence
+      revalida o layout; contagens das abas só onde as abas aparecem; gráfico do Dashboard
+      sem loop de altura; plural via `countLabel`.
+- [x] Principal: tsc, testes, build em 2 etapas, deploy.
+- [ ] Aplicar a 0019 em produção e conferir (extensão do Chrome desconectada nesta sessão).
+- [ ] QA visual no navegador: diálogo da IA ("Usar como principal"), lista por prioridade,
+      gráfico do Dashboard em 1280 e 1920.
+
+## Revisão
+- Commit 29950e6, Worker c6f30cb0 em falow.methodgrowthhub.com.br. 54 arquivos de teste,
+  694 testes passando; tsc limpo (só tipos velhos do `.next/` antes do build); projeto não
+  tem script de lint.
+- Ajustes do principal sobre os agentes: palavra inteira movida pro `isMissingColumn` (vale
+  pra todos os chamadores); `MAX_REPLY_VARIANTS` do builder de comentário = MAX_VARIANTS - 1
+  (mesmo bug dos 11 textos, fora do escopo do agente); reformatação do Prettier no gráfico
+  desfeita; `.slice` em automation-row trocado por `pluralWord`.
+- Contagens das abas: rotas com abas foram para o grupo `src/app/(dashboard)/rules/(com-abas)/`
+  (URLs iguais, conferidas no build); editor de workflow fica fora e não paga as contagens.
+- Sem a 0019, a única linha de `user_ai_settings` segue como 'openrouter' (se for chave da
+  OpenAI, continua dando 401 até aplicar).
+
 # Falow: sidebar recolhível, telas largas, Automação estilo n8n, IA com variações e OpenAI
 
 Planejado em 2026-10-21. Status: **em produção em 21/10/2026** (Worker c0a57a7a, migrations

@@ -1,9 +1,39 @@
 # AI Handoff · falow
 
 ## Estado atual
-Última tag: "HANDOFF-falow-20261021-222920-claude"
-Status: concluído
-Resumo: rodada de UI + IA em produção (Worker c0a57a7a = 87e3d98, inclui o logo novo). Migrations 0017 e 0018 aplicadas e conferidas. QA logado feito em 1280 e 1920. Falta: usuário recadastrar a chave da OpenRouter (a salva deu 401) e testar a seleção múltipla da IA no portão; push para o tocha.
+Última tag: "HANDOFF-falow-20261024-220002-claude"
+Status: bloqueado
+Resumo: correções do code review em produção (commit 29950e6, Worker c6f30cb0). Falta aplicar a migration 0019 no SQL Editor (extensão do Chrome desconectada) e o QA visual; push para o tocha.
+
+---
+
+## [HANDOFF · falow · 2026-10-24T22:00:01-03:00 · claude]
+Status: bloqueado
+Objetivo: corrigir os 15 achados do /code-review da rodada de UI e IA.
+Feito:
+- 3 agentes Sonnet (IA, Variações, Automação) + ajustes do principal; commit 29950e6.
+- tsc limpo, 694 testes passando, build em 2 etapas, deploy: Worker c6f30cb0. Smoke: /, /login, /privacidade 200; /rules, /rules/sequencias, /dashboard 307 pro login.
+Próximo passo:
+- Aplicar supabase/migrations/0019_ai_provider_nullable.sql no SQL Editor (fluxo do reference-falow-deploy-low-ram) e conferir: `provider` nullable sem default, linha existente com provider null.
+- QA logado: diálogo da IA ("Usar como principal"), lista de automações por prioridade, gráfico do Dashboard em 1280 e 1920.
+- Push: `! git -C "D:/Projetos-vibeocding/eu/falow-instalacaonamaquina" push tocha main:main`.
+Arquivos tocados: ver `git show --stat 29950e6`; tasks/todo.md, tasks/ai-handoff.md.
+Decisões/contexto: rotas com abas foram para o grupo `rules/(com-abas)/` (URLs iguais). Limite de variações = 10 no total (principal + 9 extras) em portão e comentário, constante MAX_VARIANTS em src/lib/rules/variants.ts. Sem DATABASE_URL nem login da CLI do Supabase, DDL só pelo SQL Editor.
+Tag: "HANDOFF-falow-20261024-220002-claude"
+
+---
+
+## [HANDOFF · falow · 2026-10-24T21:36:36-03:00 · claude]
+Status: em andamento
+Objetivo: corrigir os 15 achados do /code-review da rodada de UI e IA.
+Feito:
+- Conferido em produção: 0018 aplicada; 1 linha em user_ai_settings com provider=openrouter, salva em 21/10 19:55 (antes da 0018).
+- Plano em tasks/todo.md; 3 agentes disparados com escopos de arquivo separados.
+Próximo passo:
+- Revisar o retorno dos agentes, rodar tsc, lint e vitest, build em 2 etapas, deploy, aplicar a 0019 no SQL Editor, conferir em produção.
+Arquivos tocados: tasks/todo.md, tasks/ai-handoff.md (agentes: ver git status).
+Decisões/contexto: 0019 deixa provider nullable sem default e zera onde é 'openrouter'; null cai no prefixo da chave, então não precisa decifrar a chave.
+Tag: "HANDOFF-falow-20261024-213637-claude"
 
 ---
 
