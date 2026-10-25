@@ -27,8 +27,13 @@ export function isAccessStatus(status: string | null | undefined): boolean {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Dono + `FALOW_ADMIN_USER_IDS` (UUIDs separados por vírgula). Lido a cada chamada. */
+let cachedAdminConfig: string | undefined;
+let cachedAdminIds = new Set<string>();
+
+/** Revalida a configuração quando muda; avisa sobre itens inválidos uma vez por configuração/processo. */
 export function adminIds(): Set<string> {
+  const config = JSON.stringify([process.env.FALOW_OWNER_USER_ID, process.env.FALOW_ADMIN_USER_IDS]);
+  if (config === cachedAdminConfig) return new Set(cachedAdminIds);
   const ids = new Set<string>();
   const owner = process.env.FALOW_OWNER_USER_ID?.trim();
   if (owner) ids.add(owner);
@@ -41,7 +46,9 @@ export function adminIds(): Set<string> {
     }
     ids.add(id.toLowerCase());
   }
-  return ids;
+  cachedAdminConfig = config;
+  cachedAdminIds = ids;
+  return new Set(ids);
 }
 
 /** Admin = dono ou UUID listado. A lista vive só nos secrets do servidor. */

@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { hasActiveAccess } from "@/lib/billing/access";
 import { getOAuthDialogUrl } from "@/lib/meta/oauth";
 import { createClient } from "@/lib/supabase/server";
 
@@ -16,6 +17,10 @@ export async function GET() {
 
   if (!user) {
     return NextResponse.redirect(new URL("/login", appUrl));
+  }
+
+  if (!(await hasActiveAccess(supabase, user.id))) {
+    return NextResponse.redirect(new URL("/assinatura", appUrl));
   }
 
   const state = randomUUID();

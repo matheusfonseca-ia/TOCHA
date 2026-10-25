@@ -155,6 +155,18 @@ ${A2}
     expect(isAdmin(A1)).toBe(false);
     expect(isAdmin(null)).toBe(false);
   });
+  it("avisa uma vez sobre UUID inválido e relê a lista quando a variável muda", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubEnv("FALOW_ADMIN_USER_IDS", `invalido-uma-vez,${A1}`);
+    for (let i = 0; i < 5; i++) {
+      expect(isAdmin(A1)).toBe(true);
+      expect(isAdmin(A2)).toBe(false);
+    }
+    expect(spy).toHaveBeenCalledTimes(1);
+    vi.stubEnv("FALOW_ADMIN_USER_IDS", A2);
+    expect(isAdmin(A1)).toBe(false);
+    expect(isAdmin(A2)).toBe(true);
+  });
 });
 
 describe("hasActiveAccess com access_grants", () => {

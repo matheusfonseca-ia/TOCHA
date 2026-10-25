@@ -23,11 +23,37 @@ export type CustomerRow = {
   grant: { kind: "courtesy" | "block"; expiresAt: string | null; reason: string } | null;
 };
 
-const PER_PAGE = 200;
 const BATCH = 200;
-const DEFAULT_MAX_PAGES = 10;
+const CUSTOMER_PAGE_SIZE = 50;
+
+export type CustomerPage = { customers: CustomerRow[]; page: number; totalPages: number; total: number };
 
 type AuthUser = { id: string; email?: string | null; created_at: string; last_sign_in_at?: string | null };
+
+/** O SDK só expõe page/perPage; o endpoint do Auth também aceita filter/sort.
+ * https://github.com/supabase/auth/blob/master/internal/api/admin.go
+ * Executado exclusivamente no servidor, depois de requireAdmin(). */
+async function authPage(page: number, search: string): Promise<{ users: AuthUser[]; total: number }> {
+  const url = new URL("/auth/v1/admin/users", process.env.NEXT_PUBLIC_SUPABASE_URL);
+  url.searchParams.set("page", String(page));
+  url.searchParams.set("per_page", String(CUSTOMER_PAGE_SIZE));
+  url.searchParams.set("sort", "created_at desc");
+  if (search) url.searchParams.set("filter", search);
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+  const response = await fetch(url, {
+    headers: { apikey: key, Authorization: `Bearer ${key}` },
+    cache: "no-store",
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new Error(`listUsers: HTTP ${response.status}`);
+  const count = response.headers.get("x-total-count");
+  const total = Number(count);
+  const data = await response.json();
+  if (count === null || !Number.isSafeInteger(total) || total < 0 || !Array.isArray(data.users)) {
+    throw new Error("listUsers: resposta de paginação inválida");
+  }
+  return { users: data.users as AuthUser[], total };
+}
 
 /** `select ... in (ids)` em lotes, para não estourar o tamanho da URL. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -45,30 +71,16 @@ async function selectIn<T>(admin: AdminClient, table: string, columns: string, i
 
 export async function listCustomers(
   admin: AdminClient,
-  opts: { search?: string; maxPages?: number } = {}
-): Promise<{ customers: CustomerRow[]; truncated: boolean }> {
-  const maxPages = opts.maxPages ?? DEFAULT_MAX_PAGES;
-  const users: AuthUser[] = [];
-  let truncated = false;
-
-  for (let page = 1; ; page++) {
-    const { data, error } = await admin.auth.admin.listUsers({ page, perPage: PER_PAGE });
-    if (error) throw new Error(`listUsers: ${error.message}`);
-    const batch = (data?.users ?? []) as AuthUser[];
-    users.push(...batch);
-    const hasMore = batch.length > 0 && (data as { nextPage?: number | null }).nextPage != null;
-    if (!hasMore) break;
-    if (page >= maxPages) {
-      truncated = true;
-      console.warn(`[admin] lista de clientes cortada em ${maxPages} páginas (${users.length} usuários).`);
-      break;
-    }
-  }
-
-  const search = opts.search?.trim().toLowerCase();
-  const filtered = search ? users.filter((u) => (u.email ?? "").toLowerCase().includes(search)) : users;
-  const ids = filtered.map((u) => u.id);
-  if (ids.length === 0) return { customers: [], truncated };
+  opts: { search?: string; page?: number } = {}
+): Promise<CustomerPage> {
+  const search = opts.search?.trim().toLowerCase() ?? "";
+  const requestedPage = Number.isSafeInteger(opts.page) && opts.page! > 0 ? opts.page! : 1;
+  let { users: selected, total } = await authPage(requestedPage, search);
+  const totalPages = Math.max(1, Math.ceil(total / CUSTOMER_PAGE_SIZE));
+  const page = Math.min(requestedPage, totalPages);
+  if (page !== requestedPage) ({ users: selected } = await authPage(page, search));
+  const ids = selected.map((u) => u.id);
+  if (ids.length === 0) return { customers: [], page, totalPages, total };
 
   const [subs, accounts, grants] = await Promise.all([
     selectIn<{ user_id: string; status: string; current_period_end: string | null; purge_after: string | null }>(
@@ -92,7 +104,7 @@ export async function listCustomers(
   const igBy = new Map(accounts.map((a) => [a.user_id, a.ig_username]));
   const grantBy = new Map(grants.map((g) => [g.user_id, g]));
 
-  const customers: CustomerRow[] = filtered.map((u) => {
+  const customers: CustomerRow[] = selected.map((u) => {
     const sub = subBy.get(u.id);
     const grant = grantBy.get(u.id);
     return {
@@ -109,6 +121,5 @@ export async function listCustomers(
     };
   });
 
-  customers.sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0));
-  return { customers, truncated };
+  return { customers, page, totalPages, total };
 }

@@ -4,7 +4,7 @@ import type { AccessGrant, AdminAuditAction } from "@/types/database";
 /**
  * Cortesia e bloqueio. Chamado SÓ depois de requireAdmin(), com o client da
  * service role. Toda escrita grava a auditoria; se a auditoria falhar, a
- * mudança é revertida (nunca fica ação de admin sem registro).
+ * mudança é revertida. Se a reversão também falhar, informa o estado incerto.
  */
 
 export type GrantResult = { ok: true } | { ok: false; error: string };
@@ -21,14 +21,19 @@ export async function recordAudit(
   admin: QueryClient,
   entry: { adminId: string; action: AdminAuditAction; targetUserId: string | null; details?: Record<string, unknown> }
 ): Promise<boolean> {
-  const { error } = await admin.from("admin_audit_log").insert({
-    admin_id: entry.adminId,
-    action: entry.action,
-    target_user_id: entry.targetUserId,
-    details: entry.details ?? {},
-  });
-  if (error) console.error("[admin] falha ao gravar auditoria:", error.message);
-  return !error;
+  try {
+    const { error } = await admin.from("admin_audit_log").insert({
+      admin_id: entry.adminId,
+      action: entry.action,
+      target_user_id: entry.targetUserId,
+      details: entry.details ?? {},
+    });
+    if (error) console.error("[admin] falha ao gravar auditoria:", error.message);
+    return !error;
+  } catch (err) {
+    console.error("[admin] falha ao gravar auditoria:", err);
+    return false;
+  }
 }
 
 async function currentGrant(admin: QueryClient, userId: string): Promise<{ grant: AccessGrant | null; error: string | null }> {
@@ -37,9 +42,17 @@ async function currentGrant(admin: QueryClient, userId: string): Promise<{ grant
 }
 
 /** Volta access_grants do usuário ao estado anterior (linha antiga ou nenhuma). */
-async function restore(admin: QueryClient, userId: string, previous: AccessGrant | null): Promise<void> {
-  if (previous) await admin.from("access_grants").upsert(previous, { onConflict: "user_id" });
-  else await admin.from("access_grants").delete().eq("user_id", userId);
+async function restore(admin: QueryClient, userId: string, previous: AccessGrant | null): Promise<boolean> {
+  try {
+    const { error } = previous
+      ? await admin.from("access_grants").upsert(previous, { onConflict: "user_id" })
+      : await admin.from("access_grants").delete().eq("user_id", userId);
+    if (!error) return true;
+    console.error(`[admin] falha ao reverter access_grants de ${userId}:`, error.message);
+  } catch (err) {
+    console.error(`[admin] falha ao reverter access_grants de ${userId}:`, err);
+  }
+  return false;
 }
 
 async function writeWithAudit(
@@ -61,7 +74,8 @@ async function writeWithAudit(
 
   const audited = await recordAudit(admin, { ...audit, targetUserId });
   if (!audited) {
-    await restore(admin, targetUserId, previous);
+    const restored = await restore(admin, targetUserId, previous);
+    if (!restored) return { ok: false, error: "O registro da ação e a reversão falharam. A alteração pode continuar aplicada; confira o cliente antes de tentar novamente." };
     return { ok: false, error: "Não foi possível registrar a ação; nada foi alterado." };
   }
   return { ok: true };

@@ -74,4 +74,28 @@ describe("grants", () => {
     expect(r2.ok).toBe(false);
     expect(db.tables.access_grants).toEqual([expect.objectContaining({ user_id: "c2", kind: "courtesy" })]);
   });
+
+  it.each([false, true])("avisa estado incerto se auditoria e reversão falham (linha anterior: %s)", async (existing) => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    if (existing) await grantCourtesy(admin(), { adminId: "user-1", targetUserId: "c1", expiresAt: in30, reason: "x", now: NOW });
+    const real = db.client;
+    let writes = 0;
+    const failing = {
+      from: (t: string) => {
+        if (t === "admin_audit_log") return { insert: async () => ({ error: { message: "audit down" } }) };
+        const q = real.from(t as never);
+        const upsert = q.upsert.bind(q);
+        q.upsert = (...args: Parameters<typeof q.upsert>) => {
+          if (++writes > 1) return Promise.resolve({ error: { message: "restore down" } }) as never;
+          return upsert(...args);
+        };
+        q.delete = () => ({ eq: async () => ({ error: { message: "restore down" } }) }) as never;
+        return q;
+      },
+    };
+    const result = await blockUser(failing as never, { adminId: "user-1", targetUserId: "c1", reason: "abuso" });
+    expect(result).toEqual({ ok: false, error: expect.stringContaining("A alteração pode continuar aplicada") });
+    expect(db.tables.access_grants[0].kind).toBe("block");
+    expect(log).toHaveBeenCalledWith(expect.stringContaining("falha ao reverter"), "restore down");
+  });
 });

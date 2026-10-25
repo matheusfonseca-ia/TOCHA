@@ -34,6 +34,7 @@ function describeDetails(details: Record<string, unknown>): string {
   if (details.mode === "invite") parts.push("convite");
   if (details.mode === "recovery") parts.push("recuperação de senha");
   if (typeof details.email === "string") parts.push(details.email);
+  if (details.status === "requested") parts.push("solicitação registrada; conclusão pendente");
   if (details.invited === true) parts.push("conta nova");
   if (details.invited === false) parts.push("conta existente");
   return parts.join(" · ") || "-";

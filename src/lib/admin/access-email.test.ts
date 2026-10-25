@@ -45,6 +45,15 @@ describe("resendAccessEmail", () => {
     expect(db.tables.admin_audit_log).toEqual([expect.objectContaining({ action: "invite_resend", details: { mode: "recovery" } })]);
   });
 
+  it.each(["email_confirmed_at", "confirmed_at"])("conta com %s confirmado e sem login recebe recuperação", async (field) => {
+    const response = user(null);
+    auth.admin.getUserById.mockResolvedValueOnce({ ...response, data: { user: { ...response.data.user, [field]: "2026-10-01T00:00:00Z" } } });
+    expect(await resendAccessEmail(admin(), { adminId: "user-1", targetUserId: "c1" })).toEqual({ ok: true });
+    expect(auth.admin.inviteUserByEmail).not.toHaveBeenCalled();
+    expect(auth.resetPasswordForEmail).toHaveBeenCalledWith("ana@cliente.com", { redirectTo: "https://falow.app.br/definir-senha" });
+    expect(db.tables.admin_audit_log[0].details).toEqual({ mode: "recovery" });
+  });
+
   it("alvo admin é recusado sem tocar no Auth nem no banco", async () => {
     const r = await resendAccessEmail(admin(), { adminId: "user-1", targetUserId: "user-1" });
     expect(r).toEqual({ ok: false, error: ADMIN_TARGET_ERROR });

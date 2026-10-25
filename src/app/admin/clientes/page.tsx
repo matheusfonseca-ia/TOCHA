@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { CustomerActions } from "@/components/admin/customer-actions";
 import { InviteCourtesyForm } from "@/components/admin/invite-courtesy-form";
 import { PageHeader } from "@/components/layout/page-header";
@@ -6,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { listCustomers, type CustomerRow } from "@/lib/admin/customers";
+import { listCustomers, type CustomerPage, type CustomerRow } from "@/lib/admin/customers";
 import { requireAdmin } from "@/lib/admin/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -51,13 +53,14 @@ function GrantCell({ grant }: { grant: CustomerRow["grant"] }) {
   );
 }
 
-export default async function AdminCustomersPage({ searchParams }: { searchParams: { q?: string } }) {
+export default async function AdminCustomersPage({ searchParams }: { searchParams: { q?: string; page?: string } }) {
   await requireAdmin();
   const search = (searchParams.q ?? "").trim();
 
-  let result: { customers: CustomerRow[]; truncated: boolean } | null = null;
+  const pageLink = (page: number) => `/admin/clientes?${new URLSearchParams({ ...(search ? { q: search } : {}), page: String(page) })}`;
+  let result: CustomerPage | null = null;
   try {
-    result = await listCustomers(createAdminClient(), { search: search || undefined });
+    result = await listCustomers(createAdminClient(), { search: search || undefined, page: Number(searchParams.page ?? 1) });
   } catch (err) {
     console.error("[admin] falha ao listar clientes:", err instanceof Error ? err.message : err);
   }
@@ -79,11 +82,6 @@ export default async function AdminCustomersPage({ searchParams }: { searchParam
         <p className="text-sm text-muted-foreground">Não foi possível carregar os clientes agora. Tente de novo em instantes.</p>
       ) : (
         <>
-          {result.truncated && (
-            <p className="mb-3 text-sm text-amber-700 dark:text-amber-300">
-              A lista foi cortada (muitos usuários). Use a busca por e-mail para achar um cliente específico.
-            </p>
-          )}
           {result.customers.length === 0 ? (
             <p className="text-sm text-muted-foreground">Nenhum cliente encontrado.</p>
           ) : (
@@ -140,6 +138,15 @@ export default async function AdminCustomersPage({ searchParams }: { searchParam
               </Table>
             </Card>
           )}
+          <nav aria-label="Paginação de clientes" className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">
+              {result.total} cliente(s) · Página {result.page} de {result.totalPages}
+            </p>
+            <div className="flex gap-2">
+              {result.page > 1 && <Button asChild variant="outline" size="sm"><Link href={pageLink(result.page - 1)}>Anterior</Link></Button>}
+              {result.page < result.totalPages && <Button asChild variant="outline" size="sm"><Link href={pageLink(result.page + 1)}>Próxima</Link></Button>}
+            </div>
+          </nav>
         </>
       )}
     </>

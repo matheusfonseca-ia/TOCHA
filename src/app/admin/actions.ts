@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { resendAccessEmail } from "@/lib/admin/access-email";
-import { ADMIN_TARGET_ERROR, blockUser, grantCourtesy, recordAudit, revokeCourtesy, unblockUser, type GrantResult } from "@/lib/admin/grants";
+import { ADMIN_TARGET_ERROR, blockUser, grantCourtesy, revokeCourtesy, unblockUser, type GrantResult } from "@/lib/admin/grants";
 import { AdminRequiredError, requireAdmin } from "@/lib/admin/require-admin";
 import { findUserIdByEmail, inviteUser } from "@/lib/auth/invite";
 import { isAdmin } from "@/lib/billing/access";
@@ -91,9 +91,20 @@ export async function inviteWithCourtesyAction(formData: FormData): Promise<Gran
     // Reaproveita a conta se o e-mail já existe; senão convida (mesmo e-mail da compra).
     let targetUserId: string;
     let invited = false;
+    let auditId: number | undefined;
     try {
       const existing = await findUserIdByEmail(admin, email);
       if (existing && isAdmin(existing)) return { ok: false, error: ADMIN_TARGET_ERROR };
+      // Registra a intenção ANTES de criar a conta/enviar o e-mail. Mesmo se o
+      // Auth ou a cortesia falhar, o pedido e o e-mail ficam rastreáveis.
+      const { data: audit, error: auditError } = await admin.from("admin_audit_log").insert({
+        admin_id: adminId,
+        action: "courtesy_invite",
+        target_user_id: existing,
+        details: { email, status: "requested" },
+      }).select("id").single();
+      if (auditError || !audit) return { ok: false, error: "Não foi possível registrar o convite; nenhuma conta foi criada." };
+      auditId = audit.id;
       if (existing) {
         targetUserId = existing;
       } else {
@@ -105,12 +116,21 @@ export async function inviteWithCourtesyAction(formData: FormData): Promise<Gran
       return { ok: false, error: "Não foi possível convidar este e-mail. Tente de novo." };
     }
 
+    // Completa o registro antes da cortesia, que pode ser recusada ou falhar.
+    const { error: auditError } = await admin.from("admin_audit_log").update({
+      target_user_id: targetUserId,
+      details: { email, invited, status: invited ? "created" : "existing" },
+    }).eq("id", auditId!);
+    if (auditError) {
+      console.error("[admin] falha ao completar auditoria do convite:", auditError.message);
+      return { ok: false, error: invited
+        ? "Conta criada e convite enviado, mas a conclusão do registro falhou. O pedido está registrado e a cortesia não foi aplicada."
+        : "O pedido foi registrado, mas não foi possível completar o registro. A cortesia não foi aplicada." };
+    }
+
     const granted = await grantCourtesy(admin, { adminId, targetUserId, expiresAt, reason: parsed.data.reason });
     if (!granted.ok) return invited ? { ok: false, error: `Convite enviado, mas a cortesia falhou: ${granted.error}` } : granted;
 
-    // A cortesia já tem o próprio registro (courtesy_grant); este marca o convite.
-    const audited = await recordAudit(admin, { adminId, action: "courtesy_invite", targetUserId, details: { email, invited } });
-    if (!audited) return { ok: false, error: "Cortesia gravada, mas o registro do convite falhou." };
     return { ok: true };
   });
 }

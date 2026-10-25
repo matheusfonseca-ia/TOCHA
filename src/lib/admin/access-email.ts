@@ -6,8 +6,8 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 
 /**
  * "Reenviar acesso" do painel /admin. Chamado SÓ depois de requireAdmin().
- * Quem nunca entrou recebe de novo o convite (template "Invite user"); quem já
- * entrou recebe o link de recuperação de senha. Os dois caem em /definir-senha.
+ * Contas ainda não confirmadas recebem o convite (template "Invite user");
+ * contas confirmadas recebem recuperação, mesmo sem login anterior.
  */
 export async function resendAccessEmail(
   admin: AdminClient,
@@ -21,7 +21,7 @@ export async function resendAccessEmail(
   if (!user.email) return { ok: false, error: "Este cliente não tem e-mail cadastrado." };
 
   const redirectTo = `${process.env.NEXT_PUBLIC_APP_URL}/definir-senha`;
-  const mode: "invite" | "recovery" = user.last_sign_in_at ? "recovery" : "invite";
+  const mode: "invite" | "recovery" = user.email_confirmed_at || user.confirmed_at || user.last_sign_in_at ? "recovery" : "invite";
   const sent =
     mode === "invite"
       ? await admin.auth.admin.inviteUserByEmail(user.email, { redirectTo })

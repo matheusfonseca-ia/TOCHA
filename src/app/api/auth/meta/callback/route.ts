@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { encryptToken } from "@/lib/crypto";
-import { isAdmin } from "@/lib/billing/access";
+import { hasActiveAccess, isAdmin } from "@/lib/billing/access";
 import { connectBlockReason } from "@/lib/meta/connect-guard";
 import { subscribeAccountToWebhooks } from "@/lib/meta/graph";
 import {
@@ -52,6 +52,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Confere de novo: o cliente pode ter sido bloqueado durante a autorização.
+    if (!(await hasActiveAccess(supabase, user.id))) {
+      return NextResponse.redirect(new URL("/assinatura", process.env.NEXT_PUBLIC_APP_URL));
+    }
     // code → token curto → token longo (~60 dias) → perfil da conta
     const { token: shortToken } = await exchangeCodeForToken(code);
     const { token: longToken, expiresIn } = await getLongLivedToken(shortToken);
@@ -66,11 +70,12 @@ export async function GET(request: NextRequest) {
 
     // O RLS só mostra as contas do próprio usuário; o @ de outro login só
     // aparece pela service role.
-    const { data: activeAccounts } = await admin
+    const { data: activeAccounts, error: accountsError } = await admin
       .from("ig_accounts")
       .select("user_id, ig_user_id")
       .eq("status", "active")
       .or(`ig_user_id.eq.${profile.igUserId},user_id.eq.${user.id}`);
+    if (accountsError) throw new Error(`ig_accounts: ${accountsError.message}`);
     const blocked = connectBlockReason({
       userId: user.id,
       igUserId: profile.igUserId,
