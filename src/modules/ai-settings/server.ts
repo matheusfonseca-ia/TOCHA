@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { decryptToken } from "@/lib/crypto";
 import { isMissingTable } from "@/lib/db/missing";
 import { aiConfigFromEnv, type AiConfig } from "@/lib/ai/provider";
+import { isAdmin } from "@/lib/billing/access";
 import { inferProviderFromKey, isAiProviderId, type AiProviderId } from "@/lib/ai/providers";
 import { createClient } from "@/lib/supabase/server";
 
@@ -33,9 +34,9 @@ function providerOf(row: UserRow, apiKey: string): AiProviderId {
 
 async function readUserRow(
   supabase: SupabaseClient
-): Promise<{ row: UserRow | null; migrationMissing: boolean; authenticated: boolean }> {
+): Promise<{ row: UserRow | null; migrationMissing: boolean; userId: string | null }> {
   const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) return { row: null, migrationMissing: false, authenticated: false };
+  if (!auth.user) return { row: null, migrationMissing: false, userId: null };
 
   // `*` numa query só: sem a migration 0018 (ou com `provider` nulo, 0019) o
   // campo vem ausente/nulo e `providerOf` deduz pelo prefixo da chave. Evita
@@ -48,9 +49,17 @@ async function readUserRow(
     .maybeSingle();
 
   if (isMissingTable(error, AI_SETTINGS_TABLE)) {
-    return { row: null, migrationMissing: true, authenticated: true };
+    return { row: null, migrationMissing: true, userId: auth.user.id };
   }
-  return { row: (data as UserRow | null) ?? null, migrationMissing: false, authenticated: true };
+  return { row: (data as UserRow | null) ?? null, migrationMissing: false, userId: auth.user.id };
+}
+
+/**
+ * Chave padrão da instalação, só para o dono e os admins. O custo dela é do
+ * dono: cliente usa a própria chave (tela Contas) ou fica sem o botão.
+ */
+function installationConfigFor(userId: string): AiConfig | null {
+  return isAdmin(userId) ? aiConfigFromEnv() : null;
 }
 
 /** Decifra; chave que não abre (TOKEN_ENCRYPTION_KEY trocada) conta como ausente. */
@@ -62,23 +71,23 @@ function decryptOrNull(enc: string): string | null {
   }
 }
 
-/** Config que o botão ✨ usa agora: chave do usuário logado, senão a da instalação. */
+/** Config que o botão ✨ usa agora: chave do usuário logado, senão a da instalação (só dono e admins). */
 export async function getEffectiveAiConfig(): Promise<AiConfig | null> {
-  const { row, authenticated } = await readUserRow(createClient());
+  const { row, userId } = await readUserRow(createClient());
   // Sem sessão não há IA: senão qualquer um gastaria a chave da instalação.
-  if (!authenticated) return null;
+  if (!userId) return null;
   const apiKey = row ? decryptOrNull(row.api_key_enc) : null;
 
   return resolveAiConfig(
     apiKey ? { apiKey, model: row!.model, provider: providerOf(row!, apiKey) } : null,
-    aiConfigFromEnv()
+    installationConfigFor(userId)
   );
 }
 
 export async function getAiSettingsStatus(): Promise<AiSettingsStatus> {
-  const { row, migrationMissing } = await readUserRow(createClient());
+  const { row, migrationMissing, userId } = await readUserRow(createClient());
   const apiKey = row ? decryptOrNull(row.api_key_enc) : null;
-  const installation = aiConfigFromEnv();
+  const installation = userId ? installationConfigFor(userId) : null;
 
   return {
     hasUserKey: apiKey !== null,

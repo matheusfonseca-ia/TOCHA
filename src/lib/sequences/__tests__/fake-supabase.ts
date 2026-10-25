@@ -38,7 +38,11 @@ export type TableName =
   | "pipelines"
   | "pipeline_stages"
   | "leads"
-  | "lead_stage_events";
+  | "lead_stage_events"
+  | "subscriptions"
+  | "stripe_events"
+  | "access_grants"
+  | "admin_audit_log";
 
 export interface FakeError {
   message: string;
@@ -463,6 +467,10 @@ export class FakeSupabase {
     pipeline_stages: [],
     leads: [],
     lead_stage_events: [],
+    subscriptions: [],
+    stripe_events: [],
+    access_grants: [],
+    admin_audit_log: [],
   };
 
   from(table: TableName): FakeQueryBuilder {

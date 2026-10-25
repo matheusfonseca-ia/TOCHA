@@ -10,9 +10,12 @@ import { getEffectiveAiConfig } from "@/modules/ai-settings/server";
  * cliente manda só o campo, a instrução e o contexto, e recebe as sugestões
  * prontas.
  *
- * A chave é a do usuário logado (tela Contas, OpenRouter ou OpenAI), com a da
- * instalação (`OPENROUTER_API_KEY`, depois `OPENAI_API_KEY`) como padrão. Sem nenhuma, `isAiEnabled` devolve false e
- * a UI nem mostra o botão.
+ * A chave é a do usuário logado (tela Contas, OpenRouter ou OpenAI). A da
+ * instalação (`OPENROUTER_API_KEY`, depois `OPENAI_API_KEY`) só vale para o
+ * dono e os admins: o custo dela é do dono, então cliente sem chave própria
+ * fica sem o botão. Sem nenhuma chave, `isAiEnabled` devolve false e a UI nem
+ * mostra o botão. `generateForField` resolve a chave de novo porque uma
+ * server action pode ser chamada direto, sem passar pela UI.
  */
 
 export async function isAiEnabled(): Promise<boolean> {

@@ -1,70 +1,74 @@
 # ⚡ Falow
 
-**Seu robô de auto-resposta para DMs do Instagram — instalado por você, controlado por você.**
+**Auto-resposta para DMs e comentários do Instagram, como serviço por assinatura.**
 
-Você conecta sua conta do Instagram, cria regras do tipo *"se receber **preço** → responda com o link da tabela"* e o Falow responde sozinho, 24h por dia, com delay humanizado de 2–5s. Painel completo com métricas e logs de cada mensagem.
+O Falow roda hospedado em **https://falow.app.br**. A pessoa assina, conecta a conta profissional do Instagram, cria regras do tipo *"se receber **preço** → responda com o link da tabela"* e o Falow responde sozinho, 24h por dia, com delay humanizado de 2–5s. Painel com métricas e logs de cada mensagem.
 
-E quando uma resposta só não basta, as **Sequências** entram em cena: um canvas visual (estilo n8n/ManyChat) onde você conecta blocos — mensagens, botões, respostas rápidas, atrasos, esperas — e monta fluxos de conversa inteiros que rodam sozinhos na DM.
+Quando uma resposta só não basta, as **Sequências** entram: um canvas visual (estilo n8n/ManyChat) onde se conectam blocos de mensagens, botões, respostas rápidas, atrasos e esperas para montar fluxos de conversa inteiros.
 
-Cada instalação é **sua**: seu banco (Supabase, grátis), seu app Meta, sua hospedagem. Nenhum dado de quem fala com você passa por servidores de terceiros — e, por usar o **Login do Instagram** no seu próprio app Meta, funciona com a sua conta **sem App Review** e sem precisar de Página do Facebook.
+Este repositório é o código do serviço. Uma instalação só atende todos os clientes: mesmo código, mesmo Supabase, mesmo app Meta (aprovado no App Review). Os dados de cada conta ficam separados por regras de acesso (RLS) no banco.
 
-> A única exceção é opcional e fica desligada por padrão: se você preencher
-> `OPENROUTER_API_KEY` ou `OPENAI_API_KEY` (ou se cada usuário cadastrar a
-> própria chave da OpenRouter ou da OpenAI na tela Contas), os campos de texto do painel ganham um botão de escrever
-> com IA, e o que **você** digita nesse botão vai para o provedor escolhido.
-> Nenhuma mensagem de seguidor é enviada para a IA. Sem a chave, o botão nem
+> **Botão de escrever com IA (opcional).** Cada usuário pode cadastrar a
+> própria chave da OpenRouter ou da OpenAI na tela Contas; aí os campos de
+> texto do painel dele ganham um botão de escrever com IA, e o que ele digita
+> nesse botão vai para o provedor da chave dele. A chave da instalação
+> (`OPENROUTER_API_KEY` ou `OPENAI_API_KEY`) vale só para o dono e os admins.
+> Nenhuma mensagem de seguidor é enviada para a IA. Sem chave, o botão nem
 > aparece.
 
-> 📕 **Siga o guia ilustrado:** [docs/guia-configuracao-falow.pdf](docs/guia-configuracao-falow.pdf) — o passo a passo completo, com links e telas de onde tirar cada credencial.
+> **Sobre o guia antigo:** `docs/guia-configuracao-falow.pdf` e `docs/guia-configuracao.html` descrevem a época em que o Falow era instalado por cada usuário no próprio Supabase e no próprio app Meta. Ficam no repositório só como histórico e **não valem mais** para o serviço. O passo a passo atual de operação está em [docs/operacao-saas.md](docs/operacao-saas.md).
 
 ---
 
-## Instalação em 5 passos (resumo)
+## Como o serviço funciona
 
-| # | Passo | Onde |
-|---|---|---|
-| 1 | Criar projeto no **Supabase** e rodar os arquivos de `supabase/migrations/` na ordem numérica no SQL Editor | [supabase.com/dashboard](https://supabase.com/dashboard) |
-| 2 | Criar **app Meta** (tipo Business), adicionar o produto **Instagram** (Login do Instagram para empresas), configurar o webhook, cadastrar sua conta como testadora e colocar o app em modo **Live** | [developers.facebook.com/apps](https://developers.facebook.com/apps) |
-| 3 | Preencher as **variáveis de ambiente** (`.env.local` ou painel da Vercel) | veja tabela abaixo |
-| 4 | **Rodar** — local (`npm run dev` + ngrok) ou deploy na Vercel | — |
-| 5 | Criar sua conta no painel (o cadastro se tranca sozinho depois), conectar o Instagram e criar a primeira regra | — |
+| Assunto | Como é |
+|---|---|
+| **Assinatura** | Plano único, mensal, cobrado pela **Stripe**. O preço é definido no Stripe (o produto em `STRIPE_PRICE_ID`), nunca no código |
+| **Cadastro** | Não existe cadastro público. O cliente paga no checkout (botão "Assinar o Falow" na landing, que faz `POST /api/billing/checkout`) e o webhook da Stripe cria a conta e manda um **e-mail de convite** com o link para definir a senha |
+| **Limite** | 1 conta de Instagram por assinatura; um mesmo @ ativo pertence a um login só |
+| **Cancelamento** | O cliente cancela em **Minha assinatura** (portal da Stripe). Sem acesso, as automações param na hora |
+| **Exclusão** | 30 dias depois que a assinatura termina, o cron `/api/cron/purge` apaga o usuário e todos os dados (contatos, conversas, tokens, arquivos). Reativar dentro dos 30 dias restaura a conta |
+| **Dono** | A conta em `FALOW_OWNER_USER_ID` é um usuário comum marcado: sempre com acesso, sem limite de @, sem assinatura e nunca apagada. Usa a chave de IA da instalação (clientes usam a própria, cadastrada em Contas) |
 
-### Deploy com um clique (Vercel)
+**Painel `/admin`:** o dono e os UUIDs de `FALOW_ADMIN_USER_IDS` veem os clientes, dão cortesia, bloqueiam e reenviam acesso (sem ler conversas e sem mexer na Stripe); para os demais a rota dá 404. Detalhes e MFA em `docs/operacao-saas.md` (seção 11).
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FSEU-USUARIO%2Ffalow&project-name=falow&repository-name=falow&env=NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,SUPABASE_SERVICE_ROLE_KEY,INSTAGRAM_APP_ID,INSTAGRAM_APP_SECRET,META_APP_SECRET,META_VERIFY_TOKEN,META_GRAPH_VERSION,NEXT_PUBLIC_APP_URL,TOKEN_ENCRYPTION_KEY,CRON_SECRET&envDescription=Credenciais%20do%20Supabase%20e%20do%20app%20Meta%20—%20veja%20o%20guia%20em%20docs%2F)
+Status de assinatura que dão acesso: `active`, `trialing` e `past_due`. Qualquer outro (ou ausência de assinatura) não dá.
 
-O botão clona o repositório para a sua conta do GitHub e já pede as variáveis de ambiente na tela.
-*(Mantenedor: troque `SEU-USUARIO` pela URL real do repositório.)*
+## Deploy e operação
 
-Se o mesmo repositório for publicado na Vercel e na Cloudflare com projetos Supabase
-diferentes, aplique cada migração nos dois bancos antes de publicar o código que a
-usa. O build da Vercel verifica as colunas necessárias e para se o banco ainda
-estiver desatualizado. O `vercel.json` também mantém o cron diário das sequências
-na instalação da Vercel; a instalação da Cloudflare precisa de um agendador externo.
+O serviço roda como **Cloudflare Worker** (OpenNext), em `falow.app.br`. Não há mais Vercel.
+
+```bash
+npm run check:schema      # confere se o banco tem as colunas que o código usa
+npm run deploy:cloudflare # build do OpenNext + wrangler deploy
+```
+
+- `npm run check:schema` precisa de `NEXT_PUBLIC_SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY` no ambiente.
+- **Migrations antes do código.** Aplique no Supabase os arquivos novos de `supabase/migrations/` (na ordem numérica) antes de publicar o código que os usa. A `0022` só entra depois do deploy do código que a antecede; o roteiro está no runbook.
+- **Secrets** ficam no Worker (`wrangler secret put NOME`), nunca no repositório. As variáveis estão na tabela abaixo.
+- **Crons** vêm do [wrangler.toml](wrangler.toml), executados pelo `scheduled()` de [worker.ts](worker.ts): a cada minuto retoma as Sequências (`/api/cron/sequences`) e às 06:00 UTC roda a exclusão (`/api/cron/purge`). Ambos exigem `CRON_SECRET`.
+- Plano **Workers Paid** da Cloudflare (os limites do gratuito não comportam o app).
+- Webhooks: `https://falow.app.br/api/webhooks/meta` (Meta) e `https://falow.app.br/api/webhooks/stripe` (Stripe).
+- Configuração da Stripe, do app Meta, do e-mail (Resend como SMTP do Supabase Auth, remetente `nao-responda@falow.app.br`) e checagens do primeiro deploy: [docs/operacao-saas.md](docs/operacao-saas.md).
 
 ### Rodando localmente
 
 ```bash
-git clone https://github.com/SEU-USUARIO/falow.git
+git clone <url-do-repositorio> falow
 cd falow
-cp .env.example .env.local   # preencha os valores (passos 1 e 2 do guia)
+cp .env.example .env.local   # preencha os valores
 npm install
 npm run dev                  # http://localhost:3000
 ```
 
-Para o Meta alcançar seu computador em desenvolvimento, abra um túnel:
-
-```bash
-ngrok http 3000
-```
-
-e use a URL gerada em `NEXT_PUBLIC_APP_URL`, no OAuth Redirect URI e no webhook do painel Meta.
+Para o Meta e a Stripe alcançarem seu computador em desenvolvimento, abra um túnel (`ngrok http 3000`) e use a URL gerada em `NEXT_PUBLIC_APP_URL`, no OAuth Redirect URI e nos webhooks. Testes: `npm test` (nenhum fala com a rede; Stripe e Supabase são sempre mockados) e `npm run typecheck`.
 
 ## Variáveis de ambiente
 
 | Variável | O que é | Onde conseguir |
 |---|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | URL do seu projeto Supabase | Supabase → Settings → API |
+| `NEXT_PUBLIC_SUPABASE_URL` | URL do projeto Supabase | Supabase → Settings → API |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Chave pública do Supabase | Supabase → Settings → API |
 | `SUPABASE_SERVICE_ROLE_KEY` | Chave administrativa ⚠️ segredo | Supabase → Settings → API |
 | `INSTAGRAM_APP_ID` | Instagram App ID | App Meta → produto Instagram → Business login settings |
@@ -72,36 +76,38 @@ e use a URL gerada em `NEXT_PUBLIC_APP_URL`, no OAuth Redirect URI e no webhook 
 | `META_APP_SECRET` | Segredo geral do app (assina os webhooks) ⚠️ segredo | App Meta → Settings → Basic |
 | `META_VERIFY_TOKEN` | Senha do webhook (você inventa) | O mesmo valor nos dois lados |
 | `META_GRAPH_VERSION` | Versão da Graph API | `v25.0` |
-| `NEXT_PUBLIC_APP_URL` | URL pública da sua instalação | Domínio da Vercel ou ngrok |
+| `NEXT_PUBLIC_APP_URL` | URL pública do serviço | `https://falow.app.br` em produção; URL do ngrok em dev |
 | `TOKEN_ENCRYPTION_KEY` | Criptografa tokens no banco | `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
-| `CRON_SECRET` | Senha do tick das Sequências (você inventa) | Veja "Sequências" abaixo |
+| `CRON_SECRET` | Senha dos crons (`/api/cron/sequences` e `/api/cron/purge`) ⚠️ segredo | Você inventa; o `scheduled()` do Worker envia como `Authorization: Bearer` |
+| `STRIPE_SECRET_KEY` | Chave secreta da API da Stripe ⚠️ segredo | Stripe → Developers → API keys |
+| `STRIPE_WEBHOOK_SECRET` | Segredo de assinatura do webhook da Stripe ⚠️ segredo | Stripe → Developers → Webhooks → endpoint `/api/webhooks/stripe` → Signing secret |
+| `STRIPE_PRICE_ID` | Preço mensal do plano único | Stripe → Products → Falow → preço → API ID (`price_...`) |
+| `FALOW_OWNER_USER_ID` | UUID do usuário dono (sem assinatura, sem limite de @, com a chave de IA da instalação, nunca apagado) | Supabase → Authentication → Users |
+| `FALOW_ADMIN_USER_IDS` | UUIDs de admins além do dono, separados por vírgula (opcional). Dão acesso ao painel `/admin` | Supabase → Authentication → Users |
 | `NEXT_PUBLIC_CONTACT_EMAIL` | E-mail de contato das páginas públicas (opcional) | Veja "Páginas públicas" abaixo |
-| `OPENROUTER_API_KEY` | Chave padrão do botão de IA (opcional; cada usuário pode cadastrar a sua em Contas) ⚠️ segredo | [openrouter.ai/keys](https://openrouter.ai/keys) |
-| `OPENROUTER_MODEL` | Modelo usado por esse botão com a OpenRouter (opcional) | Padrão: `anthropic/claude-sonnet-4.5` |
-| `OPENAI_API_KEY` | Alternativa direta à OpenRouter para o botão de IA (opcional). Prioridade: chave do usuário, depois `OPENROUTER_API_KEY`, depois esta ⚠️ segredo | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
+| `OPENROUTER_API_KEY` | Chave padrão do botão de IA, **só para o dono e os admins** (opcional; cada usuário pode cadastrar a sua em Contas) ⚠️ segredo | [openrouter.ai/keys](https://openrouter.ai/keys) |
+| `OPENROUTER_MODEL` | Modelo usado por esse botão com a OpenRouter (opcional; também vale para a chave própria da OpenRouter sem modelo escolhido) | Padrão: `anthropic/claude-sonnet-4.5` |
+| `OPENAI_API_KEY` | Alternativa direta à OpenRouter para a chave padrão (opcional, só dono e admins). Prioridade: chave do usuário, depois `OPENROUTER_API_KEY`, depois esta ⚠️ segredo | [platform.openai.com/api-keys](https://platform.openai.com/api-keys) |
 | `OPENAI_MODEL` | Modelo usado por esse botão com a OpenAI (opcional) | Padrão: `gpt-6-luna` |
 
 ## Páginas públicas
 
-Quatro rotas abrem sem login — o [middleware](src/middleware.ts) libera todas:
+Quatro rotas abrem sem login (o [middleware](src/middleware.ts) libera todas) e são as páginas que a análise da Meta lê:
 
 | Rota | Para que serve |
 |---|---|
-| `/` | Landing: o que o produto faz, como funciona e quais permissões ele usa |
+| `/` | Landing: o que o produto faz, como funciona a assinatura (botão "Assinar o Falow") e quais permissões ele usa |
 | `/privacidade` | Política de Privacidade — campo **Privacy Policy URL** no painel da Meta |
 | `/exclusao-de-dados` | Passo a passo de exclusão — campo **User Data Deletion** |
 | `/termos-de-servico` | Termos de Serviço — campo **Terms of Service URL** |
 
 As três páginas legais compartilham cabeçalho, rodapé e componentes em
 [src/components/legal/](src/components/legal/), então data de vigência e contato
-nunca divergem entre elas. Com `NEXT_PUBLIC_CONTACT_EMAIL` preenchida, o e-mail
-aparece nas três; sem ela, elas orientam o contato por DM na própria conta.
-
-## 🔒 A instalação é sua e de mais ninguém
-
-Não existe variável de ambiente para travar o cadastro — o próprio sistema faz isso sozinho. Assim que a primeira conta é criada no painel (a sua), a aba "Criar conta" some da tela de login e o servidor passa a recusar qualquer novo cadastro, para sempre. Nenhum passo manual, nenhum redeploy.
-
-Implementação: [src/lib/config.ts](src/lib/config.ts) consulta o Supabase Auth a cada carregamento da tela de login — se já existe pelo menos um usuário, o cadastro fica bloqueado (inclusive no servidor, em [src/app/login/actions.ts](src/app/login/actions.ts), então não dá para contornar chamando a action diretamente).
+nunca divergem entre elas. `NEXT_PUBLIC_CONTACT_EMAIL` sobrescreve o e-mail de
+contato mostrado nas páginas; sem ela vale o padrão de
+[legal-chrome.tsx](src/components/legal/legal-chrome.tsx). O controlador dos dados
+continua sendo o que está na Política de Privacidade e nos Termos, e esse e-mail
+também recebe os pedidos de reembolso (arrependimento de 7 dias).
 
 ## Como funciona por dentro
 
@@ -125,7 +131,7 @@ DM chega → Meta dispara webhook → /api/webhooks/meta
 | Sem regra → não responde | Log `no_match`, nenhuma chamada à API |
 | Delay humanizado | 2–5s, configurável por regra |
 
-**Stack:** Next.js 14 (App Router) · TypeScript · Tailwind + shadcn/ui · Supabase (Auth + Postgres com RLS) · API do Instagram com Login do Instagram (graph.instagram.com) · React Flow (canvas das Sequências). Tokens são criptografados no banco (AES-256-GCM) e renovados automaticamente antes de expirar.
+**Stack:** Next.js 14 (App Router) · TypeScript · Tailwind + shadcn/ui · Supabase (Auth + Postgres com RLS) · API do Instagram com Login do Instagram (graph.instagram.com) · React Flow (canvas das Sequências). Pagamentos com Stripe (Checkout + portal do cliente). Hospedagem em Cloudflare Workers via OpenNext. Tokens são criptografados no banco (AES-256-GCM) e renovados automaticamente antes de expirar.
 
 ## Sequências (fluxos no canvas)
 
@@ -142,11 +148,7 @@ Em **Automação → Sequências** você desenha fluxos de conversa num canvas d
 
 Regras que o runtime respeita sozinho: janela de 24h da Meta (fluxo para com `window_expired` se fechar), delay humanizado + indicador "digitando…" antes de cada envio, cada saída entrega no máximo 1x (retries do Meta não duplicam), e quem está no meio de um fluxo não é "sequestrado" pelas regras de palavra-chave.
 
-**Atrasos longos (minutos/horas):** o fluxo é retomado pelo endpoint `/api/cron/sequences`, protegido por `CRON_SECRET`. Três formas de acioná-lo, da mais simples à mais precisa:
-
-1. **Automática** — a cada mensagem/comentário que chega, o Falow também retoma atrasos vencidos (tick oportunista). Para contas com movimento, resolve.
-2. **Cron da Vercel** — já configurado em `vercel.json` (1x/dia, limite do plano Hobby).
-3. **Agendador externo grátis** (recomendado p/ precisão de minutos) — crie um monitor no [cron-job.org](https://cron-job.org) chamando `https://SEU-APP.vercel.app/api/cron/sequences?secret=SEU_CRON_SECRET` a cada 1–5 minutos.
+**Atrasos longos (minutos/horas):** o fluxo é retomado pelo endpoint `/api/cron/sequences`, protegido por `CRON_SECRET`. Em produção quem chama é o cron de 1 minuto do [wrangler.toml](wrangler.toml), executado pelo `scheduled()` do Worker. Além disso, a cada mensagem ou comentário que chega o Falow também retoma atrasos vencidos (tick oportunista). Contas sem assinatura ativa são puladas pelo cron.
 
 ## Estrutura do código
 
@@ -156,7 +158,10 @@ src/
     (dashboard)/        # dashboard, rules, accounts, logs
     api/auth/meta/      # OAuth: início + callback
     api/webhooks/meta/  # verificação GET + eventos POST
-    api/cron/sequences/ # tick que retoma atrasos das sequências
+    api/cron/           # sequences (retoma atrasos) e purge (exclusão 30 dias após cancelar)
+    api/billing/        # checkout e portal da Stripe
+    api/webhooks/stripe/ # cria/atualiza assinaturas e convida o cliente por e-mail
+    assinatura/         # página "Minha assinatura" e agradecimento pós-checkout
     login/              # autenticação (Supabase)
   components/           # ui/ (shadcn), layout/, dashboard/, rules/, sequences/ ...
   lib/
@@ -164,16 +169,17 @@ src/
     rules/engine.ts     # matching normalizado + prioridade
     sequences/          # graph.ts (validação/travessia) + runtime.ts (executor)
     supabase/           # client com RLS + client admin (service role)
-    config.ts           # trava de cadastro automática (1ª conta bloqueia as demais)
+    billing/            # acesso por status da assinatura, Stripe, purge
     crypto.ts           # AES-256-GCM para tokens
-supabase/migrations/    # 0001_init.sql — schema completo + RLS (rodar uma vez no SQL Editor)
-docs/                   # 📕 guia de configuração em PDF
+supabase/migrations/    # schema completo + RLS, em ordem numérica
+worker.ts               # entrada do Worker: fetch do OpenNext + scheduled() dos crons
+wrangler.toml           # domínio falow.app.br e crons
+docs/                   # operação do SaaS, App Review da Meta e guia antigo (histórico)
 ```
 
 ## Problemas comuns
 
-O guia PDF tem uma página inteira de solução de problemas. Os três campeões:
-
-- **Webhook não verifica** → `META_VERIFY_TOKEN` diferente entre `.env` e painel Meta, ou túnel/deploy fora do ar;
-- **Conta não conecta** → Instagram não é Profissional (Comercial/Criador), ou a conta não aceitou o convite de testadora do app;
-- **DM não gera log** → campo `messages` não assinado no webhook, app Meta fora do modo **Live**, ou "Permitir acesso a mensagens" desativado no Instagram (Configurações → Mensagens → Ferramentas conectadas).
+- **Webhook da Meta não verifica** → `META_VERIFY_TOKEN` diferente entre o Worker e o painel Meta, ou URL do webhook ainda apontando para outro domínio;
+- **Conta não conecta** → Instagram não é Profissional (Comercial/Criador), o redirect do OAuth no app Meta não é o de `falow.app.br`, ou o login já tem uma conta ativa (limite de 1 @ por assinatura);
+- **DM não gera log** → campo `messages` não assinado no webhook, "Permitir acesso a mensagens" desativado no Instagram (Configurações → Mensagens → Ferramentas conectadas), ou a assinatura do cliente está sem acesso (a conta fica calada de propósito);
+- **Cliente pagou e não recebeu o convite** → confira o endpoint de webhook na Stripe (eventos entregues) e o SMTP do Supabase Auth. O passo a passo está em [docs/operacao-saas.md](docs/operacao-saas.md).

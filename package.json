@@ -5,11 +5,11 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:vercel": "node scripts/check-db-schema.mjs && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "check:schema": "node scripts/check-db-schema.mjs",
     "build:cloudflare": "opennextjs-cloudflare build",
-    "deploy:cloudflare": "wrangler deploy",
+    "deploy:cloudflare": "npm run build:cloudflare && wrangler deploy",
     "preview:cloudflare": "opennextjs-cloudflare preview",
     "test": "vitest run"
   },
@@ -41,6 +41,7 @@
     "react-dom": "^18.3.1",
     "recharts": "^2.13.3",
     "sonner": "^1.7.0",
+    "stripe": "^18.5.0",
     "tailwind-merge": "^2.5.4",
     "zod": "^3.23.8"
   },

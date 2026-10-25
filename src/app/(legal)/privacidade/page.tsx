@@ -42,15 +42,14 @@ export default function PrivacidadePage() {
             mensagem contiver X, responda Y&rdquo;.
           </p>
           <p>
-            Cada instalação do Falow é <Term>independente</Term>: quem administra
-            a conta de Instagram hospeda o próprio aplicativo, com o próprio
-            banco de dados e o próprio aplicativo na Meta. Não existe servidor
-            central do Falow que receba ou concentre dados de outras instalações.
-            Por isso, o responsável pelo tratamento dos dados descritos aqui (o
-            controlador, na linguagem da LGPD) é o administrador da conta de
-            Instagram atendida por esta automação.
+            O Falow é um serviço por assinatura, hospedado em{" "}
+            <Term>falow.app.br</Term>. Cada cliente conecta a própria conta de
+            Instagram, e os dados de cada conta ficam separados dos demais por
+            regras de acesso no banco de dados. O responsável pelo tratamento
+            dos dados descritos aqui (o controlador, na linguagem da LGPD) é
+            quem opera o serviço, identificado abaixo.
           </p>
-          <LegalCallout title="Controlador desta instalação">
+          <LegalCallout title="Controlador do serviço">
             <p>
               <Term>PATRICIA POLETINI FONSECA</Term>, inscrita no CNPJ sob o nº
               15.030.598/0001-39, estabelecida em Itatiba, Estado de São Paulo,
@@ -109,8 +108,8 @@ export default function PrivacidadePage() {
               Meta e guarda sua foto de perfil, nome, número de seguidores, se
               você segue a conta e se o perfil é verificado, para mostrar na
               ficha do lead do painel do administrador. Também é possível
-              importar o histórico de conversas anteriores à instalação do
-              painel de Conversas (a Meta libera só as últimas 20 mensagens por conversa).
+              importar o histórico de conversas anteriores à conexão da conta
+              ao Falow (a Meta libera só as últimas 20 mensagens por conversa).
             </li>
             <li>
               <Term>Comentários públicos:</Term> o texto do comentário, os
@@ -155,13 +154,22 @@ export default function PrivacidadePage() {
               (armazenada apenas como hash, nunca em texto puro) usados para
               entrar no painel.
             </li>
+            <li>
+              <Term>Dados da assinatura:</Term> o status da assinatura (ativa,
+              cancelada etc.), a data de fim do período pago, a data do
+              cancelamento, a data marcada para a exclusão dos dados e os
+              identificadores do cliente e da assinatura na Stripe. O
+              pagamento em si é processado pela Stripe: o Falow{" "}
+              <Term>não</Term> recebe nem armazena número de cartão ou outros
+              dados de pagamento.
+            </li>
           </LegalList>
           <p>
             Fora a consulta descrita acima, sobre quem pediu o conteúdo, o
             Falow <Term>não</Term> acessa sua lista de seguidores, seu feed,
             suas mensagens antigas, seus contatos, sua localização, seus dados de
             pagamento nem qualquer conversa que não tenha sido enviada para a
-            conta conectada depois da instalação.
+            conta conectada depois da conexão.
           </p>
         </LegalSection>
 
@@ -236,21 +244,36 @@ export default function PrivacidadePage() {
             </LegalLink>
             , com regras de acesso por linha (RLS) que impedem um administrador
             de enxergar dados de outro. A aplicação é hospedada pela{" "}
-            <LegalLink external href="https://vercel.com">
-              Vercel
+            <LegalLink external href="https://www.cloudflare.com">
+              Cloudflare
+            </LegalLink>
+            . A cobrança da assinatura é feita pela{" "}
+            <LegalLink external href="https://stripe.com/br">
+              Stripe
+            </LegalLink>
+            , operadora de pagamento, que recebe e guarda os dados do cartão.
+            Os e-mails de convite e de recuperação de senha são enviados pela{" "}
+            <LegalLink external href="https://resend.com">
+              Resend
             </LegalLink>
             . A comunicação com o Instagram acontece exclusivamente pelas APIs
             oficiais da{" "}
             <LegalLink external href="https://www.meta.com">
               Meta Platforms
             </LegalLink>
-            , sujeitas às políticas de dados da própria Meta.
+            , sujeitas às políticas de dados da própria Meta. Se você
+            cadastrar na tela Contas a sua própria chave da OpenRouter ou da
+            OpenAI, o texto que você digita no botão de escrever com IA vai
+            para esse provedor, na sua conta e sob as regras dele; nenhuma
+            mensagem de seguidor é enviada. Sem chave cadastrada, nada vai para
+            provedor de IA.
           </p>
           <LegalList>
             <li>Todo o tráfego é criptografado em trânsito (HTTPS/TLS).</li>
             <li>
-              Os tokens de acesso são criptografados também em repouso, com
-              AES-256-GCM e chave que fica só no ambiente do servidor.
+              Os tokens de acesso e a chave de IA que você cadastrar são
+              criptografados também em repouso, com AES-256-GCM e chave que
+              fica só no ambiente do servidor.
             </li>
             <li>
               Os eventos recebidos da Meta são validados por assinatura HMAC (
@@ -258,13 +281,14 @@ export default function PrivacidadePage() {
               injetar eventos falsos.
             </li>
             <li>
-              O painel exige login, e o cadastro se tranca automaticamente depois
-              da criação da primeira conta.
+              O painel exige login. Não existe cadastro público: a conta só é
+              criada depois da confirmação do pagamento, e a pessoa recebe um
+              e-mail com o link para definir a senha.
             </li>
           </LegalList>
           <p>
             Nenhum sistema é infalível. Em caso de incidente de segurança que
-            possa gerar risco relevante a você, o administrador comunicará os
+            possa gerar risco relevante a você, o controlador comunicará os
             titulares afetados e a autoridade competente nos prazos aplicáveis.
           </p>
         </LegalSection>
@@ -273,8 +297,10 @@ export default function PrivacidadePage() {
           <LegalList>
             <li>
               <Term>Tokens de acesso:</Term> enquanto a conta estiver conectada.
-              São invalidados e apagados assim que a conta é desconectada ou a
-              autorização é revogada.
+              O token é apagado quando a conta é desconectada no painel. Se a
+              autorização for revogada no Instagram, o token deixa de funcionar
+              e é apagado quando a conta é desconectada ou quando os dados são
+              apagados, 30 dias depois do fim da assinatura.
             </li>
             <li>
               <Term>Mensagens, comentários e logs:</Term> ficam guardados
@@ -285,7 +311,8 @@ export default function PrivacidadePage() {
               <Term>Perfil do Instagram (foto, nome, seguidores):</Term>{" "}
               guardado junto da conversa enquanto ela existir, atualizado
               sempre que a foto muda ou expira. Some junto quando a conversa é
-              apagada, a pedido do titular ou pela desconexão da conta.
+              apagada, a pedido do titular ou quando os dados são apagados após
+              o fim da assinatura (veja abaixo).
             </li>
             <li>
               <Term>Estado das sequências:</Term> é apagado junto com os demais
@@ -298,10 +325,25 @@ export default function PrivacidadePage() {
             </li>
           </LegalList>
           <p>
-            Apagar a conta conectada no painel remove em cascata todas as
-            conversas, regras, sequências, execuções, contatos e logs vinculados
-            a ela.
+            Desconectar a conta do Instagram no painel interrompe as automações
+            dessa conta e apaga o token de acesso. As conversas, os contatos e
+            os demais registros continuam guardados enquanto a assinatura
+            existir. Para apagá-los antes, escreva para o contato no fim desta
+            página.
           </p>
+          <LegalCallout title="Depois que a assinatura termina">
+            <p>
+              Quando a assinatura termina, as automações param na hora e os
+              dados ficam guardados por <Term>30 dias</Term>, para que o
+              cliente possa reativar e encontrar tudo como estava. Passado esse
+              prazo, contatos, conversas, tokens de acesso e arquivos são
+              apagados de forma definitiva, junto com o login do cliente.
+            </p>
+            <p>
+              Os registros de cobrança ficam com a Stripe, que os guarda
+              conforme as próprias obrigações legais e fiscais.
+            </p>
+          </LegalCallout>
         </LegalSection>
 
         <LegalSection title="8. Cookies">
@@ -326,7 +368,7 @@ export default function PrivacidadePage() {
               A página de{" "}
               <LegalLink href="/exclusao-de-dados">exclusão de dados</LegalLink>{" "}
               traz o passo a passo completo, tanto para quem interagiu com a
-              conta quanto para quem administra a instalação.
+              conta quanto para quem assina o Falow.
             </p>
           </LegalCallout>
           <p>

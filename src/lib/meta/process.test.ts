@@ -1475,3 +1475,91 @@ describe("processWebhookPayload — captura do CRM", () => {
     expect(fake.tables.message_signals_pending.map((p) => p.type)).toEqual(["reaction", "edit", "deleted"]);
   });
 });
+
+describe("processWebhookPayload: assinatura parada", () => {
+  function dmPayload(igUserId: string, senderId: string, text: string): MetaWebhookPayload {
+    return {
+      object: "instagram",
+      entry: [
+        {
+          id: igUserId,
+          messaging: [
+            {
+              sender: { id: senderId },
+              recipient: { id: igUserId },
+              timestamp: Date.now(),
+              message: { mid: `mid-${senderId}`, text, is_echo: false },
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  it("cliente sem assinatura: o bot não responde", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const account = makeAccount({ user_id: "cliente-sem-assinatura" });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(
+      makeRule({ account_id: account.id, trigger_type: "dm", keyword: "preço", reply_type: "text", reply_text: "Oi!" })
+    );
+
+    await processWebhookPayload(dmPayload(account.ig_user_id, "lead-1", "preço"));
+
+    expect(sendRuleReplyMock).not.toHaveBeenCalled();
+    expect(fake.tables.interactions).toHaveLength(0);
+    expect(info).toHaveBeenCalledWith(expect.stringContaining("sem assinatura ativa"));
+    info.mockRestore();
+  });
+
+  it("cliente com assinatura ativa: o bot responde normalmente", async () => {
+    const account = makeAccount({ user_id: "cliente-pagante" });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.subscriptions.push({ user_id: "cliente-pagante", stripe_customer_id: "cus_1", status: "active" });
+    fake.tables.rules.push(
+      makeRule({ account_id: account.id, trigger_type: "dm", keyword: "preço", reply_type: "text", reply_text: "Oi!" })
+    );
+
+    await processWebhookPayload(dmPayload(account.ig_user_id, "lead-1", "preço"));
+
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("cliente sem assinatura: comentário também não dispara resposta", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    const account = makeAccount({ ig_user_id: "ig-business-sem-assinatura", user_id: "cliente-sem-assinatura" });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(
+      makeRule({
+        account_id: account.id,
+        trigger_type: "comment",
+        keyword: "preço",
+        media_mode: "any",
+        welcome_text: "Vou te mandar o link!",
+        welcome_button_label: "Quero o link",
+      })
+    );
+
+    await processWebhookPayload({
+      object: "instagram",
+      entry: [
+        {
+          id: account.ig_user_id,
+          time: Math.floor(Date.now() / 1000),
+          field: "comments",
+          value: {
+            id: "comment-1",
+            text: "preço",
+            from: { id: "sender-10", username: "quem_comentou" },
+            media: { id: "media-1", media_product_type: "FEED" },
+          },
+        },
+      ],
+    });
+
+    expect(sendPrivateReplyWithButtonMock).not.toHaveBeenCalled();
+    expect(replyToCommentMock).not.toHaveBeenCalled();
+    expect(fake.tables.interactions).toHaveLength(0);
+    info.mockRestore();
+  });
+});

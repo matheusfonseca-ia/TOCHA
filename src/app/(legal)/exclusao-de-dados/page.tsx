@@ -3,7 +3,6 @@ import type { Metadata } from "next";
 import {
   LEGAL_UPDATED_AT,
   LegalCallout,
-  LegalCode,
   LegalContact,
   LegalLink,
   LegalList,
@@ -16,7 +15,7 @@ import {
 export const metadata: Metadata = {
   title: "Exclusão de dados | Falow",
   description:
-    "Como pedir e como executar a exclusão dos dados tratados pelo Falow: passo a passo para quem interagiu com a conta e para quem administra a instalação.",
+    "Como pedir a exclusão dos dados tratados pelo Falow: passo a passo para quem interagiu com uma conta que usa o Falow e para quem assina o serviço.",
 };
 
 // URL cadastrada no campo "User Data Deletion" do painel da Meta, na opção
@@ -50,7 +49,7 @@ export default function ExclusaoDeDadosPage() {
             </LegalLink>{" "}
             ou{" "}
             <LegalLink href="#administrador">
-              administro esta instalação
+              assino o Falow
             </LegalLink>
             .
           </p>
@@ -63,7 +62,8 @@ export default function ExclusaoDeDadosPage() {
           <p>
             É o caso da maioria das pessoas. Você conversou com uma conta de
             Instagram e recebeu uma resposta automática: os dados dessa
-            interação estão no banco de quem administra a conta.
+            interação estão guardados no Falow, na conta de quem administra esse
+            perfil.
           </p>
 
           <p className="pt-2 font-semibold text-foreground">
@@ -77,15 +77,15 @@ export default function ExclusaoDeDadosPage() {
               nenhum dado novo seu chega ao Falow.
             </li>
             <li>
-              <Term>Peça a exclusão do que já existe.</Term> Envie uma mensagem
-              direta para a mesma conta de Instagram com a qual você conversou,
-              pedindo a exclusão dos seus dados. Se preferir, use o contato no
-              fim desta página. Diga o seu @ do Instagram para que o pedido seja
-              localizado.
+              <Term>Peça a exclusão do que já existe.</Term> Escreva para o
+              contato no fim desta página, dizendo o seu @ do Instagram e com
+              qual conta você conversou, para que o pedido seja localizado. Você
+              também pode avisar a própria conta por DM, mas o e-mail é o canal
+              que garante o atendimento.
             </li>
             <li>
-              <Term>Pronto.</Term> O administrador apaga os registros e confirma
-              a exclusão. Não é preciso criar conta nem preencher formulário.
+              <Term>Pronto.</Term> O Falow apaga os registros e confirma a
+              exclusão. Não é preciso criar conta nem preencher formulário.
             </li>
           </LegalSteps>
 
@@ -96,8 +96,8 @@ export default function ExclusaoDeDadosPage() {
             <li>A conversa registrada entre você e a conta conectada.</li>
             <li>
               O texto das mensagens e comentários seus que ficaram guardados nos
-              logs de interação, e as mensagens da conversa na área Conversas do painel
-              (Conversas do painel).
+              logs de interação, e as mensagens da conversa na área Conversas do
+              painel.
             </li>
             <li>
               A foto de perfil, o nome e o número de seguidores do Instagram
@@ -110,6 +110,18 @@ export default function ExclusaoDeDadosPage() {
             <li>
               Qualquer sequência em andamento em que você tenha entrado, com o
               ponto onde ela parou.
+            </li>
+            <li>
+              Os dados que você informou nos fluxos, como nome, e-mail e
+              telefone, e as etiquetas (tags) atribuídas a você na lista de
+              Contatos.
+            </li>
+            <li>
+              As notas internas que o administrador escreveu sobre você.
+            </li>
+            <li>
+              O seu cartão no funil de vendas (CRM) do painel e o histórico das
+              etapas por onde ele passou.
             </li>
           </LegalList>
 
@@ -126,17 +138,17 @@ export default function ExclusaoDeDadosPage() {
 
         <LegalSection
           id="administrador"
-          title="2. Você administra esta instalação do Falow"
+          title="2. Você assina o Falow"
         >
           <p>
-            Cada instalação do Falow é hospedada por quem a usa: seu banco na
-            Supabase, seu aplicativo na Meta, sua hospedagem. Isso quer dizer que
-            você tem controle direto sobre todos os dados e pode apagá-los sem
-            depender de ninguém.
+            O Falow é um serviço hospedado em falow.app.br: os dados da sua
+            conta ficam no sistema do Falow, e você não tem banco de dados
+            próprio para limpar. Você tem três caminhos, do mais leve ao mais
+            completo.
           </p>
 
           <p className="pt-2 font-semibold text-foreground">
-            Desconectar a conta (para de coletar e responder)
+            Desconectar a conta do Instagram (para de coletar e responder)
           </p>
           <LegalSteps>
             <li>
@@ -147,92 +159,49 @@ export default function ExclusaoDeDadosPage() {
             </li>
             <li>
               O token de acesso deixa de ser usado e a automação para de responder
-              imediatamente. Os registros antigos continuam no banco até você
-              apagá-los no passo seguinte.
+              imediatamente. Os registros antigos continuam guardados enquanto
+              a assinatura existir.
             </li>
           </LegalSteps>
 
           <p className="pt-2 font-semibold text-foreground">
-            Apagar todos os dados de uma conta
-          </p>
-          <p>
-            No SQL Editor do seu projeto Supabase, apagar a linha da conta em{" "}
-            <Term>ig_accounts</Term> remove em cascata tudo que depende dela
-            (regras, conversas, gatilhos, sequências, execuções, contatos e logs):
-          </p>
-          <LegalCode>{`-- troque pelo @ da conta que você quer apagar
-delete from public.ig_accounts where ig_username = 'seu_usuario';`}</LegalCode>
-          <p>
-            Para apagar apenas os dados de <Term>uma pessoa</Term> (atendendo a
-            um pedido individual), use o identificador de remetente dela. O
-            bloco abaixo também apaga as mensagens da área Conversas e o
-            perfil do Instagram guardado dela (foto, nome, seguidores): tudo
-            isso fica na própria conversa, então apagar a conversa já leva
-            junto. Funciona mesmo em instalações mais antigas, sem as tabelas
-            de notas e funil (<Term>crm_notes</Term>,{" "}
-            <Term>leads</Term>, <Term>lead_stage_events</Term>):
-          </p>
-          <LegalCode>{`-- o ig_sender_id aparece na tela de Logs e na URL da conversa em Conversas
-do $$
-declare
-  v_sender_id text := 'ID_DO_REMETENTE';
-begin
-  -- Mensagens das Conversas e sinais pendentes (reação/edição ainda não aplicados).
-  -- O "on delete cascade" de messages já apagaria isso ao apagar a conversa
-  -- mais abaixo; fica explícito aqui para o pedido documentar o que sai.
-  if to_regclass('public.message_signals_pending') is not null then
-    delete from public.message_signals_pending
-     where mid in (
-       select m.mid from public.messages m
-       join public.conversations c on c.id = m.conversation_id
-      where c.ig_sender_id = v_sender_id and m.mid is not null
-     );
-  end if;
-  delete from public.messages m
-   using public.conversations c
-   where c.id = m.conversation_id and c.ig_sender_id = v_sender_id;
-
-  -- Notas internas e funil, só se esta instalação já tiver essas tabelas.
-  if to_regclass('public.crm_notes') is not null then
-    execute 'delete from public.crm_notes where ig_sender_id = $1' using v_sender_id;
-  end if;
-  -- O histórico do funil não guarda o remetente, só o lead: apaga pelo lead.
-  if to_regclass('public.lead_stage_events') is not null then
-    execute 'delete from public.lead_stage_events e using public.leads l
-              where l.id = e.lead_id and l.ig_sender_id = $1' using v_sender_id;
-  end if;
-  if to_regclass('public.leads') is not null then
-    execute 'delete from public.leads where ig_sender_id = $1' using v_sender_id;
-  end if;
-
-  delete from public.interactions   where ig_sender_id = v_sender_id;
-  -- Apaga a conversa e junto o perfil do Instagram guardado nela (foto, nome, seguidores).
-  delete from public.conversations  where ig_sender_id = v_sender_id;
-  delete from public.rule_triggers  where ig_sender_id = v_sender_id;
-  delete from public.sequence_runs  where ig_sender_id = v_sender_id;
-  delete from public.contacts       where ig_sender_id = v_sender_id;
-end $$;`}</LegalCode>
-
-          <p className="pt-2 font-semibold text-foreground">
-            Apagar a instalação inteira
+            Cancelar a assinatura
           </p>
           <LegalSteps>
             <li>
-              Remova seu usuário em <Path>Supabase → Authentication → Users</Path>
-              : isso apaga em cascata todas as contas conectadas e seus dados.
+              No painel, abra <Path>Minha assinatura</Path> e cancele no portal
+              da Stripe.
             </li>
             <li>
-              Exclua o projeto na Supabase e o deploy na Vercel, se não for mais
-              usar nenhum dos dois.
+              Quando a assinatura termina, as automações param na hora e os
+              dados ficam guardados por <Term>30 dias</Term>, caso você queira
+              reativar.
             </li>
             <li>
-              Exclua o aplicativo em{" "}
-              <LegalLink external href="https://developers.facebook.com/apps">
-                developers.facebook.com/apps
-              </LegalLink>
-              , o que revoga todos os tokens emitidos por ele.
+              Passados os 30 dias, o Falow apaga tudo de forma definitiva:
+              contatos, conversas, tokens de acesso, arquivos e o seu login.
+              Você não precisa pedir nada.
             </li>
           </LegalSteps>
+
+          <p className="pt-2 font-semibold text-foreground">
+            Apagar tudo antes dos 30 dias
+          </p>
+          <p>
+            Se não quiser esperar o prazo, escreva para o contato no fim desta
+            página, pelo mesmo e-mail da assinatura, pedindo a exclusão da conta
+            e de todos os dados. Para apagar só os dados de uma pessoa que
+            conversou com a sua conta, informe o @ dela no pedido.
+          </p>
+
+          <p className="pt-2 font-semibold text-foreground">
+            Revogar o acesso no Instagram
+          </p>
+          <p>
+            Em <Path>Configurações e privacidade → Apps e sites</Path> do
+            Instagram, remova o aplicativo. Isso encerra o acesso do Falow à
+            sua conta, independentemente do que aconteça com a assinatura.
+          </p>
         </LegalSection>
 
         <LegalSection title="3. Prazo">
@@ -240,7 +209,10 @@ end $$;`}</LegalCode>
             Pedidos de exclusão são atendidos em até <Term>30 dias</Term>{" "}
             corridos a partir do recebimento (na prática, quase sempre em
             alguns dias). Você recebe uma confirmação pelo mesmo canal em que
-            fez o pedido. Nenhuma cópia de backup é mantida depois desse prazo.
+            fez o pedido. Depois da exclusão, as cópias de segurança automáticas
+            feitas pelo provedor do banco de dados ainda podem conter esses
+            dados por um período limitado, em geral alguns dias, até serem
+            substituídas na rotina do provedor.
           </p>
         </LegalSection>
 

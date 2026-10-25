@@ -12,6 +12,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { withSyncedProfiles } from "@/lib/meta/account-profile";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { AiSettingsCard } from "@/modules/ai-settings";
 import { getAiSettingsStatus } from "@/modules/ai-settings/server";
@@ -24,6 +25,8 @@ const ERROR_MESSAGES: Record<string, string> = {
     "Conta incompatível. Use uma conta Profissional (Comercial ou Criador de Conteúdo).",
   exchange_failed:
     "Falha ao conectar. Confira INSTAGRAM_APP_ID/INSTAGRAM_APP_SECRET e se a conta aceitou o convite de testadora no painel Meta.",
+  account_limit: "Seu plano permite 1 conta do Instagram. Desconecte a atual para conectar outra.",
+  account_taken: "Esse @ já está conectado em outra conta do Falow. Desconecte por lá primeiro.",
   unknown: "Erro inesperado ao conectar. Tente novamente.",
 };
 
@@ -45,7 +48,7 @@ export default async function AccountsPage({
   // @ e foto mudam no Instagram sem aviso: contas ativas mostram (e gravam)
   // os atuais; o token criptografado não segue para o client.
   const synced = new Map(
-    (await withSyncedProfiles(supabase, stored.filter((a) => a.status === "active"))).map(
+    (await withSyncedProfiles(createAdminClient(), stored.filter((a) => a.status === "active"))).map(
       (a) => [a.id, a]
     )
   );

@@ -11,6 +11,7 @@ import { isExpired, withoutExpired } from "@/lib/expiry/expiry";
 import { checkFollow } from "@/lib/follow-gate/check";
 import { isFollowGateOn } from "@/lib/follow-gate/copy";
 import { sendFollowGateMessage } from "@/lib/follow-gate/gate";
+import { accountHasAccess } from "@/lib/billing/access";
 import { getFreshToken } from "@/lib/meta/token";
 import {
   triggerMatchesInbound,
@@ -618,6 +619,8 @@ async function resumeFromHandle(
  */
 // Conversa assumida: de quanto em quanto tempo o atraso vencido é conferido de novo.
 const TAKEOVER_RECHECK_MS = 15 * 60 * 1000;
+/** Assinatura parada: o atraso fica parado (não apaga) e é reconferido de hora em hora. */
+const INACTIVE_RECHECK_MS = 60 * 60 * 1000;
 
 export async function processDueRuns(
   limit = 5,
@@ -641,6 +644,8 @@ export async function processDueRuns(
     .limit(limit);
 
   let processed = 0;
+  // Contas sem assinatura decididas neste tick (não vale entre ticks).
+  const inactiveAccounts = new Set<string>();
 
   for (const row of (due ?? []) as RunWithSequence[]) {
     if (Date.now() + NODE_BUDGET_MS > deadline) break;
@@ -649,6 +654,26 @@ export async function processDueRuns(
     // (o run é apagado em cascata com ela) e ativa.
     const sequence = row.sequences;
     if (!sequence || !sequence.is_active) continue;
+
+    // Conta já vista sem assinatura neste tick: o backlog dela inteiro já foi
+    // adiado, os demais runs do lote só são pulados (sem novas consultas).
+    if (inactiveAccounts.has(row.account_id)) continue;
+
+    // Assinatura parada: o atraso não dispara e nada é apagado. Adia de uma
+    // vez TODOS os runs vencidos da conta (a checagem é por conta, não por
+    // conversa: um backlog grande ocuparia o `limit` a cada tick e travaria
+    // os atrasos das contas pagantes, o mesmo problema das sequências pausadas).
+    if (!(await accountHasAccess(admin, row.account_id))) {
+      inactiveAccounts.add(row.account_id);
+      const nowIso = new Date().toISOString();
+      await admin
+        .from("sequence_runs")
+        .update({ next_run_at: new Date(Date.now() + INACTIVE_RECHECK_MS).toISOString() })
+        .eq("account_id", row.account_id)
+        .eq("status", "waiting_delay")
+        .lte("next_run_at", nowIso);
+      continue;
+    }
 
     // Conversa assumida por um atendente (D3): o atraso agendado não
     // dispara enquanto isso. O run não é reivindicado nem marcado como erro:

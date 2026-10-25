@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/empty-state";
 import { SequenceEditor } from "@/components/sequences/sequence-editor";
 import { Button } from "@/components/ui/button";
 import { withSyncedProfiles } from "@/lib/meta/account-profile";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { listTagOptionsForEditor } from "@/modules/crm/server";
 import { stageOptionsFromRows } from "@/modules/crm/pipeline/services/pipeline.queries";
@@ -32,7 +33,7 @@ export default async function NovaSequenciaPage() {
     ]);
 
   // O @ pode ter mudado no Instagram: o link ig.me de referência usa o atual.
-  const accounts = await withSyncedProfiles(supabase, storedAccounts ?? []);
+  const accounts = await withSyncedProfiles(createAdminClient(), storedAccounts ?? []);
 
   if (accounts.length === 0) {
     return (

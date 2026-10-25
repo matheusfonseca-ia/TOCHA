@@ -162,6 +162,17 @@ export async function updateStageAction(
     .maybeSingle<{ id: string; stage_type: StageType }>();
   if (!stage) return { error: "Etapa não encontrada." };
 
+  // O workflow de entrada tem que ser do próprio usuário: a referência de
+  // outro cliente não pode nem ser gravada (o RLS de sequences filtra).
+  if (patch.onEnterSequenceId) {
+    const { data: sequence } = await supabase
+      .from("sequences")
+      .select("id")
+      .eq("id", patch.onEnterSequenceId)
+      .maybeSingle<{ id: string }>();
+    if (!sequence) return { error: "Workflow não encontrado." };
+  }
+
   const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (patch.name !== undefined) {
     if (!patch.name.trim()) return { error: "Dê um nome à etapa." };

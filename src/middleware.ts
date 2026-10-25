@@ -1,19 +1,10 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-type CookieToSet = { name: string; value: string; options: CookieOptions };
+import { PUBLIC_PATHS, isAdminPath, routeFor } from "@/lib/auth/routing";
+import { hasActiveAccess, isAdmin } from "@/lib/billing/access";
 
-// Rotas públicas. A landing ("/") é a porta de entrada do domínio e precisa
-// abrir sem login — é ela que a análise da Meta encontra ao visitar o app.
-// As três páginas do grupo (legal) são as URLs cadastradas no painel da Meta
-// (Privacy Policy URL, User Data Deletion e Terms of Service) e também têm de
-// abrir sem login e sem redirecionamento.
-const PUBLIC_PATHS = new Set([
-  "/",
-  "/privacidade",
-  "/exclusao-de-dados",
-  "/termos-de-servico",
-]);
+type CookieToSet = { name: string; value: string; options: CookieOptions };
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -51,15 +42,22 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user && pathname !== "/login") {
+  // Regra única (admin → bloqueio → cortesia → assinatura); o client do usuário
+  // lê só as próprias linhas de access_grants e subscriptions (RLS).
+  const hasAccess = user ? await hasActiveAccess(supabase, user.id) : false;
+
+  // /admin não existe para quem não é admin: 404, sem revelar a área.
+  if (user && isAdminPath(pathname) && !isAdmin(user.id)) {
     const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
+    url.pathname = "/404";
+    return NextResponse.rewrite(url, { status: 404 });
   }
 
-  if (user && pathname === "/login") {
+  const target = routeFor(pathname, { loggedIn: Boolean(user), hasAccess });
+  if (target !== "next") {
     const url = request.nextUrl.clone();
-    url.pathname = "/dashboard";
+    url.pathname = target;
+    url.search = "";
     return NextResponse.redirect(url);
   }
 

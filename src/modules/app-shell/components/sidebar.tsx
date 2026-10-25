@@ -32,10 +32,16 @@ const SIDEBAR_ID = "app-sidebar";
 export function Sidebar({
   userEmail,
   crmUnread = 0,
+  showBilling = false,
+  showAdmin = false,
 }: {
   userEmail: string;
   /** Mensagens não lidas no Inbox do CRM (badge do item Conversas). */
   crmUnread?: number;
+  /** Mostra "Minha assinatura" (portal da Stripe). Fica de fora pro dono e admins, que não têm assinatura. */
+  showBilling?: boolean;
+  /** Mostra o link do painel /admin (só admins). */
+  showAdmin?: boolean;
 }) {
   const pathname = usePathname();
   const { collapsed, toggle } = useAppShell();
@@ -114,7 +120,12 @@ export function Sidebar({
         </div>
 
         <SidebarNav pathname={pathname} crmUnread={crmUnread} rail={rail} />
-        <SidebarFooter userEmail={userEmail} rail={rail} />
+        <SidebarFooter
+          userEmail={userEmail}
+          rail={rail}
+          showAdmin={showAdmin}
+          showBilling={showBilling}
+        />
       </aside>
     </TooltipProvider>
   );

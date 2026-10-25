@@ -1,6 +1,7 @@
 "use client";
 
-import { LogOut } from "lucide-react";
+import Link from "next/link";
+import { CreditCard, LogOut, ShieldCheck } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,56 @@ function SignOutButton({ className }: { className?: string }) {
   );
 }
 
+const ACCOUNT_ROW =
+  "group flex h-9 w-full items-center overflow-hidden rounded-md text-left text-[13px] font-medium text-muted-foreground transition-colors hover:bg-secondary/40 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50";
+const ACCOUNT_ICON =
+  "h-4 w-4 text-muted-foreground/70 transition-colors group-hover:text-muted-foreground";
+
+/**
+ * Painel /admin (só admins) e "Minha assinatura" (portal da Stripe, só
+ * clientes: dono e admins não têm assinatura). Mesma geometria dos itens do
+ * menu: ícone parado em x=32, rótulo cortado ao recolher.
+ */
+function AccountLinks({
+  showAdmin,
+  showBilling,
+  rail,
+}: {
+  showAdmin: boolean;
+  showBilling: boolean;
+  rail: boolean;
+}) {
+  if (!showAdmin && !showBilling) return null;
+  return (
+    <div className="mb-1 space-y-0.5">
+      {showAdmin && (
+        <RailTooltip label="Admin" enabled={rail}>
+          <Link href="/admin" className={ACCOUNT_ROW}>
+            <span className="flex w-10 shrink-0 justify-center">
+              <ShieldCheck className={ACCOUNT_ICON} />
+            </span>
+            <span className="shell-label w-44 shrink-0 whitespace-nowrap pr-3">Admin</span>
+          </Link>
+        </RailTooltip>
+      )}
+      {showBilling && (
+        <form action="/api/billing/portal" method="post" className="flex">
+          <RailTooltip label="Minha assinatura" enabled={rail}>
+            <button type="submit" className={ACCOUNT_ROW}>
+              <span className="flex w-10 shrink-0 justify-center">
+                <CreditCard className={ACCOUNT_ICON} />
+              </span>
+              <span className="shell-label w-44 shrink-0 whitespace-nowrap pr-3">
+                Minha assinatura
+              </span>
+            </button>
+          </RailTooltip>
+        </form>
+      )}
+    </div>
+  );
+}
+
 /**
  * Status + usuário. Aberta: e-mail com tema e sair na mesma linha. Recolhida:
  * tema e sair empilhados no trilho, sem e-mail. As duas versões ocupam a
@@ -41,13 +92,20 @@ function SignOutButton({ className }: { className?: string }) {
 export function SidebarFooter({
   userEmail,
   rail,
+  showAdmin = false,
+  showBilling = false,
 }: {
   userEmail: string;
   /** Recolhida no desktop: liga o tooltip do status. */
   rail: boolean;
+  /** Link do painel /admin (só admins). */
+  showAdmin?: boolean;
+  /** "Minha assinatura" (portal da Stripe). Fica de fora pro dono e admins. */
+  showBilling?: boolean;
 }) {
   return (
     <div className="shrink-0 border-t border-border/70 p-3">
+      <AccountLinks showAdmin={showAdmin} showBilling={showBilling} rail={rail} />
       <RailTooltip label="Automações ativas" enabled={rail}>
         <div className="flex h-8 items-center">
           {/* Ponto no centro do trilho (x=32), igual aos ícones do menu */}

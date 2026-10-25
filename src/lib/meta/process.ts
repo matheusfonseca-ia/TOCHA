@@ -9,6 +9,7 @@ import {
   findMatchingRule,
 } from "@/lib/rules/engine";
 import { pickVariant } from "@/lib/rules/variants";
+import { findServedAccount } from "@/lib/meta/served-account";
 import { classifyInboundEvent, type ClassifiedInboundEvent } from "@/lib/meta/triggers";
 import { sendRuleReply } from "@/lib/sequences/automation";
 import { isPausedAt } from "@/lib/sequences/automation-pause";
@@ -239,12 +240,7 @@ async function handleMessagingEvent(
 
   // 2. Conta ativa que recebeu o evento
   const recipientId = igBusinessId || event.recipient?.id || "";
-  const { data: account } = await admin
-    .from("ig_accounts")
-    .select("*")
-    .eq("ig_user_id", recipientId)
-    .eq("status", "active")
-    .maybeSingle<IgAccount>();
+  const account = await findServedAccount(admin, recipientId);
   if (!account) return;
 
   const startedAt = Date.now();
@@ -635,12 +631,7 @@ async function processPostbackEvent(
   if (!followCheckRuleId) ruleQuery = ruleQuery.eq("trigger_type", "comment");
 
   const [{ data: account }, { data: rule }] = await Promise.all([
-    admin
-      .from("ig_accounts")
-      .select("*")
-      .eq("ig_user_id", recipientId)
-      .eq("status", "active")
-      .maybeSingle<IgAccount>(),
+    findServedAccount(admin, recipientId).then((account) => ({ data: account })),
     ruleQuery.maybeSingle<Rule>(),
   ]);
   // rule.account_id !== account.id nunca deveria acontecer (o payload só é
@@ -792,12 +783,7 @@ async function processSequencePostbackEvent(
     if (dedupError) return;
   }
 
-  const { data: account } = await admin
-    .from("ig_accounts")
-    .select("*")
-    .eq("ig_user_id", igBusinessId)
-    .eq("status", "active")
-    .maybeSingle<IgAccount>();
+  const account = await findServedAccount(admin, igBusinessId);
   if (!account) return;
 
   const startedAt = Date.now();
@@ -854,12 +840,7 @@ async function processCommentEvent(
   if (dedupError) return;
 
   const recipientId = igBusinessId || "";
-  const { data: account } = await admin
-    .from("ig_accounts")
-    .select("*")
-    .eq("ig_user_id", recipientId)
-    .eq("status", "active")
-    .maybeSingle<IgAccount>();
+  const account = await findServedAccount(admin, recipientId);
   if (!account) return;
 
   // Nunca reage a um comentário feito pela própria conta — evita loop com a

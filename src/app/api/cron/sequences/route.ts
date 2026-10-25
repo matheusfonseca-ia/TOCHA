@@ -8,12 +8,12 @@ export const maxDuration = 60;
 
 /**
  * Tick das sequências: expira automações/workflows temporários vencidos e
- * retoma execuções paradas em nós de atraso cujo horário venceu. Chamado pelo cron da Vercel (vercel.json) e por qualquer
- * agendador externo (cron-job.org, UptimeRobot...) — além do tick
+ * retoma execuções paradas em nós de atraso cujo horário venceu. Chamado a cada minuto pelo `scheduled()` do Worker (worker.ts)
+ * e por qualquer agendador externo (cron-job.org, UptimeRobot...) — além do tick
  * oportunista que roda ao fim de cada webhook.
  *
- * Autenticação: header `Authorization: Bearer <CRON_SECRET>` (o cron da
- * Vercel envia isso sozinho quando a env CRON_SECRET existe) ou
+ * Autenticação: header `Authorization: Bearer <CRON_SECRET>` (é o que o
+ * `scheduled()` do Worker envia) ou
  * `?secret=<CRON_SECRET>` para agendadores que não suportam headers.
  */
 export async function GET(request: NextRequest) {

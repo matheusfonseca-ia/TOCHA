@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 
+import { ownedAccountId } from "@/lib/auth/ownership";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 import { INBOX_PATH } from "../../inbox/utils/href";
 import { removeContactField, setContactField } from "../server/contact-fields-repository";
@@ -11,9 +11,7 @@ import { removeContactField, setContactField } from "../server/contact-fields-re
 /** Edição dos "Dados coletados" da ficha do lead. Mesmo padrão de posse + service role do resto do módulo. */
 
 async function assertOwnsAccount(accountId: string): Promise<{ error: string | null }> {
-  const supabase = createClient();
-  const { data } = await supabase.from("ig_accounts").select("id").eq("id", accountId).maybeSingle();
-  return data ? { error: null } : { error: "Conta não encontrada." };
+  return (await ownedAccountId(accountId)) ? { error: null } : { error: "Conta não encontrada." };
 }
 
 export async function saveContactField(

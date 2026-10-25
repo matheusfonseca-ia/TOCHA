@@ -12,13 +12,18 @@ vi.mock("@/app/login/actions", () => ({ signOut: "/logout" }));
 
 import { AppShellProvider, Sidebar } from "..";
 
-function render(initialCollapsed: boolean, crmUnread = 0) {
+function render(
+  initialCollapsed: boolean,
+  crmUnread = 0,
+  extra: { showAdmin?: boolean; showBilling?: boolean } = {}
+) {
   return renderToStaticMarkup(
     createElement(AppShellProvider, {
       initialCollapsed,
       children: createElement(Sidebar, {
         userEmail: "ana@falow.com.br",
         crmUnread,
+        ...extra,
       }),
     })
   );
@@ -46,6 +51,19 @@ describe("Sidebar (SSR)", () => {
     expect(html).toContain('aria-current="page"');
     expect(html).toContain('aria-label="12 não lidas"');
     expect(html).toContain(">9+<");
+  });
+
+  it("cliente vê Minha assinatura (portal da Stripe) e não vê Admin", () => {
+    const html = render(false, 0, { showBilling: true });
+    expect(html).toContain('action="/api/billing/portal"');
+    expect(html).toContain("Minha assinatura");
+    expect(html).not.toContain('href="/admin"');
+  });
+
+  it("admin vê o link do /admin e não vê Minha assinatura", () => {
+    const html = render(true, 0, { showAdmin: true });
+    expect(html).toContain('href="/admin"');
+    expect(html).not.toContain("/api/billing/portal");
   });
 
   it("não usa travessão em nenhum texto", () => {

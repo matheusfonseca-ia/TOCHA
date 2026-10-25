@@ -8,8 +8,18 @@ const TOKEN_REFRESH_THRESHOLD_MS = 15 * 24 * 60 * 60 * 1000;
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
+/** A conta não está ativa (desconectada ou expirada): o token dela não pode ser usado. */
+export class AccountNotActiveError extends Error {
+  constructor() {
+    super("A conta do Instagram não está ativa.");
+    this.name = "AccountNotActiveError";
+  }
+}
+
 /**
  * Token da conta, renovado automaticamente quando está perto de expirar.
+ * Conta que não está ativa nunca devolve token: o @ pode já pertencer a outro
+ * cliente, e o token antigo (ou a renovação dele) não pode agir em nome dele.
  * Falha na renovação não bloqueia o envio: segue com o token atual e,
  * se ele estiver de fato inválido, o erro 190 marca a conta como expirada.
  */
@@ -17,6 +27,8 @@ export async function getFreshToken(
   admin: AdminClient,
   account: IgAccount
 ): Promise<string> {
+  if (account.status !== "active") throw new AccountNotActiveError();
+
   const token = decryptToken(account.access_token_enc);
   const expiresAt = account.token_expires_at
     ? Date.parse(account.token_expires_at)

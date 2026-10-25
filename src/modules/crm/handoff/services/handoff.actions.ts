@@ -1,19 +1,9 @@
 "use server";
 
+import { ownedConversationId as ownConversationId } from "@/lib/auth/ownership";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { createClient } from "@/lib/supabase/server";
 
 import { setTakeover } from "../server/takeover";
-
-/** Confere a posse da conversa com o client do usuário (RLS) antes de escrever. */
-async function ownConversationId(conversationId: string): Promise<string | null> {
-  const { data } = await createClient()
-    .from("conversations")
-    .select("id")
-    .eq("id", conversationId)
-    .maybeSingle<{ id: string }>();
-  return data?.id ?? null;
-}
 
 /** Botão "Assumir conversa": para as automações para esta pessoa. */
 export async function assumeConversation(conversationId: string): Promise<void> {

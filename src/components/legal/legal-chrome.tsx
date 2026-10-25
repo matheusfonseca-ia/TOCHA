@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils";
  */
 
 /** Data de vigência mostrada nas páginas. */
-export const LEGAL_UPDATED_AT = "28 de setembro de 2026";
+export const LEGAL_UPDATED_AT = "16 de outubro de 2026";
 
 /** Rotas legais — usadas no cabeçalho das próprias páginas e no rodapé da landing. */
 export const LEGAL_PAGES = [
@@ -20,12 +20,11 @@ export const LEGAL_PAGES = [
 ] as const;
 
 /**
- * Contato do responsável pela instalação, exibido nas páginas públicas.
- * Cada instalação do Falow é operada por quem a hospeda, então
- * `NEXT_PUBLIC_CONTACT_EMAIL` sobrescreve o valor — quem clona o projeto
- * aponta pro próprio e-mail. O padrão existe para que as páginas nunca fiquem
- * sem canal de contato: a Meta exige um nas URLs cadastradas no painel, e
- * esquecer a variável no build derrubaria essa exigência em silêncio.
+ * Contato do responsável pelo serviço, exibido nas páginas públicas.
+ * `NEXT_PUBLIC_CONTACT_EMAIL` sobrescreve o valor. O padrão existe para que
+ * as páginas nunca fiquem sem canal de contato: a Meta exige um nas URLs
+ * cadastradas no painel, e esquecer a variável no build derrubaria essa
+ * exigência em silêncio.
  */
 export const LEGAL_CONTACT_EMAIL =
   process.env.NEXT_PUBLIC_CONTACT_EMAIL?.trim() || "digitalcomvantagem@gmail.com";
@@ -162,8 +161,8 @@ export function LegalContact({
 }) {
   return (
     <p>
-      Esta instalação do Falow é operada de forma independente por quem hospeda o
-      aplicativo e conectou a conta de Instagram. Para {reason}, escreva para{" "}
+      O Falow é operado por PATRICIA POLETINI FONSECA (CNPJ 15.030.598/0001-39).
+      Para {reason}, escreva para{" "}
       <LegalLink href={`mailto:${LEGAL_CONTACT_EMAIL}`}>
         {LEGAL_CONTACT_EMAIL}
       </LegalLink>
