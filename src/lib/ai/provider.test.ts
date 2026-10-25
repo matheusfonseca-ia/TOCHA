@@ -3,11 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   aiConfigFromEnv,
   buildChatRequest,
-  DEFAULT_MODEL,
   generateFieldSuggestions,
   type AiConfig,
 } from "@/lib/ai/provider";
-import { OPENAI_DEFAULT_MODEL } from "@/lib/ai/providers";
+import { OPENAI_DEFAULT_MODEL, OPENROUTER_DEFAULT_MODEL } from "@/lib/ai/providers";
 
 const config: AiConfig = { provider: "openrouter", apiKey: "chave-de-teste", model: "modelo/teste" };
 const openAiConfig: AiConfig = { provider: "openai", apiKey: "sk-teste", model: "gpt-teste" };
@@ -37,7 +36,7 @@ describe("aiConfigFromEnv", () => {
 
     expect(result?.provider).toBe("openrouter");
     expect(result?.apiKey).toBe("abc");
-    expect(result?.model).toBe(DEFAULT_MODEL);
+    expect(result?.model).toBe(OPENROUTER_DEFAULT_MODEL);
   });
 
   it("só OPENAI_API_KEY: usa a OpenAI, com modelo padrão ou OPENAI_MODEL", () => {
@@ -56,7 +55,7 @@ describe("aiConfigFromEnv", () => {
       OPENAI_MODEL: "gpt-x",
     });
     expect(result?.provider).toBe("openrouter");
-    expect(result?.model).toBe(DEFAULT_MODEL);
+    expect(result?.model).toBe(OPENROUTER_DEFAULT_MODEL);
   });
 
   it("modelo pode ser trocado por variável de ambiente", () => {
@@ -121,6 +120,49 @@ describe("generateFieldSuggestions", () => {
 
     expect(openAi).toEqual({ error: expect.stringContaining("chave da OpenAI na tela Contas") });
     expect(openRouter).toEqual({ error: expect.stringContaining("chave da OpenRouter na tela Contas") });
+  });
+
+  it("403 também aponta a chave", async () => {
+    const result = await generateFieldSuggestions(
+      { field: "publicReply", count: 3 },
+      { config: openAiConfig, fetchImpl: fakeFetch("", { ok: false, status: 403 }).fetchImpl }
+    );
+
+    expect(result).toEqual({ error: expect.stringContaining("chave da OpenAI na tela Contas") });
+  });
+
+  it("404 aponta o modelo, citando o id e o provedor, não a chave", async () => {
+    const result = await generateFieldSuggestions(
+      { field: "publicReply", count: 3 },
+      {
+        config: { ...openAiConfig, model: "gpt-errado" },
+        fetchImpl: fakeFetch("", { ok: false, status: 404 }).fetchImpl,
+      }
+    );
+
+    expect(result).toEqual({ error: expect.stringContaining("OpenAI não encontrou o modelo gpt-errado") });
+    expect(result).toEqual({ error: expect.stringContaining("modelo na tela Contas") });
+    expect(JSON.stringify(result)).not.toContain("chave");
+  });
+
+  it("400 diz que o provedor recusou o pedido", async () => {
+    const result = await generateFieldSuggestions(
+      { field: "publicReply", count: 3 },
+      { config: openAiConfig, fetchImpl: fakeFetch("", { ok: false, status: 400 }).fetchImpl }
+    );
+
+    expect(result).toEqual({ error: expect.stringContaining("OpenAI recusou o pedido") });
+    expect(JSON.stringify(result)).not.toContain("chave");
+  });
+
+  it("5xx diz que o provedor está fora ou instável", async () => {
+    const result = await generateFieldSuggestions(
+      { field: "publicReply", count: 3 },
+      { config, fetchImpl: fakeFetch("", { ok: false, status: 503 }).fetchImpl }
+    );
+
+    expect(result).toEqual({ error: expect.stringContaining("OpenRouter está fora do ar ou instável") });
+    expect(JSON.stringify(result)).not.toMatch(/[—–]/);
   });
 
   it("devolve as sugestões lidas da resposta do modelo", async () => {

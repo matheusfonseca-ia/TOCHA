@@ -9,7 +9,9 @@ import {
   isFiltered,
   normalizeSearch,
   parseListView,
+  RULES_SORT,
   sanitizeView,
+  SEQUENCES_SORT,
   serializeListView,
   UNFILED,
   viewFolderCounts,
@@ -26,6 +28,7 @@ interface Item {
   folder?: string | null;
   kind: "dm" | "comment";
   account: string;
+  priority: number;
 }
 
 const adapter: ListAdapter<Item> = {
@@ -35,6 +38,7 @@ const adapter: ListAdapter<Item> = {
   createdAt: (i) => i.created,
   updatedAt: (i) => i.updated,
   executions: (i) => i.runs,
+  priority: (i) => i.priority,
   folderId: (i) => i.folder,
   kind: (i) => i.kind,
   accountId: (i) => i.account,
@@ -52,6 +56,7 @@ const items: Item[] = [
     folder: "lanc",
     kind: "dm",
     account: "acc1",
+    priority: 1,
   },
   {
     id: "b",
@@ -64,6 +69,7 @@ const items: Item[] = [
     folder: null,
     kind: "comment",
     account: "acc2",
+    priority: 0,
   },
   {
     id: "c",
@@ -76,6 +82,7 @@ const items: Item[] = [
     folder: "pasta-apagada",
     kind: "dm",
     account: "acc1",
+    priority: 1,
   },
 ];
 
@@ -86,6 +93,15 @@ const ids = (list: Item[]) => list.map((i) => i.id);
 describe("applyListView", () => {
   it("ordena por atualização mais recente por padrão", () => {
     expect(ids(applyListView(items, view(), adapter, known))).toEqual(["a", "c", "b"]);
+  });
+
+  it("ordena por prioridade como o engine: prioridade crescente, depois a mais antiga", () => {
+    // b (prioridade 0) vence; c e a empatam em 1 e c é mais antiga.
+    expect(ids(applyListView(items, view({ sort: "priority" }), adapter, known))).toEqual([
+      "b",
+      "c",
+      "a",
+    ]);
   });
 
   it("ordena por criação, nome (pt-BR, sem caixa) e execuções", () => {
@@ -198,6 +214,20 @@ describe("URL da visão", () => {
     const qs = serializeListView(view({ folder: UNFILED }));
     expect(qs).toBe("pasta=sem-pasta");
     expect(parseListView(new URLSearchParams(qs)).folder).toBe(UNFILED);
+  });
+
+  it("automações abrem por prioridade e só gravam a ordem quando difere dela", () => {
+    expect(parseListView(new URLSearchParams(""), RULES_SORT).sort).toBe("priority");
+    expect(serializeListView(view({ sort: "priority" }), RULES_SORT)).toBe("");
+    expect(serializeListView(view({ sort: "updated" }), RULES_SORT)).toBe("ordem=updated");
+    expect(parseListView(new URLSearchParams("ordem=updated"), RULES_SORT).sort).toBe("updated");
+  });
+
+  it("workflows não têm prioridade: valor salvo antigo ou inválido cai em atualização", () => {
+    expect(parseListView(new URLSearchParams("ordem=priority"), SEQUENCES_SORT).sort).toBe(
+      "updated"
+    );
+    expect(parseListView(new URLSearchParams("ordem=lixo"), RULES_SORT).sort).toBe("priority");
   });
 
   it("valor desconhecido cai no padrão", () => {

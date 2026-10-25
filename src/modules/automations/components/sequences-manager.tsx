@@ -52,6 +52,7 @@ import { sequenceAdapter, sequenceTriggerLine } from "../utils/display";
 import {
   applyListView,
   DEFAULT_VIEW,
+  SEQUENCES_SORT,
   isFiltered,
   sanitizeView,
   viewFolderCounts,
@@ -82,7 +83,7 @@ export function SequencesManager({
   const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
   const [refTarget, setRefTarget] = useState<RefLinkTarget | null>(null);
 
-  const { view: rawView, update, reset } = useListView("falow:automations:sequences");
+  const { view: rawView, update, reset } = useListView("falow:automations:sequences", SEQUENCES_SORT);
   const folderIds = useMemo(() => new Set(folders.map((f) => f.id)), [folders]);
   const folderById = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders]);
   // Workflow não tem filtro de tipo nem de conta: só pasta e status contam.
@@ -168,6 +169,7 @@ export function SequencesManager({
           onReset={reset}
           searchPlaceholder="Pesquisar workflows..."
           gender="m"
+          sorts={SEQUENCES_SORT}
           trailing={folders.length === 0 ? folderCards : undefined}
         />
 

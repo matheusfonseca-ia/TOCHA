@@ -1,4 +1,4 @@
-import type { AiConfig } from "@/lib/ai/provider";
+import { envModelFor, type AiConfig } from "@/lib/ai/provider";
 import { AI_PROVIDERS, type AiProviderId } from "@/lib/ai/providers";
 
 /**
@@ -8,16 +8,21 @@ import { AI_PROVIDERS, type AiProviderId } from "@/lib/ai/providers";
  */
 export function resolveAiConfig(
   user: { apiKey: string; model: string | null; provider: AiProviderId } | null,
-  fallback: AiConfig | null
+  fallback: AiConfig | null,
+  env: Record<string, string | undefined> = process.env
 ): AiConfig | null {
   if (user?.apiKey.trim()) {
-    // O modelo da instalação só vale para o mesmo provedor: id da OpenRouter
-    // não existe na OpenAI e vice-versa.
-    const inherited = fallback?.provider === user.provider ? fallback.model : null;
+    // Sem modelo próprio herda o que a instalação escolheu para o provedor da
+    // chave (OPENROUTER_MODEL ou OPENAI_MODEL), mesmo que a chave padrão da
+    // instalação seja de outro provedor. Id da OpenRouter não existe na OpenAI
+    // e vice-versa, então nunca cruza provedores.
     return {
       provider: user.provider,
       apiKey: user.apiKey.trim(),
-      model: user.model?.trim() || inherited || AI_PROVIDERS[user.provider].defaultModel,
+      model:
+        user.model?.trim() ||
+        envModelFor(user.provider, env) ||
+        AI_PROVIDERS[user.provider].defaultModel,
     };
   }
   return fallback;

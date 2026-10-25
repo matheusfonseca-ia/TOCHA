@@ -8,6 +8,9 @@
  * (`public_reply_variants` e `welcome_text_variants`).
  */
 
+/** Máximo de textos por mensagem, contando o principal (variante 1) mais as extras. */
+export const MAX_VARIANTS = 10;
+
 /**
  * Junta a variante 1 com as extras, removendo espaços nas pontas, entradas
  * vazias e duplicadas (mantém a primeira ocorrência, então a primária vence

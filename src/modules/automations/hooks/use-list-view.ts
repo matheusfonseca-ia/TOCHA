@@ -9,6 +9,7 @@ import {
   hasViewParams,
   parseListView,
   serializeListView,
+  type SortConfig,
 } from "../utils/list-view";
 
 const URL_SYNC_DELAY_MS = 250;
@@ -39,10 +40,10 @@ function writeSession(key: string, value: string) {
  * depois de criar algo, um filtro antigo esconderia o item novo e pareceria
  * que não salvou.
  */
-export function useListView(storageKey: string) {
+export function useListView(storageKey: string, sorts: SortConfig) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [view, setView] = useState<ListView>(() => parseListView(searchParams));
+  const [view, setView] = useState<ListView>(() => parseListView(searchParams, sorts));
   const mounted = useRef(false);
 
   useEffect(() => {
@@ -51,8 +52,9 @@ export function useListView(storageKey: string) {
     if (hasViewParams(searchParams)) return;
     const saved = readSession(storageKey);
     if (!saved) return;
-    const { sort } = parseListView(new URLSearchParams(saved));
-    if (sort !== DEFAULT_VIEW.sort) setView((current) => ({ ...current, sort }));
+    // Valor salvo que a lista não oferece (ou inválido) cai no padrão dela.
+    const { sort } = parseListView(new URLSearchParams(saved), sorts);
+    if (sort !== sorts.default) setView((current) => ({ ...current, sort }));
     // Só na montagem: depois disso quem manda é o estado local.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -60,7 +62,7 @@ export function useListView(storageKey: string) {
   // Espera a digitação parar: o Safari limita replaceState a ~100 por 30s.
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const qs = serializeListView(view);
+      const qs = serializeListView(view, sorts);
       const url = qs ? `${pathname}?${qs}` : pathname;
       if (url !== `${window.location.pathname}${window.location.search}`) {
         window.history.replaceState(null, "", url);
@@ -68,7 +70,7 @@ export function useListView(storageKey: string) {
       writeSession(storageKey, qs);
     }, URL_SYNC_DELAY_MS);
     return () => window.clearTimeout(timer);
-  }, [view, pathname, storageKey]);
+  }, [view, pathname, storageKey, sorts]);
 
   const update = useCallback((patch: Partial<ListView>) => {
     setView((current) => ({ ...current, ...patch }));

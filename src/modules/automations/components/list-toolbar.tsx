@@ -19,9 +19,10 @@ import type {
   SortKey,
   StatusFilter,
 } from "../types";
-import { isFiltered } from "../utils/list-view";
+import { isFiltered, type SortConfig } from "../utils/list-view";
 
 const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: "priority", label: "Prioridade (ordem de avaliação)" },
   { value: "updated", label: "Atualizado recentemente" },
   { value: "created", label: "Criado recentemente" },
   { value: "name", label: "Nome A a Z" },
@@ -57,6 +58,7 @@ export function ListToolbar({
   onReset,
   searchPlaceholder,
   gender,
+  sorts,
   showKind = false,
   accounts = [],
   trailing,
@@ -67,6 +69,8 @@ export function ListToolbar({
   searchPlaceholder: string;
   /** Concordância dos rótulos de status: automação (f) ou workflow (m). */
   gender: "f" | "m";
+  /** Ordenações oferecidas por esta lista. */
+  sorts: SortConfig;
   showKind?: boolean;
   accounts?: AccountOption[];
   trailing?: React.ReactNode;
@@ -115,7 +119,7 @@ export function ListToolbar({
           icon={<ArrowDownUp className="h-3.5 w-3.5 text-muted-foreground" />}
           label="Ordenar"
           value={view.sort}
-          options={SORT_OPTIONS}
+          options={SORT_OPTIONS.filter((o) => sorts.allowed.includes(o.value))}
           onChange={(sort) => onChange({ sort })}
         />
         {isFiltered(view) && (

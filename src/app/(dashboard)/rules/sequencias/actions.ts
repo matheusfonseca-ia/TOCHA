@@ -357,7 +357,8 @@ export async function saveSequence(
     return { error: "Não foi possível salvar a sequência. Tente novamente." };
   }
 
-  revalidatePath("/rules/sequencias");
+  // "layout": criar workflow muda a contagem das abas (layout das telas com abas).
+  revalidatePath("/rules", "layout");
   revalidatePath("/dashboard");
 
   const id = data.id as string;

@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { aiConfigFromEnv } from "@/lib/ai/provider";
-import { DEFAULT_MODEL } from "@/lib/ai/provider";
-import { OPENAI_DEFAULT_MODEL } from "@/lib/ai/providers";
+import { OPENAI_DEFAULT_MODEL, OPENROUTER_DEFAULT_MODEL } from "@/lib/ai/providers";
 
 import { resolveAiConfig } from "./resolve-config";
 
@@ -31,18 +30,29 @@ describe("resolveAiConfig", () => {
   });
 
   it("usuário sem modelo próprio herda o modelo da instalação do mesmo provedor", () => {
-    expect(resolveAiConfig(user(), env)?.model).toBe("env/modelo");
+    expect(resolveAiConfig(user(), env, { OPENROUTER_MODEL: "env/modelo" })?.model).toBe("env/modelo");
+    expect(resolveAiConfig(user({ provider: "openai" }), env, { OPENAI_MODEL: "gpt-env" })?.model).toBe("gpt-env");
+  });
+
+  it("herda o modelo do provedor da chave mesmo com a chave padrão da instalação em outro provedor", () => {
+    const envKeys = { OPENROUTER_API_KEY: "or", OPENAI_MODEL: "gpt-x" };
+    expect(resolveAiConfig(user({ provider: "openai" }), aiConfigFromEnv(envKeys), envKeys)?.model).toBe("gpt-x");
+    // OPENAI_MODEL sem OPENAI_API_KEY e sem nenhuma chave de ambiente também vale.
+    expect(resolveAiConfig(user({ provider: "openai" }), null, { OPENAI_MODEL: "gpt-x" })?.model).toBe("gpt-x");
   });
 
   it("não herda modelo de outro provedor: cai no padrão do provedor do usuário", () => {
-    expect(resolveAiConfig(user({ provider: "openai" }), env)?.model).toBe(OPENAI_DEFAULT_MODEL);
-    const openAiEnv = { provider: "openai" as const, apiKey: "e", model: "gpt-env" };
-    expect(resolveAiConfig(user({ provider: "openrouter" }), openAiEnv)?.model).toBe(DEFAULT_MODEL);
+    expect(resolveAiConfig(user({ provider: "openai" }), env, { OPENROUTER_MODEL: "env/modelo" })?.model).toBe(
+      OPENAI_DEFAULT_MODEL
+    );
+    expect(resolveAiConfig(user({ provider: "openrouter" }), null, { OPENAI_MODEL: "gpt-env" })?.model).toBe(
+      OPENROUTER_DEFAULT_MODEL
+    );
   });
 
   it("usuário sem modelo e sem instalação cai no modelo padrão do provedor", () => {
-    expect(resolveAiConfig(user(), null)?.model).toBe(DEFAULT_MODEL);
-    expect(resolveAiConfig(user({ provider: "openai" }), null)?.model).toBe(OPENAI_DEFAULT_MODEL);
+    expect(resolveAiConfig(user(), null, {})?.model).toBe(OPENROUTER_DEFAULT_MODEL);
+    expect(resolveAiConfig(user({ provider: "openai" }), null, {})?.model).toBe(OPENAI_DEFAULT_MODEL);
   });
 
   it("sem chave do usuário usa a da instalação", () => {

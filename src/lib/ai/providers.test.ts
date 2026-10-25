@@ -11,8 +11,6 @@ describe("catálogo de provedores", () => {
   it("endpoints oficiais e nada de travessão nos textos", () => {
     expect(AI_PROVIDERS.openrouter.endpoint).toBe("https://openrouter.ai/api/v1/chat/completions");
     expect(AI_PROVIDERS.openai.endpoint).toBe("https://api.openai.com/v1/chat/completions");
-    expect(AI_PROVIDERS.openrouter.keysUrl).toBe("https://openrouter.ai/keys");
-    expect(AI_PROVIDERS.openai.keysUrl).toBe("https://platform.openai.com/api-keys");
     for (const info of Object.values(AI_PROVIDERS)) {
       expect(JSON.stringify(info)).not.toMatch(/[—–]/);
     }

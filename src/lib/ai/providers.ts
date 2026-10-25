@@ -1,6 +1,7 @@
 /**
  * Catálogo dos provedores de IA que o botão ✨ sabe usar. Dado puro (sem
- * fetch nem env), então a tela Contas, o servidor e os testes leem o mesmo.
+ * fetch nem env), compartilhado entre o provedor, o servidor e a tela Contas.
+ * Copy de tela (placeholders, links das chaves) mora em `modules/ai-settings`.
  */
 
 export type AiProviderId = "openrouter" | "openai";
@@ -15,11 +16,6 @@ export interface AiProviderInfo {
   endpoint: string;
   /** Modelo usado quando nem o usuário nem a instalação escolheram um. */
   defaultModel: string;
-  /** Onde a pessoa cria a chave. */
-  keysUrl: string;
-  keysUrlLabel: string;
-  keyPlaceholder: string;
-  modelPlaceholder: string;
 }
 
 /** Modelo padrão da OpenRouter (o mesmo de sempre). */
@@ -38,20 +34,12 @@ export const AI_PROVIDERS: Record<AiProviderId, AiProviderInfo> = {
     label: "OpenRouter",
     endpoint: "https://openrouter.ai/api/v1/chat/completions",
     defaultModel: OPENROUTER_DEFAULT_MODEL,
-    keysUrl: "https://openrouter.ai/keys",
-    keysUrlLabel: "openrouter.ai/keys",
-    keyPlaceholder: "sk-or-v1-...",
-    modelPlaceholder: OPENROUTER_DEFAULT_MODEL,
   },
   openai: {
     id: "openai",
     label: "OpenAI",
     endpoint: "https://api.openai.com/v1/chat/completions",
     defaultModel: OPENAI_DEFAULT_MODEL,
-    keysUrl: "https://platform.openai.com/api-keys",
-    keysUrlLabel: "platform.openai.com/api-keys",
-    keyPlaceholder: "sk-proj-...",
-    modelPlaceholder: OPENAI_DEFAULT_MODEL,
   },
 };
 

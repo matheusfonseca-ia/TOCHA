@@ -31,21 +31,15 @@ const CREATE_ITEMS = [
   },
 ];
 
-/** O editor de workflow é tela cheia e cobre tudo: lá o cabeçalho nem renderiza. */
-function isWorkflowEditor(pathname: string) {
-  return pathname.startsWith("/rules/sequencias/");
-}
-
 /**
  * Cabeçalho da seção Automação: título, menu "Criar" e as abas do topo
- * (estilo da lista de workflows do n8n). Fica no layout de /rules, então
- * vale também pros builders (/rules/nova/**, /rules/[id]/editar), com a aba
- * Automações ativa.
+ * (estilo da lista de workflows do n8n). Fica no layout do grupo
+ * (com-abas) de /rules, então vale também pros builders (/rules/nova/**,
+ * /rules/[id]/editar), com a aba Automações ativa. O editor de workflow (tela
+ * cheia) fica fora desse grupo e não monta o cabeçalho.
  */
 export function AutomationHeader({ counts }: { counts: AutomationCounts }) {
   const pathname = usePathname();
-  if (isWorkflowEditor(pathname)) return null;
-
   const onWorkflows = pathname.startsWith("/rules/sequencias");
   const tabs = [
     { href: "/rules", label: "Automações", count: counts.rules, active: !onWorkflows },

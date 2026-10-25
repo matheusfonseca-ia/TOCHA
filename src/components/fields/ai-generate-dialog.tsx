@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Check, Loader2, Sparkles } from "lucide-react";
 
 import { generateForField } from "@/app/(dashboard)/rules/ai-actions";
@@ -56,14 +56,23 @@ export function AiGenerateDialog({
   /** Posições (em `suggestions`) marcadas; só usado quando há `onPickMany`. */
   const [selected, setSelected] = useState<number[]>([]);
 
+  /**
+   * Número da requisição vigente. Fechar o diálogo e cada novo "Gerar"
+   * incrementam: uma resposta que chega com número velho é descartada, senão
+   * repopularia sugestões antigas num diálogo já fechado (ou reaberto).
+   */
+  const requestId = useRef(0);
+
   const count = onPickMany ? 5 : 3;
   const allSelected = suggestions.length > 0 && selected.length === suggestions.length;
 
   async function generate() {
+    const id = ++requestId.current;
     setLoading(true);
     setError(null);
     setSelected([]);
     const result = await generateForField({ field, count, instruction, context });
+    if (id !== requestId.current) return;
     setLoading(false);
 
     if ("error" in result) {
@@ -96,6 +105,8 @@ export function AiGenerateDialog({
   function close(next: boolean) {
     onOpenChange(next);
     if (!next) {
+      requestId.current += 1;
+      setLoading(false);
       setSelected([]);
       setSuggestions([]);
       setError(null);
@@ -163,7 +174,7 @@ export function AiGenerateDialog({
               <p className="text-xs text-muted-foreground">
                 {primaryEmpty
                   ? "Marque as que quiser. A primeira marcada vira o texto principal e as outras viram variações."
-                  : "Marque as que quiser. Elas entram como variações novas."}
+                  : "Marque as que quiser para entrar como variações novas, ou use uma como texto principal."}
               </p>
               <button
                 type="button"
@@ -178,32 +189,48 @@ export function AiGenerateDialog({
               {suggestions.map((suggestion, index) => {
                 const checked = selected.includes(index);
                 return (
-                  <button
+                  <div
                     key={`${index}-${suggestion}`}
-                    type="button"
-                    role="checkbox"
-                    aria-checked={checked}
-                    onClick={() => toggle(index)}
                     className={cn(
-                      "flex w-full items-start gap-3 rounded-md border px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      "flex w-full items-start gap-2 rounded-md border px-3 py-2 text-sm transition-colors",
                       checked
                         ? "border-primary bg-primary/10"
                         : "border-border/70 bg-secondary/20 hover:border-primary/50 hover:bg-secondary/50"
                     )}
                   >
-                    <span
-                      aria-hidden
-                      className={cn(
-                        "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
-                        checked
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border bg-background"
-                      )}
+                    <button
+                      type="button"
+                      role="checkbox"
+                      aria-checked={checked}
+                      onClick={() => toggle(index)}
+                      className="flex min-w-0 flex-1 items-start gap-3 rounded-sm text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                     >
-                      {checked && <Check className="h-3 w-3" />}
-                    </span>
-                    <span className="min-w-0 flex-1">{suggestion}</span>
-                  </button>
+                      <span
+                        aria-hidden
+                        className={cn(
+                          "mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors",
+                          checked
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border bg-background"
+                        )}
+                      >
+                        {checked && <Check className="h-3 w-3" />}
+                      </span>
+                      <span className="min-w-0 flex-1">{suggestion}</span>
+                    </button>
+                    {/* Troca o texto principal por esta sugestão (o que o clique
+                        único fazia antes de as sugestões virarem marcáveis). */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onPick(suggestion);
+                        close(false);
+                      }}
+                      className="shrink-0 rounded-sm text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      Usar como principal
+                    </button>
+                  </div>
                 );
               })}
             </div>

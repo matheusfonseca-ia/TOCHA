@@ -28,7 +28,7 @@ export interface AutomationCounts {
 }
 
 export type StatusFilter = "all" | "active" | "paused";
-export type SortKey = "updated" | "created" | "name" | "executions";
+export type SortKey = "priority" | "updated" | "created" | "name" | "executions";
 /** Só na aba Automações: regra de DM ou de comentário. */
 export type KindFilter = "all" | "dm" | "comment";
 
@@ -55,6 +55,8 @@ export interface ListAdapter<T> {
   createdAt: (item: T) => string;
   updatedAt: (item: T) => string;
   executions: (item: T) => number;
+  /** Só automações: a ordem em que o engine avalia as regras. */
+  priority?: (item: T) => number;
   folderId: (item: T) => string | null | undefined;
   kind?: (item: T) => Exclude<KindFilter, "all">;
   accountId?: (item: T) => string;

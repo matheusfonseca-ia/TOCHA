@@ -1,11 +1,7 @@
 import { aiFieldSpec, type AiFieldKind } from "@/lib/ai/fields";
 import { parseSuggestions } from "@/lib/ai/parse";
 import { buildFieldPrompt, type FieldPromptContext } from "@/lib/ai/prompt";
-import {
-  AI_PROVIDERS,
-  OPENROUTER_DEFAULT_MODEL,
-  type AiProviderId,
-} from "@/lib/ai/providers";
+import { AI_PROVIDERS, type AiProviderId } from "@/lib/ai/providers";
 
 /**
  * Provedor do botão ✨. Fala com a OpenRouter (uma chave, qualquer modelo) ou
@@ -16,13 +12,19 @@ import {
  * Falow segue funcionando igual.
  */
 
-/** Modelo padrão da OpenRouter (mantido com este nome por compatibilidade). */
-export const DEFAULT_MODEL = OPENROUTER_DEFAULT_MODEL;
-
 export interface AiConfig {
   provider: AiProviderId;
   apiKey: string;
   model: string;
+}
+
+/** Modelo que a instalação escolheu para o provedor (OPENROUTER_MODEL / OPENAI_MODEL), se escolheu. */
+export function envModelFor(
+  provider: AiProviderId,
+  env: Record<string, string | undefined> = process.env
+): string | null {
+  const raw = provider === "openrouter" ? env.OPENROUTER_MODEL : env.OPENAI_MODEL;
+  return raw?.trim() || null;
 }
 
 /**
@@ -37,7 +39,7 @@ export function aiConfigFromEnv(
     return {
       provider: "openrouter",
       apiKey: openRouterKey,
-      model: env.OPENROUTER_MODEL?.trim() || AI_PROVIDERS.openrouter.defaultModel,
+      model: envModelFor("openrouter", env) ?? AI_PROVIDERS.openrouter.defaultModel,
     };
   }
 
@@ -46,7 +48,7 @@ export function aiConfigFromEnv(
     return {
       provider: "openai",
       apiKey: openAiKey,
-      model: env.OPENAI_MODEL?.trim() || AI_PROVIDERS.openai.defaultModel,
+      model: envModelFor("openai", env) ?? AI_PROVIDERS.openai.defaultModel,
     };
   }
 
@@ -79,6 +81,25 @@ export function buildChatRequest(
       ],
     },
   };
+}
+
+/** Mensagem pro usuário por status HTTP: chave, modelo, pedido recusado ou provedor fora. */
+function httpErrorMessage(status: number, config: AiConfig): string {
+  const label = AI_PROVIDERS[config.provider].label;
+  if (status === 429) return "A IA está ocupada agora. Tenta de novo em alguns segundos.";
+  if (status === 401 || status === 403) {
+    return `A ${label} não aceitou a chave. Confere sua chave da ${label} na tela Contas.`;
+  }
+  if (status === 404) {
+    return `A ${label} não encontrou o modelo ${config.model}. Confere o modelo na tela Contas.`;
+  }
+  if (status === 400) {
+    return `A ${label} recusou o pedido. Confere o modelo na tela Contas ou tenta de novo.`;
+  }
+  if (status >= 500) {
+    return `A ${label} está fora do ar ou instável. Tenta de novo em instantes.`;
+  }
+  return `A IA respondeu ${status}. Tenta de novo em instantes.`;
 }
 
 export interface GenerateFieldInput {
@@ -118,12 +139,7 @@ export async function generateFieldSuggestions(
   }
 
   if (!res.ok) {
-    return {
-      error:
-        res.status === 429
-          ? "A IA está ocupada agora. Tenta de novo em alguns segundos."
-          : `A IA respondeu ${res.status}. Confere sua chave da ${AI_PROVIDERS[config.provider].label} na tela Contas.`,
-    };
+    return { error: httpErrorMessage(res.status, config) };
   }
 
   const json = (await res.json().catch(() => null)) as {

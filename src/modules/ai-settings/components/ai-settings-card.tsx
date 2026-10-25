@@ -18,6 +18,7 @@ import { AI_PROVIDER_IDS, AI_PROVIDERS, type AiProviderId } from "@/lib/ai/provi
 import { cn } from "@/lib/utils";
 
 import { removeAiSettings, saveAiSettings } from "../actions";
+import { AI_PROVIDER_UI } from "../constants";
 import type { AiSettingsStatus } from "../types";
 
 /**
@@ -34,6 +35,7 @@ export function AiSettingsCard({ status }: { status: AiSettingsStatus }) {
   const [pending, startTransition] = useTransition();
 
   const info = AI_PROVIDERS[provider];
+  const ui = AI_PROVIDER_UI[provider];
   /** O seletor está num provedor diferente do da chave guardada. */
   const switching = status.hasUserKey && provider !== status.provider;
 
@@ -146,7 +148,7 @@ export function AiSettingsCard({ status }: { status: AiSettingsStatus }) {
               id="ai-key"
               type="password"
               autoComplete="off"
-              placeholder={info.keyPlaceholder}
+              placeholder={ui.keyPlaceholder}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               disabled={pending || status.migrationMissing}
@@ -155,12 +157,12 @@ export function AiSettingsCard({ status }: { status: AiSettingsStatus }) {
               {switching && `Para trocar de provedor, cole a chave da ${info.label}. `}
               Pegue a sua em{" "}
               <a
-                href={info.keysUrl}
+                href={ui.keysUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-0.5 text-primary hover:underline"
               >
-                {info.keysUrlLabel}
+                {ui.keysUrlLabel}
                 <ExternalLink className="h-3 w-3" />
               </a>
               .
@@ -170,7 +172,7 @@ export function AiSettingsCard({ status }: { status: AiSettingsStatus }) {
             <Label htmlFor="ai-model">Modelo (opcional)</Label>
             <Input
               id="ai-model"
-              placeholder={info.modelPlaceholder}
+              placeholder={info.defaultModel}
               value={model}
               onChange={(e) => setModel(e.target.value)}
               disabled={pending || status.migrationMissing}

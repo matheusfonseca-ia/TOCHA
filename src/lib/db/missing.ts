@@ -24,14 +24,16 @@ export function isMissingTable(
 
 /**
  * Coluna inexistente: vem como 42703 direto do Postgres ("column x.y does not
- * exist") ou como PGRST204 do cache de schema do PostgREST.
+ * exist") ou como PGRST204 do cache de schema do PostgREST. O nome casa como
+ * identificador inteiro: `follow_gate_text` não casa dentro de
+ * `follow_gate_text_variants`.
  */
 export function isMissingColumn(
   error: PostgrestLikeError | null | undefined,
   column: string
 ): boolean {
   const message = error?.message ?? "";
-  if (!message.includes(column)) return false;
+  if (!new RegExp(`(?<![A-Za-z0-9_])${column}(?![A-Za-z0-9_])`).test(message)) return false;
   return (
     error?.code === "42703" ||
     error?.code === "PGRST204" ||

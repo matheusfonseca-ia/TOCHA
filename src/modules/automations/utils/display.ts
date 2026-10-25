@@ -43,9 +43,14 @@ type RuleLike = Pick<
   "name" | "keyword" | "trigger_type" | "match_type" | "reply_type" | "comment_any_word"
 >;
 
+/** "execução" ou "execuções", conforme a quantidade. */
+export function pluralWord(count: number, singular: string, plural: string): string {
+  return count === 1 ? singular : plural;
+}
+
 /** "1 execução", "2 execuções". */
 export function countLabel(count: number, singular: string, plural: string): string {
-  return `${count} ${count === 1 ? singular : plural}`;
+  return `${count} ${pluralWord(count, singular, plural)}`;
 }
 
 /** Nome mostrado na lista e nos diálogos (mover, expiração). */
@@ -91,6 +96,7 @@ export function ruleAdapter(
     createdAt: (rule) => rule.created_at,
     updatedAt: (rule) => rule.updated_at,
     executions: (rule) => executionCounts[rule.id] ?? 0,
+    priority: (rule) => rule.priority,
     folderId: (rule) => rule.folder_id,
     kind: (rule) => rule.trigger_type,
     accountId: (rule) => rule.account_id,

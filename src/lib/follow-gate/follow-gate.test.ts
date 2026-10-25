@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 import { checkFollow, FOLLOW_RECHECK_DELAY_MS } from "./check";
 import {
@@ -13,6 +14,7 @@ import { followCheckPayload, parseFollowCheckPayload, profileUrl } from "./paylo
 import {
   copyFollowGateColumns,
   followGateColumns,
+  followGateFields,
   hasFollowGateVariants,
   isMissingFollowGateColumn,
   isMissingFollowGateVariantsColumn,
@@ -189,6 +191,21 @@ describe("colunas no save e no duplicar", () => {
   });
 });
 
+describe("limite de variações do portão", () => {
+  const schema = z.object(followGateFields);
+  const extras = (n: number) => Array.from({ length: n }, (_, i) => `Extra ${i + 1}`);
+
+  it("aceita 9 extras (10 textos com o principal)", () => {
+    expect(schema.safeParse({ follow_gate_text_variants: extras(9) }).success).toBe(true);
+    expect(schema.safeParse({ follow_gate_retry_variants: extras(9) }).success).toBe(true);
+  });
+
+  it("recusa 10 extras (11 textos com o principal)", () => {
+    expect(schema.safeParse({ follow_gate_text_variants: extras(10) }).success).toBe(false);
+    expect(schema.safeParse({ follow_gate_retry_variants: extras(10) }).success).toBe(false);
+  });
+});
+
 describe("banco sem a migration 0007", () => {
   it("reconhece o erro real do PostgREST para coluna do portão", () => {
     expect(
@@ -205,6 +222,30 @@ describe("banco sem a migration 0007", () => {
     expect(
       isMissingFollowGateColumn({ message: "Could not find the 'expires_at' column of 'rules' in the schema cache" })
     ).toBe(false);
+  });
+
+  it("erro de coluna de variações (0017) não é tratado como falta da 0007", () => {
+    expect(
+      isMissingFollowGateColumn({
+        code: "PGRST204",
+        message: "Could not find the 'follow_gate_text_variants' column of 'rules' in the schema cache",
+      })
+    ).toBe(false);
+    expect(
+      isMissingFollowGateColumn({ code: "42703", message: "column rules.follow_gate_retry_variants does not exist" })
+    ).toBe(false);
+  });
+
+  it("detecta cada coluna da 0007", () => {
+    for (const column of [
+      "follow_gate_enabled",
+      "follow_gate_text",
+      "follow_gate_follow_label",
+      "follow_gate_confirm_label",
+      "follow_gate_retry_text",
+    ]) {
+      expect(isMissingFollowGateColumn({ code: "42703", message: `column rules.${column} does not exist` })).toBe(true);
+    }
   });
 
   it("tira só as colunas do portão da linha", () => {

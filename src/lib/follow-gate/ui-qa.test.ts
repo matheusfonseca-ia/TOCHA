@@ -405,7 +405,7 @@ describe("saveRule: round-trip com o banco", () => {
     expect(fake.tables.rules[0].follow_gate_text_variants).toBeNull();
   });
 
-  it("recusa variação acima de 640 caracteres e mais de 10 variações", async () => {
+  it("recusa variação acima de 640 caracteres e mais de 9 variações extras", async () => {
     const long = await saveRule(
       baseInput({ follow_gate_enabled: true, follow_gate_text_variants: ["a".repeat(641)] })
     );
@@ -414,10 +414,10 @@ describe("saveRule: round-trip com o banco", () => {
     const many = await saveRule(
       baseInput({
         follow_gate_enabled: true,
-        follow_gate_retry_variants: Array.from({ length: 11 }, (_, i) => `v${i}`),
+        follow_gate_retry_variants: Array.from({ length: 10 }, (_, i) => `v${i}`),
       })
     );
-    expect(many.error).toMatch(/10 variações/);
+    expect(many.error).toMatch(/9 variações/);
   });
 
   it("duplicar copia as variações do portão", async () => {

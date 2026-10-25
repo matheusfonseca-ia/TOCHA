@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import type { Folder } from "@/lib/folders/folders";
 import { cn } from "@/lib/utils";
 
-import { createdDate } from "../utils/display";
+import { createdDate, pluralWord } from "../utils/display";
 import { folderDotClass } from "../utils/folder-colors";
 
 export interface RowMetric {
@@ -115,7 +115,7 @@ export function AutomationRow({
           {metrics.map((metric) => (
             <span key={metric.plural} className="whitespace-nowrap">
               <span className="font-medium tabular-nums text-foreground">{metric.value}</span>{" "}
-              {metric.value === 1 ? metric.singular : metric.plural}
+              {pluralWord(metric.value, metric.singular, metric.plural)}
             </span>
           ))}
         </div>

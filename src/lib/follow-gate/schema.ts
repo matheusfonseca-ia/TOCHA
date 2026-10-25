@@ -1,10 +1,10 @@
 import { z } from "zod";
 
 import { isMissingColumn, type PostgrestLikeError } from "@/lib/db/missing";
-import { cleanVariantList } from "@/lib/rules/variants";
+import { cleanVariantList, MAX_VARIANTS } from "@/lib/rules/variants";
 import type { Rule } from "@/types/database";
 
-import { FOLLOW_GATE_LIMITS, FOLLOW_GATE_MAX_VARIANTS } from "./copy";
+import { FOLLOW_GATE_LIMITS } from "./copy";
 
 const label = (what: string) =>
   z
@@ -13,7 +13,10 @@ const label = (what: string) =>
     .max(FOLLOW_GATE_LIMITS.label, `${what}: máximo de ${FOLLOW_GATE_LIMITS.label} caracteres (limite da Meta).`)
     .optional();
 
-/** Lista de variações extras de uma das mensagens do portão. */
+/**
+ * Lista de variações extras de uma das mensagens do portão. O limite de
+ * textos conta o principal, então as extras passam de `MAX_VARIANTS - 1`.
+ */
 const variantList = (what: string) =>
   z
     .array(
@@ -22,7 +25,7 @@ const variantList = (what: string) =>
         .trim()
         .max(FOLLOW_GATE_LIMITS.text, `${what}: máximo de ${FOLLOW_GATE_LIMITS.text} caracteres.`)
     )
-    .max(FOLLOW_GATE_MAX_VARIANTS, `${what}: no máximo ${FOLLOW_GATE_MAX_VARIANTS} variações.`)
+    .max(MAX_VARIANTS - 1, `${what}: no máximo ${MAX_VARIANTS - 1} variações extras.`)
     .optional();
 
 /**
@@ -120,12 +123,24 @@ export function hasFollowGateVariants(row: FollowGateColumns): boolean {
 export const FOLLOW_GATE_MIGRATION_ERROR =
   "Para usar o Seguir para liberar, aplique a migration 0007_follow_gate.sql no Supabase.";
 
-/** Banco sem a migration 0007: o PostgREST recusa a coluna desconhecida. */
+/** Colunas criadas pela migration 0007 (as de variações vêm da 0017, ficam de fora). */
+const GATE_COLUMNS = [
+  "follow_gate_enabled",
+  "follow_gate_text",
+  "follow_gate_follow_label",
+  "follow_gate_confirm_label",
+  "follow_gate_retry_text",
+] as const;
+
+/**
+ * Banco sem a migration 0007: o PostgREST recusa a coluna desconhecida. Casa a
+ * lista explícita (e não o prefixo `follow_gate_`), então o resultado não
+ * depende de checar a 0017 antes.
+ */
 export function isMissingFollowGateColumn(
-  error: { message?: string } | null | undefined
+  error: PostgrestLikeError | null | undefined
 ): boolean {
-  const message = error?.message ?? "";
-  return /follow_gate_/.test(message) && /does not exist|schema cache|column/i.test(message);
+  return GATE_COLUMNS.some((column) => isMissingColumn(error, column));
 }
 
 /** Mesma linha sem as colunas do portão, para salvar num banco sem a migration 0007. */

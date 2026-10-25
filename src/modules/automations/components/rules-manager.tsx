@@ -78,6 +78,7 @@ import { ruleAdapter, ruleTitle, ruleTriggerLine } from "../utils/display";
 import {
   applyListView,
   DEFAULT_VIEW,
+  RULES_SORT,
   isFiltered,
   sanitizeView,
   viewFolderCounts,
@@ -225,7 +226,7 @@ export function RulesManager({
   const [expiryTarget, setExpiryTarget] = useState<ExpiryTarget | null>(null);
   const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null);
 
-  const { view: rawView, update, reset } = useListView("falow:automations:rules");
+  const { view: rawView, update, reset } = useListView("falow:automations:rules", RULES_SORT);
   const folderIds = useMemo(() => new Set(folders.map((f) => f.id)), [folders]);
   const folderById = useMemo(() => new Map(folders.map((f) => [f.id, f])), [folders]);
   const accountIds = useMemo(() => new Set(accounts.map((a) => a.id)), [accounts]);
@@ -386,6 +387,7 @@ export function RulesManager({
           onReset={reset}
           searchPlaceholder="Pesquisar automações..."
           gender="f"
+          sorts={RULES_SORT}
           showKind
           accounts={accounts}
           trailing={folders.length === 0 ? folderCards : undefined}

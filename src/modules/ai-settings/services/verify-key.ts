@@ -47,11 +47,3 @@ export async function verifyAiKey(
   // Qualquer outro status é problema do lado do provedor, não da chave.
   return { ok: false, reason: invalidStatuses(provider).includes(res.status) ? "invalid" : "unreachable" };
 }
-
-export function verifyOpenRouterKey(apiKey: string, fetchImpl?: typeof fetch) {
-  return verifyAiKey("openrouter", apiKey, fetchImpl);
-}
-
-export function verifyOpenAiKey(apiKey: string, fetchImpl?: typeof fetch) {
-  return verifyAiKey("openai", apiKey, fetchImpl);
-}

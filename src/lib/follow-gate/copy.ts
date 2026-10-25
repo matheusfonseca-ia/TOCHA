@@ -28,9 +28,6 @@ export type FollowGateRuleFields = Pick<
   | "follow_gate_retry_variants"
 >;
 
-/** Máximo de textos por mensagem do portão (o principal mais as variações). */
-export const FOLLOW_GATE_MAX_VARIANTS = 10;
-
 export interface FollowGateCopy {
   text: string;
   followLabel: string;

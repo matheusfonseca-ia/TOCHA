@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { decryptToken } from "@/lib/crypto";
-import { isMissingColumn, isMissingTable } from "@/lib/db/missing";
+import { isMissingTable } from "@/lib/db/missing";
 import { aiConfigFromEnv, type AiConfig } from "@/lib/ai/provider";
 import { inferProviderFromKey, isAiProviderId, type AiProviderId } from "@/lib/ai/providers";
 import { createClient } from "@/lib/supabase/server";
@@ -17,7 +17,7 @@ import { keyHint } from "./utils/key-hint";
 
 export const AI_SETTINGS_TABLE = "user_ai_settings";
 
-/** Coluna da migration 0018; banco sem ela cai na inferência pelo prefixo da chave. */
+/** Coluna da migration 0018; ausente ou nula (0019) cai na inferência pelo prefixo da chave. */
 export const PROVIDER_COLUMN = "provider";
 
 interface UserRow {
@@ -37,14 +37,15 @@ async function readUserRow(
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return { row: null, migrationMissing: false, authenticated: false };
 
-  const read = (columns: string) =>
-    supabase.from(AI_SETTINGS_TABLE).select(columns).eq("user_id", auth.user!.id).maybeSingle();
-
-  let { data, error } = await read(`api_key_enc, model, ${PROVIDER_COLUMN}`);
-  // Migration 0018 ainda não aplicada: lê sem a coluna do provedor.
-  if (isMissingColumn(error, PROVIDER_COLUMN)) {
-    ({ data, error } = await read("api_key_enc, model"));
-  }
+  // `*` numa query só: sem a migration 0018 (ou com `provider` nulo, 0019) o
+  // campo vem ausente/nulo e `providerOf` deduz pelo prefixo da chave. Evita
+  // uma query que falha a cada navegação do painel. A linha é só do usuário
+  // (RLS) e nunca sobe inteira pro client.
+  const { data, error } = await supabase
+    .from(AI_SETTINGS_TABLE)
+    .select("*")
+    .eq("user_id", auth.user.id)
+    .maybeSingle();
 
   if (isMissingTable(error, AI_SETTINGS_TABLE)) {
     return { row: null, migrationMissing: true, authenticated: true };

@@ -21,7 +21,23 @@ export const DEFAULT_VIEW: ListView = {
 };
 
 const STATUS_VALUES: StatusFilter[] = ["all", "active", "paused"];
-const SORT_VALUES: SortKey[] = ["updated", "created", "name", "executions"];
+/** Ordenações que cada lista oferece e a que vale quando nada foi escolhido. */
+export interface SortConfig {
+  default: SortKey;
+  allowed: SortKey[];
+}
+
+/** Automações: o padrão é a ordem em que o engine avalia (a primeira que casa vence). */
+export const RULES_SORT: SortConfig = {
+  default: "priority",
+  allowed: ["priority", "updated", "created", "name", "executions"],
+};
+
+/** Workflows não têm prioridade: o engine não ordena a avaliação entre eles. */
+export const SEQUENCES_SORT: SortConfig = {
+  default: "updated",
+  allowed: ["updated", "created", "name", "executions"],
+};
 const KIND_VALUES: KindFilter[] = ["all", "dm", "comment"];
 
 /** Nome do parâmetro de URL de cada campo da visão. */
@@ -46,12 +62,15 @@ function oneOf<T extends string>(value: string | null, allowed: T[], fallback: T
 }
 
 /** Lê a visão da URL. Valor desconhecido cai no padrão em vez de quebrar a tela. */
-export function parseListView(params: ParamReader): ListView {
+export function parseListView(
+  params: ParamReader,
+  sorts: SortConfig = SEQUENCES_SORT
+): ListView {
   const folder = params.get(PARAM.folder);
   return {
     q: params.get(PARAM.q) ?? DEFAULT_VIEW.q,
     status: oneOf(params.get(PARAM.status), STATUS_VALUES, DEFAULT_VIEW.status),
-    sort: oneOf(params.get(PARAM.sort), SORT_VALUES, DEFAULT_VIEW.sort),
+    sort: oneOf(params.get(PARAM.sort), sorts.allowed, sorts.default),
     folder: folder === null || folder === "" ? null : folder === UNFILED_PARAM ? UNFILED : folder,
     kind: oneOf(params.get(PARAM.kind), KIND_VALUES, DEFAULT_VIEW.kind),
     account: params.get(PARAM.account) || DEFAULT_VIEW.account,
@@ -59,11 +78,11 @@ export function parseListView(params: ParamReader): ListView {
 }
 
 /** Só grava o que difere do padrão, pra URL limpa quando nada foi mexido. */
-export function serializeListView(view: ListView): string {
+export function serializeListView(view: ListView, sorts: SortConfig = SEQUENCES_SORT): string {
   const params = new URLSearchParams();
   if (view.q.trim()) params.set(PARAM.q, view.q);
   if (view.status !== DEFAULT_VIEW.status) params.set(PARAM.status, view.status);
-  if (view.sort !== DEFAULT_VIEW.sort) params.set(PARAM.sort, view.sort);
+  if (view.sort !== sorts.default) params.set(PARAM.sort, view.sort);
   if (view.folder !== null) {
     params.set(PARAM.folder, view.folder === UNFILED ? UNFILED_PARAM : view.folder);
   }
@@ -132,6 +151,12 @@ function time(value: string): number {
 function compareBy<T>(sort: SortKey, adapter: ListAdapter<T>) {
   const byUpdated = (a: T, b: T) => time(adapter.updatedAt(b)) - time(adapter.updatedAt(a));
   switch (sort) {
+    case "priority":
+      // Mesma ordem do engine (sortByPriority em lib/rules/engine.ts):
+      // prioridade crescente, depois a mais antiga primeiro.
+      return (a: T, b: T) =>
+        (adapter.priority?.(a) ?? 0) - (adapter.priority?.(b) ?? 0) ||
+        adapter.createdAt(a).localeCompare(adapter.createdAt(b));
     case "created":
       return (a: T, b: T) => time(adapter.createdAt(b)) - time(adapter.createdAt(a));
     case "name":

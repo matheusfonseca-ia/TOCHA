@@ -13,10 +13,9 @@ import {
   addVariants,
   allVariants,
   describeAddVariants,
+  MAX_VARIANTS,
 } from "@/lib/rules/variants";
 import { cn } from "@/lib/utils";
-
-const MAX_VARIANTS = 10;
 
 interface VariantListProps {
   /** Prefixo único para os `id` dos campos (ex.: "welcome", "public-reply"). */

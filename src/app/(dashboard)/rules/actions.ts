@@ -22,6 +22,7 @@ import {
   withoutFollowGateVariantColumns,
 } from "@/lib/follow-gate/schema";
 import { keywordTerms } from "@/lib/rules/engine";
+import { MAX_VARIANTS } from "@/lib/rules/variants";
 import { automationRuleIdsOf } from "@/lib/sequences/graph";
 import { createClient } from "@/lib/supabase/server";
 import type { SequenceGraph } from "@/types/sequence";
@@ -47,10 +48,10 @@ const mediaRefSchema = z.object({
  */
 const WELCOME_TEXT_MAX = 640;
 
-// Variantes de resposta: até 10 opções extras (além da variante 1, que é o
-// próprio campo `public_reply_text`/`welcome_text`) dentro do mesmo limite
-// de caracteres de cada texto.
-const MAX_REPLY_VARIANTS = 10;
+// Variantes de resposta: extras além da variante 1 (o próprio campo
+// `public_reply_text`/`welcome_text`), com o total limitado a MAX_VARIANTS e
+// o mesmo limite de caracteres de cada texto.
+const MAX_REPLY_VARIANTS = MAX_VARIANTS - 1;
 
 const ruleSchema = z.object({
   id: z.string().uuid().optional(),
@@ -309,8 +310,8 @@ export async function saveRule(raw: RuleInput): Promise<ActionResult> {
   let saved = await write(row);
 
   // Banco ainda sem a migration 0017: salva sem as variações do portão e avisa
-  // (só se havia o que gravar). Vem antes do tratamento da 0007 porque o erro
-  // de uma coluna de variação também cita "follow_gate_".
+  // (só se havia o que gravar). Cada detector casa só as próprias colunas, então
+  // a ordem entre este bloco e o da 0007 não muda o resultado.
   let variantsWarning: string | undefined;
   if (saved.error && isMissingFollowGateVariantsColumn(saved.error)) {
     if (hasFollowGateVariants(row)) variantsWarning = FOLLOW_GATE_VARIANTS_MIGRATION_WARNING;
