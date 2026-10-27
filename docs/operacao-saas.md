@@ -65,6 +65,7 @@ select table_name, column_name, is_nullable from information_schema.columns
 
 3. **Nome do Worker na Cloudflare.** O `wrangler.toml` usa `name = "falow"`, o mesmo nome do Worker da outra instalação. Antes do primeiro deploy, rode `npx wrangler whoami` **(você)** e veja em Cloudflare → **Workers & Pages** se já existe um Worker `falow` nessa conta. Se existir e não for seu (o de `falow.methodgrowthhub.com.br`), **não faça o deploy com esse nome**: o passo 7 substituiria o site da outra instalação. Troque `name` no `wrangler.toml` (por exemplo `falow-saas`) e use esse nome em todo lugar deste runbook onde aparece `falow` como Worker (`wrangler tail falow`, caminhos do painel).
 4. **Pushes na `main`.** Esta branch não vai para a `main` até o passo 13: a Vercel publicaria na hora. E a outra instalação puxa da mesma `main`: avise quem cuida dela antes de juntar, porque o código multiusuário exige a 0020 a 0022 no banco dela também.
+5. **De quem é o DNS do `falow.app.br`.** Em 26/10/2026 o domínio (registro.br, contato técnico do Helio) apontava para os nameservers `kipp`/`serenity.ns.cloudflare.com`, de **outra** conta Cloudflare, onde roda a landing atual. Na conta do Worker (`matheusfonseca5019@gmail.com`) a zona `falow.app.br` existe, mas está **pendente**, com os nameservers `dara`/`major.ns.cloudflare.com`. Os 3 registros do Resend (`resend._domainkey`, `rsend`, `send`) já estão na zona da conta do Worker; na outra conta eles precisam ser criados por quem tem acesso a ela, para o Resend verificar antes da virada. A troca de nameservers acontece no passo 7.
 
 Antes de começar, anote (num lugar seguro, fora do git) os valores atuais que você vai precisar desfazer em caso de rollback: a URL de redirect do OAuth e a URL do webhook que estão hoje no app Meta, e o domínio atual da produção na Vercel.
 
@@ -128,6 +129,13 @@ Tudo da seção 3: domínio no Resend, SMTP no Supabase, cadastro público desli
 4. Depois do deploy do passo 7, desfaça o ambiente de build (seção 4.4, último item) para o `.env.local` voltar ao normal.
 
 ### Passo 7 — Deploy **(você)**
+
+**Antes, o domínio passa para a conta do Worker** (passo 0, item 5). A landing atual sai do ar aqui; o app assume o `falow.app.br`.
+
+1. Peça a quem tem a outra conta Cloudflare um **Export** do DNS da zona `falow.app.br` (DNS → Records → Export) e confira que todo registro que importa (e-mail, verificações, os 3 do Resend) existe também na zona da conta do Worker.
+2. Nessa zona, apague os registros `A`/`AAAA` de `falow.app.br` e `www` que vieram importados da conta antiga (apontam para o proxy da Cloudflare de lá e não servem para nada aqui). Não toque nos do Resend nem nos de e-mail.
+3. No registro.br (quem tem acesso ao domínio), troque os nameservers para `dara.ns.cloudflare.com` e `major.ns.cloudflare.com`.
+4. Espere a zona ficar **Active** na conta do Worker (Cloudflare → `falow.app.br` → Overview; costuma levar de minutos a algumas horas) e só então rode o deploy abaixo.
 
 ```bash
 npm run deploy:cloudflare
