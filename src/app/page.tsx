@@ -14,6 +14,7 @@ import {
   LEGAL_PAGES,
 } from "@/components/legal/legal-chrome";
 import { Button } from "@/components/ui/button";
+import { withBasePath } from "@/lib/app-url";
 
 export const metadata: Metadata = {
   title: "Falow: respostas automáticas para DMs e comentários do Instagram",
@@ -27,7 +28,7 @@ export const metadata: Metadata = {
  */
 function SubscribeForm() {
   return (
-    <form action="/api/billing/checkout" method="post">
+    <form action={withBasePath("/api/billing/checkout")} method="post">
       <Button type="submit" size="lg">
         Assinar o Falow
         <ArrowRight />

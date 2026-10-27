@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 
+import { withBasePath } from "@/lib/app-url";
+
 import type { ListView } from "../types";
 import {
   DEFAULT_VIEW,
@@ -63,7 +65,9 @@ export function useListView(storageKey: string, sorts: SortConfig) {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const qs = serializeListView(view, sorts);
-      const url = qs ? `${pathname}?${qs}` : pathname;
+      // usePathname() vem sem o /sistema; o replaceState cru precisa dele.
+      const path = withBasePath(pathname);
+      const url = qs ? `${path}?${qs}` : path;
       if (url !== `${window.location.pathname}${window.location.search}`) {
         window.history.replaceState(null, "", url);
       }

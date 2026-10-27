@@ -18,7 +18,7 @@ Fatos que valem para tudo (vêm da spec `docs/superpowers/specs/2026-10-15-falow
 - Botão de escrever com IA: cada usuário (cliente inclusive) pode cadastrar a própria chave da OpenRouter ou da OpenAI na tela Contas e usa a dele. A chave da instalação (`OPENROUTER_API_KEY` / `OPENAI_API_KEY`) vale **só para o dono e os admins**; cliente sem chave própria não vê o botão.
 - Cada cliente tem 1 conta de Instagram ativa; um mesmo @ ativo pertence a um login só.
 - Exclusão: `purge_after = canceled_at + 30 dias`, só para `canceled`.
-- Domínio `https://falow.app.br`; e-mail de saída `nao-responda@falow.app.br`.
+- O app mora em `https://falow.app.br/sistema` (`basePath` do Next, `BASE_PATH` em `src/lib/app-url.ts`); a raiz `https://falow.app.br` é a landing, outro site, de outro repositório. E-mail de saída `nao-responda@falow.app.br`.
 
 **Numeração das migrations (mudou em 25/10/2026).** A `main` do GitHub passou a usar as migrations `0016` a `0019` (chave de IA por usuário, variações do portão e provedor da IA). As do multiusuário foram renumeradas para vir depois delas, na ordem em que entram na virada:
 
@@ -130,32 +130,34 @@ Tudo da seção 3: domínio no Resend, SMTP no Supabase, cadastro público desli
 
 ### Passo 7 — Deploy **(você)**
 
-**Antes, o domínio passa para a conta do Worker** (passo 0, item 5). A landing atual sai do ar aqui; o app assume o `falow.app.br`.
+**Antes, o domínio passa para a conta do Worker** (passo 0, item 5). A landing **continua** na raiz de `falow.app.br`; o Worker entra só em `falow.app.br/sistema` por rota (`wrangler.toml`), que na Cloudflare tem precedência sobre o custom domain da landing no mesmo hostname. Rota só aponta para Worker **da mesma conta da zona**: por isso a landing também tem que estar na conta do Worker antes da troca de nameservers (item 0 abaixo), senão ela sai do ar.
 
+0. Na conta do Worker, crie o projeto da landing em Workers & Pages a partir do repositório dela no GitHub e confira que publica (no endereço `*.pages.dev`/`*.workers.dev` dele). O domínio `falow.app.br` só é ligado a ele depois do item 4.
 1. Peça a quem tem a outra conta Cloudflare um **Export** do DNS da zona `falow.app.br` (DNS → Records → Export) e confira que todo registro que importa (e-mail, verificações, os 3 do Resend) existe também na zona da conta do Worker.
 2. Nessa zona, apague os registros `A`/`AAAA` de `falow.app.br` e `www` que vieram importados da conta antiga (apontam para o proxy da Cloudflare de lá e não servem para nada aqui). Não toque nos do Resend nem nos de e-mail.
 3. No registro.br (quem tem acesso ao domínio), troque os nameservers para `dara.ns.cloudflare.com` e `major.ns.cloudflare.com`.
-4. Espere a zona ficar **Active** na conta do Worker (Cloudflare → `falow.app.br` → Overview; costuma levar de minutos a algumas horas) e só então rode o deploy abaixo.
+4. Espere a zona ficar **Active** na conta do Worker (Cloudflare → `falow.app.br` → Overview; costuma levar de minutos a algumas horas).
+5. Ligue `falow.app.br` como Custom domain do projeto da landing (item 0) e confira que `https://falow.app.br` abre a landing. Só então rode o deploy abaixo.
 
 ```bash
 npm run deploy:cloudflare
 ```
 
-Isso faz `opennextjs-cloudflare build` e depois `wrangler deploy`. O `custom_domain = true` do `wrangler.toml` cria o domínio `falow.app.br` apontando para o Worker e emite o certificado sozinho.
+Isso faz `opennextjs-cloudflare build` e depois `wrangler deploy`. As `routes` do `wrangler.toml` (`falow.app.br/sistema` e `falow.app.br/sistema/*`) ligam o Worker só nesse caminho; o resto do domínio continua na landing. A rota exige um registro DNS **proxied** (nuvem laranja) para `falow.app.br`, que o custom domain da landing já cria.
 
-**Atenção, janela de chaves de teste.** A partir daqui e até a troca para o modo live (passo 18) o site público roda com chaves **de teste** da Stripe: qualquer pessoa que achar o link consegue assinar com o cartão `4242 4242 4242 4242` e ganha acesso completo, e essas contas continuam existindo depois da troca. Portanto, **até o passo 18 não divulgue o site**: não linke `falow.app.br` na landing, nas redes, no app da Meta nem para clientes, e mantenha a janela curta (faça os passos 7 a 18 no mesmo dia, se der). O passo 18 inclui a limpeza das assinaturas de teste.
+**Atenção, janela de chaves de teste.** A partir daqui e até a troca para o modo live (passo 18) o site público roda com chaves **de teste** da Stripe: qualquer pessoa que achar o link consegue assinar com o cartão `4242 4242 4242 4242` e ganha acesso completo, e essas contas continuam existindo depois da troca. Portanto, **até o passo 18 não divulgue o site**: não linke `falow.app.br/sistema` na landing, nas redes, no app da Meta nem para clientes, e mantenha a janela curta (faça os passos 7 a 18 no mesmo dia, se der). O passo 18 inclui a limpeza das assinaturas de teste.
 
 **Se algo der errado:**
 
-- Falha por já existir registro DNS em `falow.app.br`: apague em Cloudflare → o domínio → DNS → Records **só os registros `A`, `AAAA` ou `CNAME` do próprio `falow.app.br`** (o apex/host raiz que apontava para a hospedagem antiga) e rode o deploy de novo. **Não toque nos `MX`, `TXT` nem nos `CNAME` de e-mail** (SPF, DKIM, DMARC) da seção 3.1: apagar esses derruba o envio de e-mail do Resend. A zona `falow.app.br` precisa existir na sua conta Cloudflare (seção 9).
+- Falha na rota (zona não encontrada ou sem permissão): a zona `falow.app.br` tem que estar **Active** na conta do Worker e o token precisa de *Workers Routes: Edit* nela (seção 9). **Não apague registros de DNS** para destravar: o `A`/`AAAA` do `falow.app.br` agora é da landing, e os `MX`, `TXT` e `CNAME` de e-mail (seção 3.1) derrubam o Resend se sumirem.
 - Falha de build: o terminal mostra o motivo. Nada foi publicado.
 - Deploy publicou mas o site está quebrado: `npx wrangler rollback` **(você; confira o comportamento na documentação do wrangler)** volta o Worker para a versão anterior (não desfaz o banco).
 
-### Passo 8 — DNS `falow.app.br` no Worker
+### Passo 8 — Rota `falow.app.br/sistema` no Worker
 
-O deploy do passo 7 já cria o domínio. Confira: Cloudflare → Workers & Pages → `falow` → Settings → **Domains & Routes** deve listar `falow.app.br` como Custom domain; abra `https://falow.app.br` e a landing tem que carregar (pode levar alguns minutos para o certificado).
+O deploy do passo 7 já cria as rotas. Confira: Cloudflare → Workers & Pages → `falow` → Settings → **Domains & Routes** deve listar `falow.app.br/sistema` e `falow.app.br/sistema/*` como Route. Abra `https://falow.app.br/sistema/login` (tem que abrir o login do Falow) e `https://falow.app.br` (tem que continuar a landing).
 
-**Se algo der errado:** para tirar o domínio do Worker, apague a entrada em Domains & Routes (não mexe em banco nem em Stripe).
+**Se algo der errado:** para tirar o app do ar, apague as duas rotas em Domains & Routes (não mexe em banco, em Stripe nem na landing).
 
 ### Passo 9 — Smoke test das rotas e só então o webhook da Stripe [SEM VOLTA FÁCIL]
 
@@ -171,7 +173,7 @@ Seção 5: App Domains, OAuth redirect, webhook e as três URLs legais para `fal
 
 ### Passo 11 — Reconectar o @ do dono
 
-Entre em `https://falow.app.br/login` com a conta do dono → Contas → **Conectar Instagram** → autorize. Isso valida o OAuth ponta a ponta no domínio novo (callback `https://falow.app.br/api/auth/meta/callback`). Mande uma DM de teste para o @ e confira que o bot responde.
+Entre em `https://falow.app.br/sistema/login` com a conta do dono → Contas → **Conectar Instagram** → autorize. Isso valida o OAuth ponta a ponta no domínio novo (callback `https://falow.app.br/sistema/api/auth/meta/callback`). Mande uma DM de teste para o @ e confira que o bot responde.
 
 **Se algo der errado:** erro `exchange_failed` ou `oauth_denied` na tela de Contas: confira `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `NEXT_PUBLIC_APP_URL` e o redirect cadastrado na Meta (seção 5). Veja o log do Worker (`npx wrangler tail falow --format pretty` **(você)**).
 
@@ -211,7 +213,7 @@ Depois que a 0022 entrou, o deploy antigo (que escreve em `ig_accounts` direto) 
 
 **Não promova esta branch (`multiusuario`) no projeto da Vercel**: sem o `vercel.json` ela perde o cron diário das sequências e a produção nova é o Worker.
 
-**Se algo der errado / voltar para a Vercel:** reverta a 0022 (SQL acima), devolva o domínio à Vercel, devolva as URLs antigas da Meta (webhook e OAuth) e **religue o cron da Vercel** (Settings → Cron Jobs → Enable). O domínio `falow.app.br` está preso ao Worker como Custom domain: **primeiro remova-o** em Cloudflare → Workers & Pages → `falow` → Settings → **Domains & Routes**, e só então adicione-o de novo no projeto da Vercel (crie no DNS da Cloudflare os registros que a Vercel pedir). Ao mesmo tempo, **tire os Cron Triggers do Worker** (remova o bloco `[triggers] crons` do `wrangler.toml` e publique de novo seguindo o roteiro de build da seção 4.4, ou apague/desative o Worker `falow` no painel da Cloudflare): **nunca deixe a Vercel e o Worker disparando a mesma fila** de atrasos ao mesmo tempo.
+**Se algo der errado / voltar para a Vercel:** reverta a 0022 (SQL acima), devolva o domínio à Vercel, devolva as URLs antigas da Meta (webhook e OAuth) e **religue o cron da Vercel** (Settings → Cron Jobs → Enable). O app está preso a `falow.app.br/sistema` por rota: **apague as duas rotas** em Cloudflare → Workers & Pages → `falow` → Settings → **Domains & Routes** (a landing na raiz não é afetada). A Vercel volta a atender no domínio antigo dela, que não é o `falow.app.br`. Ao mesmo tempo, **tire os Cron Triggers do Worker** (remova o bloco `[triggers] crons` do `wrangler.toml` e publique de novo seguindo o roteiro de build da seção 4.4, ou apague/desative o Worker `falow` no painel da Cloudflare): **nunca deixe a Vercel e o Worker disparando a mesma fila** de atrasos ao mesmo tempo.
 
 ### Passo 14 — Limpar os tokens legados [SEM VOLTA FÁCIL]
 
@@ -231,7 +233,7 @@ update public.ig_accounts set access_token_enc = '', token_expires_at = null whe
 
 **Se algo der errado:** não há como recuperar os tokens apagados, e não precisa: essas contas estão desconectadas ou expiradas; quem quiser voltar reconecta pelo OAuth e ganha um token novo. Contas `active` não são tocadas.
 
-Se você **ainda não removeu** a URL antiga do OAuth na Meta (a que ficou ao lado da nova desde o passo 10), este é o momento de removê-la; a nova, `https://falow.app.br/api/auth/meta/callback`, fica.
+Se você **ainda não removeu** a URL antiga do OAuth na Meta (a que ficou ao lado da nova desde o passo 10), este é o momento de removê-la; a nova, `https://falow.app.br/sistema/api/auth/meta/callback`, fica.
 
 ### Passo 15 — Teste de isolamento contra o banco real
 
@@ -335,7 +337,7 @@ Settings → **Billing → Customer portal** (ative; é o que o botão "Minha as
 
 - **Customers can**: atualizar forma de pagamento (trocar cartão) **ligado**; ver histórico de faturas/baixar comprovantes **ligado**; **Cancel subscriptions** **ligado**, com cancelamento **no fim do período de cobrança** (*at end of billing period*).
 - Deixe desligado trocar de plano (o plano é único).
-- Em informações do negócio do portal, preencha Terms of service `https://falow.app.br/termos-de-servico` e Privacy policy `https://falow.app.br/privacidade`.
+- Em informações do negócio do portal, preencha Terms of service `https://falow.app.br/sistema/termos-de-servico` e Privacy policy `https://falow.app.br/sistema/privacidade`.
 - Salvar.
 
 Esses itens são os que os Termos assumem. Lembrete: no modo live o portal é configurado separado do modo teste.
@@ -344,7 +346,7 @@ Esses itens são os que os Termos assumem. Lembrete: no modo live o portal é co
 
 Developers → **Webhooks → Add endpoint**:
 
-- Endpoint URL: `https://falow.app.br/api/webhooks/stripe`
+- Endpoint URL: `https://falow.app.br/sistema/api/webhooks/stripe`
 - Eventos (exatamente estes quatro; o código ignora qualquer outro):
   - `checkout.session.completed`
   - `customer.subscription.created`
@@ -368,7 +370,7 @@ O que cada evento faz (`src/lib/billing/stripe-events.ts`):
 
 Eventos de assinatura de um cliente que ainda não existe respondem 500 de propósito, para a Stripe reenviar depois (a ordem de entrega não é garantida). Isso é normal no log por alguns segundos após uma compra.
 
-**Convite que falha.** Se o e-mail de convite não sair (por exemplo, limite de envio do SMTP, seção 3.2), o webhook responde 500 ao `checkout.session.completed` e a Stripe reenvia. Confira em Supabase → Authentication → Users se o usuário com o e-mail da compra foi criado. Se não foi, o reenvio da Stripe tenta o convite de novo sozinho. Se foi, reenvie o convite pelo painel do Supabase (no usuário, **Send invite** ou **Send password recovery**; **confira** o nome do botão) ou peça ao cliente para usar "Esqueci minha senha" em `https://falow.app.br/login` com o mesmo e-mail. O reenvio do webhook acha esse usuário pelo e-mail e reaproveita, sem criar outro.
+**Convite que falha.** Se o e-mail de convite não sair (por exemplo, limite de envio do SMTP, seção 3.2), o webhook responde 500 ao `checkout.session.completed` e a Stripe reenvia. Confira em Supabase → Authentication → Users se o usuário com o e-mail da compra foi criado. Se não foi, o reenvio da Stripe tenta o convite de novo sozinho. Se foi, reenvie o convite pelo painel do Supabase (no usuário, **Send invite** ou **Send password recovery**; **confira** o nome do botão) ou peça ao cliente para usar "Esqueci minha senha" em `https://falow.app.br/sistema/login` com o mesmo e-mail. O reenvio do webhook acha esse usuário pelo e-mail e reaproveita, sem criar outro.
 
 **Se algo der errado:** veja o passo 9 da seção 1. Na Stripe, a aba **Event deliveries** do endpoint mostra a resposta de cada tentativa e permite reenviar.
 
@@ -414,8 +416,8 @@ Authentication → Sign In / Providers → **Email → Password**: **tamanho mí
 
 Authentication → **URL Configuration**:
 
-- **Site URL**: `https://falow.app.br` (sem barra no final; os templates abaixo usam `{{ .SiteURL }}`).
-- **Redirect URLs**: `https://falow.app.br/**`. O código passa `redirectTo = https://falow.app.br/definir-senha` no convite (`src/lib/billing/stripe-deps.ts`) e na recuperação (`src/app/login/actions.ts`); ele precisa estar nessa lista, mesmo que os templates montem o link por conta própria.
+- **Site URL**: `https://falow.app.br/sistema` (sem barra no final; os templates abaixo usam `{{ .SiteURL }}`).
+- **Redirect URLs**: `https://falow.app.br/sistema/**`. O código passa `redirectTo = https://falow.app.br/sistema/definir-senha` no convite (`src/lib/billing/stripe-deps.ts`) e na recuperação (`src/app/login/actions.ts`); ele precisa estar nessa lista, mesmo que os templates montem o link por conta própria.
 
 ### 3.6 Templates de e-mail (em português)
 
@@ -430,7 +432,7 @@ Authentication → **Emails → Templates** (em painéis antigos: Email Template
 <h2>Bem-vindo ao Falow</h2>
 <p>Sua assinatura está ativa. Falta só definir a sua senha para entrar no painel.</p>
 <p><a href="{{ .SiteURL }}/definir-senha?token_hash={{ .TokenHash }}&type=invite">Definir minha senha</a></p>
-<p>O link vale por tempo limitado e só pode ser usado uma vez. Se ele expirar, abra https://falow.app.br/login e use "Esqueci minha senha" com este e-mail.</p>
+<p>O link vale por tempo limitado e só pode ser usado uma vez. Se ele expirar, abra https://falow.app.br/sistema/login e use "Esqueci minha senha" com este e-mail.</p>
 ```
 
 **Reset password**
@@ -472,7 +474,7 @@ A lista abaixo foi conferida contra o código (`src`, `scripts`, `worker.ts`, `w
 | `INSTAGRAM_APP_SECRET` | idem | Também usado para validar a assinatura do webhook |
 | `META_APP_SECRET` | Painel Meta → App settings → Basic → App Secret | O webhook aceita a assinatura gerada com este **ou** com o `INSTAGRAM_APP_SECRET` (`src/lib/meta/verify.ts`); configure os dois como hoje |
 | `META_VERIFY_TOKEN` | O mesmo valor que está hoje no painel Meta | Precisa ser idêntico ao digitado no webhook |
-| `NEXT_PUBLIC_APP_URL` | `https://falow.app.br` | **Também no build**. Sem barra no final. Também lido pelo `worker.ts` nos crons |
+| `NEXT_PUBLIC_APP_URL` | `https://falow.app.br/sistema` | **Também no build**. Sem barra no final. Também lido pelo `worker.ts` nos crons |
 | `TOKEN_ENCRYPTION_KEY` | **O mesmo valor de hoje** (também decifra as chaves de IA guardadas na 0016). Onde achar: no `.env.local` deste projeto ou no registro seguro onde você guardou as chaves. Variáveis marcadas como sensíveis na Vercel **não podem ser lidas de volta** pelo painel, então não conte com ela | Se for outro (ou se o valor foi perdido), os tokens do Instagram já gravados não abrem mais e **cada cliente precisa reconectar o @**. Nunca gere um novo sem aceitar isso |
 | `CRON_SECRET` | Valor inventado (`node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`) | Sem ele, os dois crons respondem 503 e falham a cada execução |
 | `STRIPE_SECRET_KEY` | Seção 2.2 | `sk_test_...` agora; `sk_live_...` na virada final |
@@ -515,14 +517,14 @@ Por isso, **faça o build de produção só com as variáveis `NEXT_PUBLIC_*` no
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=<Project URL do Supabase>
 NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon key>
-NEXT_PUBLIC_APP_URL=https://falow.app.br
+NEXT_PUBLIC_APP_URL=https://falow.app.br/sistema
 NEXT_PUBLIC_CONTACT_EMAIL=<seu e-mail de contato>
 ```
 
 3. Rode `npm run build:cloudflare` / `npm run deploy:cloudflare` e os `--dry-run` da seção 9.
 4. Depois do deploy, apague o `.env.production.local` e devolva o nome `.env.local` ao arquivo guardado (o teste de isolamento do passo 15 e o `check:schema` leem o `.env.local`). Confira que nenhum deles aparece no `git status`.
 
-`NEXT_PUBLIC_APP_URL` tem que ser `https://falow.app.br` (e **não** `http://localhost:3000`, que ficaria gravado no site publicado: links de convite, redirects e URL de webhook errados).
+`NEXT_PUBLIC_APP_URL` tem que ser `https://falow.app.br/sistema` (com o `/sistema`, que é o `basePath` do app; e **não** `http://localhost:3000`, que ficaria gravado no site publicado: links de convite, redirects e URL de webhook errados).
 
 ### 4.5 Crons
 
@@ -539,7 +541,7 @@ Conferir que existem: Cloudflare → Workers & Pages → `falow` → Settings �
 
 O `wrangler.toml` já liga os **Workers Logs** (bloco `[observability]` com `enabled = true`): todo deploy sobe com eles ligados, sem passo no painel. Você só confere, depois do primeiro deploy, que as mensagens aparecem em Cloudflare → Workers & Pages → `falow` → **Logs** (em alguns painéis, **Observability** → Logs; **confira** o nome do menu). É lá que se procuram as mensagens da seção 8. Para acompanhar ao vivo: `npx wrangler tail falow --format pretty` **(você)**.
 
-O mesmo arquivo tem `workers_dev = false`: o Worker não fica acessível em endereço `*.workers.dev`, só em `https://falow.app.br`. Todo teste deste runbook usa `https://falow.app.br`.
+O mesmo arquivo tem `workers_dev = false`: o Worker não fica acessível em endereço `*.workers.dev`, só em `https://falow.app.br/sistema`. Todo teste deste runbook usa `https://falow.app.br/sistema`.
 
 ---
 
@@ -548,16 +550,16 @@ O mesmo arquivo tem `workers_dev = false`: o Worker não fica acessível em ende
 No painel de desenvolvedores da Meta (developers.facebook.com → seu app). **Anote os valores antigos antes de trocar.**
 
 1. **Settings → Basic → App Domains**: acrescente `falow.app.br`.
-2. **Settings → Basic**: Privacy Policy URL `https://falow.app.br/privacidade`; Terms of Service URL `https://falow.app.br/termos-de-servico`; User data deletion → *Data deletion instructions URL* `https://falow.app.br/exclusao-de-dados`.
-3. **Instagram → API setup with Instagram business login → Business login settings → OAuth redirect URIs**: adicione exatamente `https://falow.app.br/api/auth/meta/callback` (é o `NEXT_PUBLIC_APP_URL` + `/api/auth/meta/callback` montado em `src/lib/meta/oauth.ts`). Mantenha a antiga ao lado até o passo 14 da seção 1.
-4. **Instagram → API setup → Configure webhooks**: *Callback URL* `https://falow.app.br/api/webhooks/meta`; *Verify token*: o **mesmo** valor do secret `META_VERIFY_TOKEN`. Ao salvar, a Meta faz um GET com `hub.verify_token` e o app devolve o desafio; só funciona com o Worker já publicado e o secret certo. Os campos assinados (mensagens, comentários) continuam os mesmos de hoje. A tela **Contas** do painel mostra a mesma URL do webhook.
+2. **Settings → Basic**: Privacy Policy URL `https://falow.app.br/sistema/privacidade`; Terms of Service URL `https://falow.app.br/sistema/termos-de-servico`; User data deletion → *Data deletion instructions URL* `https://falow.app.br/sistema/exclusao-de-dados`.
+3. **Instagram → API setup with Instagram business login → Business login settings → OAuth redirect URIs**: adicione exatamente `https://falow.app.br/sistema/api/auth/meta/callback` (é o `NEXT_PUBLIC_APP_URL` + `/api/auth/meta/callback` montado em `src/lib/meta/oauth.ts`). Mantenha a antiga ao lado até o passo 14 da seção 1.
+4. **Instagram → API setup → Configure webhooks**: *Callback URL* `https://falow.app.br/sistema/api/webhooks/meta`; *Verify token*: o **mesmo** valor do secret `META_VERIFY_TOKEN`. Ao salvar, a Meta faz um GET com `hub.verify_token` e o app devolve o desafio; só funciona com o Worker já publicado e o secret certo. Os campos assinados (mensagens, comentários) continuam os mesmos de hoje. A tela **Contas** do painel mostra a mesma URL do webhook.
 5. **Portfólio empresarial** (business.facebook.com → Business settings → Business info): campo **Site** = `https://falow.app.br`. É um campo manual e fica fora do painel do app.
 6. Reconecte o @ do dono (passo 11 da seção 1).
 
 **Se algo der errado:** "URL de callback ou token inválido" ao salvar o webhook: o Worker não está no ar, o `META_VERIFY_TOKEN` difere do digitado, ou a rota respondeu 403. Conferir com:
 
 ```bash
-curl -i "https://falow.app.br/api/webhooks/meta?hub.mode=subscribe&hub.verify_token=<META_VERIFY_TOKEN>&hub.challenge=123"
+curl -i "https://falow.app.br/sistema/api/webhooks/meta?hub.mode=subscribe&hub.verify_token=<META_VERIFY_TOKEN>&hub.challenge=123"
 ```
 
 Tem que responder `200` com corpo `123`. Qualquer outro valor de token responde `403`.
@@ -568,7 +570,7 @@ Tem que responder `200` com corpo `123`. Qualquer outro valor de token responde 
 
 Este é o passo 16 da seção 1. Use as **chaves de teste** da Stripe (seção 2 em modo teste, secrets de teste no Worker, webhook de teste criado) e um e-mail seu que você acesse (um alias como `voce+teste1@gmail.com` serve). Lembrete: o site não deve ser divulgado até o passo 18.
 
-1. Abra `https://falow.app.br` (sem estar logado) e clique em **Assinar**. Vai para o checkout da Stripe em modo teste.
+1. Abra `https://falow.app.br/sistema` (sem estar logado) e clique em **Assinar**. Vai para o checkout da Stripe em modo teste.
 2. Pague com o cartão `4242 4242 4242 4242`, validade futura qualquer, CVC qualquer, e o e-mail de teste.
 3. Volta para `/assinatura/obrigado` ("confira seu e-mail"). O e-mail de convite chega pelo Resend, remetente `nao-responda@falow.app.br`.
 4. Clique em **Definir minha senha** → `/definir-senha` → escolha uma senha de 8+ caracteres → o painel abre em `/dashboard`.
@@ -579,7 +581,7 @@ Este é o passo 16 da seção 1. Use as **chaves de teste** da Stripe (seção 2
 9. Mande outra DM para o @ de teste: o bot **não** responde (o log do Worker mostra `[meta] @<usuario> sem assinatura ativa: evento ignorado`; não vira linha em Logs do painel).
 10. Em `/assinatura`, clique **Reativar assinatura**, pague de novo com o cartão de teste. Volta `status = active`, `canceled_at` e `purge_after` vazios, o painel abre e o bot volta a responder, com as regras como estavam.
 11. Roteiro do admin (seção 11), com um segundo usuário de teste que **não** tenha assinatura:
-    1. Entre como dono e abra `https://falow.app.br/admin`.
+    1. Entre como dono e abra `https://falow.app.br/sistema/admin`.
     2. Dê **cortesia** ao usuário de teste e confira que ele entra no painel sem pagar.
     3. **Bloqueie** o usuário: ele é redirecionado para `/assinatura`, que mostra "Conta bloqueada", e o bot dele para de responder (o log do Worker mostra o evento ignorado por falta de acesso).
     4. **Desbloqueie** e confira que o acesso volta.
@@ -591,7 +593,7 @@ Limpeza: **o usuário de teste é apagado no passo 17 da seção 1** (prova do c
 
 Só depois de todo o roteiro acima passar e da prova do cascade (passo 17) ter sido feita. Este bloco é o passo 18 da seção 1.
 
-**1. Desativar o webhook de teste (primeiro).** Stripe em modo **teste** → Developers → Webhooks → o endpoint `https://falow.app.br/api/webhooks/stripe` → **Disable** (ou apague). A partir daqui uma compra com cartão de teste não cria mais usuário no Falow: o evento não chega. Sem isso, entre a limpeza (item 2) e a troca das chaves (item 4) ainda dava para alguém assinar com o cartão `4242` e ganhar uma conta.
+**1. Desativar o webhook de teste (primeiro).** Stripe em modo **teste** → Developers → Webhooks → o endpoint `https://falow.app.br/sistema/api/webhooks/stripe` → **Disable** (ou apague). A partir daqui uma compra com cartão de teste não cria mais usuário no Falow: o evento não chega. Sem isso, entre a limpeza (item 2) e a troca das chaves (item 4) ainda dava para alguém assinar com o cartão `4242` e ganhar uma conta.
 
 **2. Limpar as assinaturas de teste (antes de trocar as chaves).** Durante a janela de chaves de teste (do deploy do passo 7 até aqui) qualquer pessoa pode ter assinado com o cartão `4242`. Com o webhook de teste desligado (item 1) e depois da troca de chaves, nenhum evento de teste chega mais e essas linhas ficariam `active` para sempre, com acesso completo e de graça. Liste tudo o que existe, **excluindo o dono**:
 
@@ -717,7 +719,7 @@ Aprendidas nas revisões. A seção 1 diz em que momento cada bloco entra.
 
 ### Antes do deploy
 
-- A zona `falow.app.br` precisa existir na sua conta Cloudflare (`custom_domain = true` falha sem ela). E o nome do Worker não pode ser o de outra instalação na mesma conta (passo 0, item 3).
+- A zona `falow.app.br` precisa estar **Active** na sua conta Cloudflare (as `routes` do `wrangler.toml` falham sem ela), com a landing já atendendo na raiz (passo 7). E o nome do Worker não pode ser o de outra instalação na mesma conta (passo 0, item 3).
 - `npx wrangler secret put CRON_SECRET` e os demais secrets da seção 4. Sem `CRON_SECRET` o cron falha com 503 uma vez por minuto.
 - Rode `npm run check:schema` com as credenciais de produção no ambiente (`NEXT_PUBLIC_SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`, que o script lê do `.env.local`) **depois** de aplicar a 0020 e a 0021. O build não chama mais esse gate. Saída esperada: `[schema] Banco compatível com o build.` Se ele listar `tabela: coluna ...`, falta migration (aplique as de `supabase/migrations`, na ordem, **até a 0021**; a 0022 só depois do deploy).
 - Rode o build e o empacotamento de teste **(você)**, já com o ambiente de build preparado como na seção 4.4 (só `NEXT_PUBLIC_*` nos arquivos `.env*`):
@@ -734,13 +736,13 @@ npx wrangler deploy --dry-run --outdir .wrangler-dry
 Smoke test das rotas `/api/billing/checkout` e `/api/webhooks/stripe`, olhando os logs do Worker (`npx wrangler tail falow --format pretty` **(você)**, numa segunda janela):
 
 ```bash
-curl -i -X POST https://falow.app.br/api/billing/checkout
-curl -i -X POST https://falow.app.br/api/webhooks/stripe -H "stripe-signature: t=1,v1=invalido" -d "{}"
+curl -i -X POST https://falow.app.br/sistema/api/billing/checkout
+curl -i -X POST https://falow.app.br/sistema/api/webhooks/stripe -H "stripe-signature: t=1,v1=invalido" -d "{}"
 ```
 
 - Checkout: tem que responder `303` com `Location: https://checkout.stripe.com/...` (cria uma sessão de teste inofensiva).
 - Webhook: tem que responder `400 Assinatura inválida` (prova que a rota carrega e o SDK verifica a assinatura). `503 STRIPE_WEBHOOK_SECRET não configurado` significa secret faltando; `500` ou erro de carregamento do módulo significa que o pacote `stripe` não empacotou direito.
-- Dono: entre em `https://falow.app.br/login` com a conta do dono e abra `/dashboard`. Tem que abrir o painel. Isso confirma que o `FALOW_OWNER_USER_ID` é o mesmo no middleware e no servidor. Se der loop de redirecionamento (a página fica indo e voltando entre `/dashboard` e `/assinatura`), a variável está diferente entre os dois. Causas prováveis: um valor que ficou embutido no build (o build tem que ser feito só com as `NEXT_PUBLIC_*`, seção 4.4) ou o secret gravado errado. Confira se ele existe com `npx wrangler secret list` **(você)**, regrave-o com `npx wrangler secret put FALOW_OWNER_USER_ID` (colando só o UID, sem espaço) e, se o build foi feito com o `.env.local` no lugar, refaça o build e o deploy pelo roteiro da seção 4.4.
+- Dono: entre em `https://falow.app.br/sistema/login` com a conta do dono e abra `/dashboard`. Tem que abrir o painel. Isso confirma que o `FALOW_OWNER_USER_ID` é o mesmo no middleware e no servidor. Se der loop de redirecionamento (a página fica indo e voltando entre `/dashboard` e `/assinatura`), a variável está diferente entre os dois. Causas prováveis: um valor que ficou embutido no build (o build tem que ser feito só com as `NEXT_PUBLIC_*`, seção 4.4) ou o secret gravado errado. Confira se ele existe com `npx wrangler secret list` **(você)**, regrave-o com `npx wrangler secret put FALOW_OWNER_USER_ID` (colando só o UID, sem espaço) e, se o build foi feito com o `.env.local` no lugar, refaça o build e o deploy pelo roteiro da seção 4.4.
 
 O SDK `stripe` vai empacotado pela build Node dentro do OpenNext (usa o cliente fetch e SubtleCrypto, mas só foi checado estaticamente). Se a rota falhar ao carregar, o plano B é acrescentar `serverExternalPackages: ["stripe"]` em `next.config.mjs` para o OpenNext resolver a build worker do pacote (mudança de código: peça a quem mantém o repositório).
 
@@ -761,7 +763,7 @@ select user_id, status, purge_after from public.subscriptions where status = 'ca
    O `select` tem que listar **só** o usuário de teste (o purge apaga todos os vencidos). Então:
 
 ```bash
-curl -i https://falow.app.br/api/cron/purge -H "Authorization: Bearer <CRON_SECRET>"
+curl -i https://falow.app.br/sistema/api/cron/purge -H "Authorization: Bearer <CRON_SECRET>"
 ```
 
    Resposta `200` com o id dele em `purged`.
@@ -957,7 +959,7 @@ Admin é o dono (`FALOW_OWNER_USER_ID`) mais os UUIDs da variável `FALOW_ADMIN_
 
 ### O que o painel faz e o que não faz
 
-Em `https://falow.app.br/admin` (404 para quem não é admin):
+Em `https://falow.app.br/sistema/admin` (404 para quem não é admin):
 
 - Lista os clientes com e-mail, data de cadastro, último login, @ conectado, status e fim do período da assinatura, `purge_after`, cortesia e bloqueio.
 - **Cortesia:** dá acesso por um prazo, sem pagamento, com um motivo. Cortesia para quem tem assinatura **cancelada** só adia o purge, não remarca: o `purge_after` continua o mesmo, e se ele já tiver passado quando a cortesia acabar, o cron do dia seguinte apaga tudo. O `/assinatura` do cliente mostra a cortesia, a data de exclusão e o botão Reativar.

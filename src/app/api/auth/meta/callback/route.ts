@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { appUrl } from "@/lib/app-url";
 import { encryptToken } from "@/lib/crypto";
 import { hasActiveAccess, isAdmin } from "@/lib/billing/access";
 import { connectBlockReason } from "@/lib/meta/connect-guard";
@@ -16,9 +17,7 @@ import { createClient } from "@/lib/supabase/server";
 export const dynamic = "force-dynamic";
 
 function redirectToAccounts(params: string) {
-  return NextResponse.redirect(
-    new URL(`/accounts?${params}`, process.env.NEXT_PUBLIC_APP_URL)
-  );
+  return NextResponse.redirect(appUrl(`/accounts?${params}`));
 }
 
 export async function GET(request: NextRequest) {
@@ -46,15 +45,13 @@ export async function GET(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return NextResponse.redirect(
-      new URL("/login", process.env.NEXT_PUBLIC_APP_URL)
-    );
+    return NextResponse.redirect(appUrl("/login"));
   }
 
   try {
     // Confere de novo: o cliente pode ter sido bloqueado durante a autorização.
     if (!(await hasActiveAccess(supabase, user.id))) {
-      return NextResponse.redirect(new URL("/assinatura", process.env.NEXT_PUBLIC_APP_URL));
+      return NextResponse.redirect(appUrl("/assinatura"));
     }
     // code → token curto → token longo (~60 dias) → perfil da conta
     const { token: shortToken } = await exchangeCodeForToken(code);

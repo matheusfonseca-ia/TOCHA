@@ -67,7 +67,7 @@ describe("/assinatura", () => {
     const html = await render();
     expect(html).toContain("Não foi possível conferir sua assinatura agora. Tente de novo em instantes.");
     expect(html).toContain("Tentar de novo");
-    expect(html).toContain('href="/assinatura"');
+    expect(html).toContain('href="/sistema/assinatura"');
     expect(html).toContain("Sair");
     expect(html).not.toContain("Reativar");
     expect(html).not.toContain("Gerenciar");

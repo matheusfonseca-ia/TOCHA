@@ -8,7 +8,8 @@ export const CRON_ROUTES: Record<string, string> = {
   "0 6 * * *": "/api/cron/purge",
 };
 
-const DEFAULT_APP_URL = "https://falow.app.br";
+// Inclui o /sistema (basePath do app); a raiz do dominio e a landing.
+const DEFAULT_APP_URL = "https://falow.app.br/sistema";
 
 /**
  * Monta a requisicao autenticada do cron, ou null se a expressao for desconhecida.
@@ -21,8 +22,9 @@ export function cronRequestFor(
 ): Request | null {
   const path = CRON_ROUTES[cron];
   if (!path) return null;
-  const base = env.NEXT_PUBLIC_APP_URL ?? DEFAULT_APP_URL;
-  return new Request(new URL(path, base), {
+  // Concatena em vez de new URL(path, base): com path absoluto o URL descartaria o /sistema.
+  const base = (env.NEXT_PUBLIC_APP_URL ?? DEFAULT_APP_URL).replace(/\/+$/, "");
+  return new Request(`${base}${path}`, {
     headers: { authorization: `Bearer ${env.CRON_SECRET ?? ""}` },
   });
 }

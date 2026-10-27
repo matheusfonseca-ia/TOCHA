@@ -4,6 +4,7 @@ import { AccountCard } from "@/components/accounts/account-card";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
+import { withBasePath } from "@/lib/app-url";
 import {
   Card,
   CardContent,
@@ -67,7 +68,7 @@ export default async function AccountsPage({
         description="Contas do Instagram conectadas via Meta."
       >
         <Button asChild>
-          <a href="/api/auth/meta">
+          <a href={withBasePath("/api/auth/meta")}>
             <Instagram />
             Conectar Instagram
           </a>
@@ -100,7 +101,7 @@ export default async function AccountsPage({
           description="Clique em “Conectar Instagram” e autorize com a própria conta do Instagram. É necessária uma conta Profissional (Comercial ou Criador)."
         >
           <Button asChild>
-            <a href="/api/auth/meta">
+            <a href={withBasePath("/api/auth/meta")}>
               <Instagram />
               Conectar Instagram
             </a>

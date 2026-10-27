@@ -15,7 +15,7 @@ describe("resendAccessEmail", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
-    process.env.NEXT_PUBLIC_APP_URL = "https://falow.app.br";
+    process.env.NEXT_PUBLIC_APP_URL = "https://falow.app.br/sistema";
     db = createFakeAdmin();
     auth = {
       admin: {
@@ -29,7 +29,7 @@ describe("resendAccessEmail", () => {
   it("quem nunca entrou recebe convite; audita mode invite", async () => {
     const r = await resendAccessEmail(admin(), { adminId: "user-1", targetUserId: "c1" });
     expect(r).toEqual({ ok: true });
-    expect(auth.admin.inviteUserByEmail).toHaveBeenCalledWith("ana@cliente.com", { redirectTo: "https://falow.app.br/definir-senha" });
+    expect(auth.admin.inviteUserByEmail).toHaveBeenCalledWith("ana@cliente.com", { redirectTo: "https://falow.app.br/sistema/definir-senha" });
     expect(auth.resetPasswordForEmail).not.toHaveBeenCalled();
     expect(db.tables.admin_audit_log).toEqual([
       expect.objectContaining({ admin_id: "user-1", action: "invite_resend", target_user_id: "c1", details: { mode: "invite" } }),
@@ -40,7 +40,7 @@ describe("resendAccessEmail", () => {
     auth.admin.getUserById.mockResolvedValueOnce(user("2026-10-01T00:00:00Z"));
     const r = await resendAccessEmail(admin(), { adminId: "user-1", targetUserId: "c1" });
     expect(r).toEqual({ ok: true });
-    expect(auth.resetPasswordForEmail).toHaveBeenCalledWith("ana@cliente.com", { redirectTo: "https://falow.app.br/definir-senha" });
+    expect(auth.resetPasswordForEmail).toHaveBeenCalledWith("ana@cliente.com", { redirectTo: "https://falow.app.br/sistema/definir-senha" });
     expect(auth.admin.inviteUserByEmail).not.toHaveBeenCalled();
     expect(db.tables.admin_audit_log).toEqual([expect.objectContaining({ action: "invite_resend", details: { mode: "recovery" } })]);
   });
@@ -50,7 +50,7 @@ describe("resendAccessEmail", () => {
     auth.admin.getUserById.mockResolvedValueOnce({ ...response, data: { user: { ...response.data.user, [field]: "2026-10-01T00:00:00Z" } } });
     expect(await resendAccessEmail(admin(), { adminId: "user-1", targetUserId: "c1" })).toEqual({ ok: true });
     expect(auth.admin.inviteUserByEmail).not.toHaveBeenCalled();
-    expect(auth.resetPasswordForEmail).toHaveBeenCalledWith("ana@cliente.com", { redirectTo: "https://falow.app.br/definir-senha" });
+    expect(auth.resetPasswordForEmail).toHaveBeenCalledWith("ana@cliente.com", { redirectTo: "https://falow.app.br/sistema/definir-senha" });
     expect(db.tables.admin_audit_log[0].details).toEqual({ mode: "recovery" });
   });
 

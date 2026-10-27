@@ -55,7 +55,7 @@ function form(values: Record<string, string>): FormData {
 
 beforeEach(() => {
   vi.restoreAllMocks();
-  process.env.NEXT_PUBLIC_APP_URL = "https://falow.app.br";
+  process.env.NEXT_PUBLIC_APP_URL = "https://falow.app.br/sistema";
   process.env.FALOW_ADMIN_USER_IDS = OTHER_ADMIN;
   h.isAdminSession = true;
   h.db = createFakeAdmin();
@@ -146,7 +146,7 @@ describe("actions com admin", () => {
 
   it("resendAccessAction manda o convite e audita", async () => {
     expect(await resendAccessAction(C1)).toEqual({ ok: true });
-    expect(h.auth.admin.inviteUserByEmail).toHaveBeenCalledWith("ana@cliente.com", { redirectTo: "https://falow.app.br/definir-senha" });
+    expect(h.auth.admin.inviteUserByEmail).toHaveBeenCalledWith("ana@cliente.com", { redirectTo: "https://falow.app.br/sistema/definir-senha" });
     expect(h.db.tables.admin_audit_log).toEqual([expect.objectContaining({ action: "invite_resend", target_user_id: C1 })]);
   });
 
@@ -173,7 +173,7 @@ describe("actions com admin", () => {
   it("inviteWithCourtesyAction com e-mail novo convida e grava cortesia", async () => {
     const r = await inviteWithCourtesyAction(form({ email: "novo@cliente.com", expiresAt: in30(), reason: "parceiro" }));
     expect(r).toEqual({ ok: true });
-    expect(h.auth.admin.inviteUserByEmail).toHaveBeenCalledWith("novo@cliente.com", { redirectTo: "https://falow.app.br/definir-senha" });
+    expect(h.auth.admin.inviteUserByEmail).toHaveBeenCalledWith("novo@cliente.com", { redirectTo: "https://falow.app.br/sistema/definir-senha" });
     expect(h.db.tables.access_grants).toEqual([expect.objectContaining({ user_id: NEW_USER, kind: "courtesy" })]);
     expect(h.db.tables.admin_audit_log[0]).toEqual(
       expect.objectContaining({ action: "courtesy_invite", target_user_id: NEW_USER, details: { email: "novo@cliente.com", invited: true, status: "created" } })

@@ -33,13 +33,13 @@ import { GET as callback } from "@/app/api/auth/meta/callback/route";
 
 function finish() {
   h.cookies.set("meta_oauth_state", "valid");
-  return callback(new NextRequest("https://falow.app.br/api/auth/meta/callback?state=valid&code=code"));
+  return callback(new NextRequest("https://falow.app.br/sistema/api/auth/meta/callback?state=valid&code=code"));
 }
 
 beforeEach(() => {
   vi.restoreAllMocks();
   vi.clearAllMocks();
-  process.env.NEXT_PUBLIC_APP_URL = "https://falow.app.br";
+  process.env.NEXT_PUBLIC_APP_URL = "https://falow.app.br/sistema";
   h.db = createFakeAdmin();
   h.user = { id: "c1" };
   h.cookies.clear();
@@ -58,17 +58,17 @@ beforeEach(() => {
 describe("acesso nas rotas OAuth do Instagram", () => {
   it("sem login redireciona ao login nas duas rotas", async () => {
     h.user = null;
-    expect((await start()).headers.get("location")).toBe("https://falow.app.br/login");
-    expect((await finish()).headers.get("location")).toBe("https://falow.app.br/login");
+    expect((await start()).headers.get("location")).toBe("https://falow.app.br/sistema/login");
+    expect((await finish()).headers.get("location")).toBe("https://falow.app.br/sistema/login");
     expect(h.exchange).not.toHaveBeenCalled();
   });
 
   it.each(["block", "none", "expired"])("recusa %s antes do diálogo e antes de trocar tokens", async (kind) => {
     if (kind !== "none") h.db.tables.access_grants.push({ user_id: "c1", kind: kind === "block" ? "block" : "courtesy", expires_at: "2000-01-01T00:00:00Z" });
     if (kind === "block") h.db.tables.subscriptions.push({ user_id: "c1", status: "active" });
-    expect((await start()).headers.get("location")).toBe("https://falow.app.br/assinatura");
+    expect((await start()).headers.get("location")).toBe("https://falow.app.br/sistema/assinatura");
     expect(h.cookies.size).toBe(0);
-    expect((await finish()).headers.get("location")).toBe("https://falow.app.br/assinatura");
+    expect((await finish()).headers.get("location")).toBe("https://falow.app.br/sistema/assinatura");
     expect(h.exchange).not.toHaveBeenCalled();
     expect(h.subscribe).not.toHaveBeenCalled();
     expect(h.createAdmin).not.toHaveBeenCalled();
@@ -80,7 +80,7 @@ describe("acesso nas rotas OAuth do Instagram", () => {
     if (kind === "courtesy") h.db.tables.access_grants.push({ user_id: "c1", kind: "courtesy", expires_at: "2999-01-01T00:00:00Z" });
     if (kind === "admin") h.user = { id: "user-1" };
     expect((await start()).headers.get("location")).toMatch(/^https:\/\/instagram.com\/oauth/);
-    expect((await finish()).headers.get("location")).toBe("https://falow.app.br/accounts?connected=1");
+    expect((await finish()).headers.get("location")).toBe("https://falow.app.br/sistema/accounts?connected=1");
     expect(h.db.tables.ig_accounts).toEqual([expect.objectContaining({ user_id: h.user!.id, ig_username: "ana", status: "active" })]);
   });
 
@@ -88,7 +88,7 @@ describe("acesso nas rotas OAuth do Instagram", () => {
     h.db.tables.subscriptions.push({ user_id: "c1", status: "active" });
     await start();
     h.db.tables.access_grants.push({ user_id: "c1", kind: "block" });
-    expect((await finish()).headers.get("location")).toBe("https://falow.app.br/assinatura");
+    expect((await finish()).headers.get("location")).toBe("https://falow.app.br/sistema/assinatura");
     expect(h.exchange).not.toHaveBeenCalled();
     expect(h.cookies.size).toBe(0);
   });
@@ -97,7 +97,7 @@ describe("acesso nas rotas OAuth do Instagram", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     h.db.tables.subscriptions.push({ user_id: "c1", status: "active" });
     h.accountsError = { message: "indisponível" };
-    expect((await finish()).headers.get("location")).toBe("https://falow.app.br/accounts?error=exchange_failed");
+    expect((await finish()).headers.get("location")).toBe("https://falow.app.br/sistema/accounts?error=exchange_failed");
     expect(h.subscribe).not.toHaveBeenCalled();
     expect(h.db.tables.ig_accounts).toHaveLength(0);
   });

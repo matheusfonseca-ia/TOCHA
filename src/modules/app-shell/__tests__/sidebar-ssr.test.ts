@@ -55,7 +55,7 @@ describe("Sidebar (SSR)", () => {
 
   it("cliente vê Minha assinatura (portal da Stripe) e não vê Admin", () => {
     const html = render(false, 0, { showBilling: true });
-    expect(html).toContain('action="/api/billing/portal"');
+    expect(html).toContain('action="/sistema/api/billing/portal"');
     expect(html).toContain("Minha assinatura");
     expect(html).not.toContain('href="/admin"');
   });

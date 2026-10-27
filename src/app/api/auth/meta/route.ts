@@ -2,25 +2,24 @@ import { randomUUID } from "crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
+import { appUrl } from "@/lib/app-url";
 import { hasActiveAccess } from "@/lib/billing/access";
 import { getOAuthDialogUrl } from "@/lib/meta/oauth";
 import { createClient } from "@/lib/supabase/server";
 
 /** Inicia o fluxo OAuth: gera state anti-CSRF e redireciona ao diálogo do Facebook. */
 export async function GET() {
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL!;
-
   const supabase = createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return NextResponse.redirect(new URL("/login", appUrl));
+    return NextResponse.redirect(appUrl("/login"));
   }
 
   if (!(await hasActiveAccess(supabase, user.id))) {
-    return NextResponse.redirect(new URL("/assinatura", appUrl));
+    return NextResponse.redirect(appUrl("/assinatura"));
   }
 
   const state = randomUUID();

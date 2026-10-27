@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { signOut } from "@/app/login/actions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { withBasePath } from "@/lib/app-url";
 import { accessGrantOf, isAccessStatus, isAdmin } from "@/lib/billing/access";
 import { formatPurgeDate } from "@/lib/billing/format";
 import { createClient } from "@/lib/supabase/server";
@@ -30,7 +31,7 @@ function ErroNeutro() {
         <p>Não foi possível conferir sua assinatura agora. Tente de novo em instantes.</p>
         {/* <a> comum (não Link): recarrega a página inteira e refaz a leitura no servidor. */}
         <Button asChild className="w-full">
-          <a href="/assinatura">Tentar de novo</a>
+          <a href={withBasePath("/assinatura")}>Tentar de novo</a>
         </Button>
         <form action={signOut}>
           <button type="submit" className="text-sm text-muted-foreground underline">Sair</button>
@@ -116,7 +117,7 @@ export default async function AssinaturaPage() {
 
         {active ? (
           <div className="flex gap-2">
-            <form action="/api/billing/portal" method="post">
+            <form action={withBasePath("/api/billing/portal")} method="post">
               <Button type="submit" variant="outline">Gerenciar na Stripe</Button>
             </form>
             <Button asChild>
@@ -125,7 +126,7 @@ export default async function AssinaturaPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            <form action="/api/billing/checkout" method="post">
+            <form action={withBasePath("/api/billing/checkout")} method="post">
               <Button type="submit" className="w-full">Reativar assinatura</Button>
             </form>
             {courtesyUntil && (

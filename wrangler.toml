@@ -7,12 +7,15 @@ compatibility_flags = ["nodejs_compat"]
 # quebrava no navegador com "__name is not defined". Recomendação do OpenNext:
 # https://opennext.js.org/cloudflare/howtos/keep_names
 keep_names = false
-# O Worker so atende em falow.app.br: nada de endereco *.workers.dev publico
-# (nem durante a janela das chaves de teste da Stripe).
+# O Worker so atende em falow.app.br/sistema: nada de endereco *.workers.dev
+# publico (nem durante a janela das chaves de teste da Stripe). A raiz do
+# dominio e a landing (outro site); por isso rota com caminho, e nao custom
+# domain, que tomaria o hostname inteiro.
 workers_dev = false
 
 routes = [
-  { pattern = "falow.app.br", custom_domain = true }
+  { pattern = "falow.app.br/sistema", zone_name = "falow.app.br" },
+  { pattern = "falow.app.br/sistema/*", zone_name = "falow.app.br" }
 ]
 
 [assets]

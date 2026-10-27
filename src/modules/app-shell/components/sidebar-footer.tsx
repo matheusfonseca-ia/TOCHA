@@ -4,6 +4,7 @@ import Link from "next/link";
 import { CreditCard, LogOut, ShieldCheck } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { withBasePath } from "@/lib/app-url";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { signOut } from "@/app/login/actions";
@@ -65,7 +66,7 @@ function AccountLinks({
         </RailTooltip>
       )}
       {showBilling && (
-        <form action="/api/billing/portal" method="post" className="flex">
+        <form action={withBasePath("/api/billing/portal")} method="post" className="flex">
           <RailTooltip label="Minha assinatura" enabled={rail}>
             <button type="submit" className={ACCOUNT_ROW}>
               <span className="flex w-10 shrink-0 justify-center">
