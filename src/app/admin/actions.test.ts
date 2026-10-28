@@ -129,6 +129,12 @@ describe("actions com admin", () => {
     expect(h.db.tables.admin_audit_log.map((e) => e.action)).toEqual(["courtesy_grant"]);
   });
 
+  it("grantCourtesyAction com validade vazia grava cortesia sem prazo; data inválida continua recusada", async () => {
+    expect(await grantCourtesyAction(form({ userId: C1, expiresAt: "", reason: "sócio" }))).toEqual({ ok: true });
+    expect(h.db.tables.access_grants).toEqual([expect.objectContaining({ user_id: C1, kind: "courtesy", expires_at: null })]);
+    expect(await grantCourtesyAction(form({ userId: C1, expiresAt: "sem-data", reason: "sócio" }))).toEqual({ ok: false, error: "Data inválida." });
+  });
+
   it("revokeCourtesyAction remove a cortesia", async () => {
     await grantCourtesyAction(form({ userId: C1, expiresAt: in30(), reason: "parceiro" }));
     expect(await revokeCourtesyAction(C1)).toEqual({ ok: true });

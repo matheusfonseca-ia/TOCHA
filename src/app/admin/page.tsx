@@ -30,6 +30,7 @@ const whenFormat = new Intl.DateTimeFormat("pt-BR", {
 function describeDetails(details: Record<string, unknown>): string {
   const parts: string[] = [];
   if (typeof details.expires_at === "string") parts.push(`até ${formatPurgeDate(details.expires_at)}`);
+  if (details.expires_at === null) parts.push("sem prazo");
   if (typeof details.reason === "string") parts.push(`motivo: ${details.reason}`);
   if (details.mode === "invite") parts.push("convite");
   if (details.mode === "recovery") parts.push("recuperação de senha");

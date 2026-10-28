@@ -26,6 +26,10 @@ const futureDate = date.refine(
   "A validade precisa ser uma data futura de até 5 anos."
 );
 
+// Validade vazia = cortesia sem prazo (período indeterminado).
+const optionalDate = z.preprocess((v) => (v === "" || v == null ? null : v), date.nullable());
+const optionalFutureDate = z.preprocess((v) => (v === "" || v == null ? null : v), futureDate.nullable());
+
 async function guarded(run: (adminId: string) => Promise<GrantResult>): Promise<GrantResult> {
   let adminId: string;
   try {
@@ -41,7 +45,7 @@ async function guarded(run: (adminId: string) => Promise<GrantResult>): Promise<
 
 export async function grantCourtesyAction(formData: FormData): Promise<GrantResult> {
   return guarded(async (adminId) => {
-    const parsed = z.object({ userId: uuid, expiresAt: date, reason }).safeParse(Object.fromEntries(formData));
+    const parsed = z.object({ userId: uuid, expiresAt: optionalDate, reason }).safeParse(Object.fromEntries(formData));
     if (!parsed.success) return { ok: false, error: parsed.error.errors[0].message };
     return grantCourtesy(createAdminClient(), { adminId, targetUserId: parsed.data.userId, expiresAt: parsed.data.expiresAt, reason: parsed.data.reason });
   });
@@ -82,7 +86,7 @@ export async function resendAccessAction(userId: string): Promise<GrantResult> {
 export async function inviteWithCourtesyAction(formData: FormData): Promise<GrantResult> {
   return guarded(async (adminId) => {
     const parsed = z
-      .object({ email: z.string().trim().toLowerCase().email("E-mail inválido."), expiresAt: futureDate, reason })
+      .object({ email: z.string().trim().toLowerCase().email("E-mail inválido."), expiresAt: optionalFutureDate, reason })
       .safeParse(Object.fromEntries(formData));
     if (!parsed.success) return { ok: false, error: parsed.error.errors[0].message };
     const { email, expiresAt } = parsed.data;

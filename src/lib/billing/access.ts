@@ -78,6 +78,15 @@ export async function accessGrantOf(
  * Ordem: admin → bloqueio (sem acesso) → cortesia válida → assinatura.
  * Qualquer erro de leitura nega o acesso (com log).
  */
+/** Cortesia que ainda vale: sem prazo (`expires_at` nulo) ou com prazo no futuro. */
+export function isCourtesyValid(
+  grant: Pick<AccessGrant, "kind" | "expires_at"> | null | undefined,
+  now: Date = new Date()
+): boolean {
+  if (grant?.kind !== "courtesy") return false;
+  return !grant.expires_at || new Date(grant.expires_at) > now;
+}
+
 export async function hasActiveAccess(
   client: QueryClient,
   userId: string,
@@ -88,7 +97,7 @@ export async function hasActiveAccess(
   const { grant, error: grantError } = await accessGrantOf(client, userId);
   if (grantError) return false;
   if (grant?.kind === "block") return false;
-  if (grant?.kind === "courtesy" && grant.expires_at && new Date(grant.expires_at) > now) return true;
+  if (isCourtesyValid(grant, now)) return true;
 
   const { data, error } = await client
     .from("subscriptions")

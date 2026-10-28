@@ -1,17 +1,10 @@
-import { AlertTriangle, CheckCircle2, Instagram, Webhook } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Instagram } from "lucide-react";
 
 import { AccountCard } from "@/components/accounts/account-card";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
 import { withBasePath } from "@/lib/app-url";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { withSyncedProfiles } from "@/lib/meta/account-profile";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -58,8 +51,6 @@ export default async function AccountsPage({
   );
 
   const aiStatus = await getAiSettingsStatus();
-
-  const webhookUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/webhooks/meta`;
 
   return (
     <>
@@ -117,48 +108,7 @@ export default async function AccountsPage({
         </div>
       )}
 
-      {/* Configurações da conta lado a lado em xl (IA mais larga, webhook ao
-          lado); empilhadas abaixo disso. O [&>*]:mt-0 anula a margem própria
-          do AiSettingsCard, o espaçamento fica por conta do gap da grade. */}
-      <div className="mt-8 grid items-start gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] [&>*]:mt-0">
-        <AiSettingsCard status={aiStatus} />
-
-        <Card className="animate-fade-up">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Webhook className="h-4 w-4 text-muted-foreground" />
-              Configuração do webhook no painel Meta
-            </CardTitle>
-            <CardDescription>
-              No app Meta (developers.facebook.com), no produto Instagram →
-              Configure webhooks, preencha:
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="text-sm">
-            <div className="flex flex-wrap items-center gap-2 border-b border-border/50 py-2.5">
-              <span className="w-28 shrink-0 text-muted-foreground">
-                Callback URL
-              </span>
-              <code className="max-w-full break-all rounded-md border border-border/70 bg-background/50 px-2 py-1 font-mono text-xs">
-                {webhookUrl}
-              </code>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 py-2.5">
-              <span className="w-28 shrink-0 text-muted-foreground">
-                Verify token
-              </span>
-              <code className="max-w-full break-all rounded-md border border-border/70 bg-background/50 px-2 py-1 font-mono text-xs">
-                valor de META_VERIFY_TOKEN no seu .env
-              </code>
-            </div>
-            <p className="pt-2 text-xs text-muted-foreground">
-              Assine o campo <code className="font-mono">messages</code>. Em
-              desenvolvimento, exponha o localhost com um túnel (ngrok,
-              cloudflared).
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+      <AiSettingsCard status={aiStatus} />
     </>
   );
 }

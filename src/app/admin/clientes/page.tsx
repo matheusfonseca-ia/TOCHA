@@ -43,11 +43,12 @@ function GrantCell({ grant }: { grant: CustomerRow["grant"] }) {
       </div>
     );
   }
-  const expired = grant.expiresAt ? new Date(grant.expiresAt) <= new Date() : true;
+  // Sem data = cortesia sem prazo: nunca vence.
+  const expired = grant.expiresAt ? new Date(grant.expiresAt) <= new Date() : false;
   return (
     <div className="space-y-0.5">
       <Badge variant={expired ? "muted" : "success"}>{expired ? "Cortesia vencida" : "Cortesia"}</Badge>
-      <p className="text-xs text-muted-foreground">até {day(grant.expiresAt)}</p>
+      <p className="text-xs text-muted-foreground">{grant.expiresAt ? `até ${day(grant.expiresAt)}` : "sem prazo"}</p>
       <p className="max-w-[180px] truncate text-xs text-muted-foreground" title={grant.reason}>{grant.reason}</p>
     </div>
   );

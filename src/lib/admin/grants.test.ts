@@ -18,6 +18,13 @@ describe("grants", () => {
     expect(db.tables.admin_audit_log).toEqual([expect.objectContaining({ admin_id: "user-1", action: "courtesy_grant", target_user_id: "c1" })]);
   });
 
+  it("cortesia sem prazo grava expires_at nulo e registra na auditoria", async () => {
+    const r = await grantCourtesy(admin(), { adminId: "user-1", targetUserId: "c1", expiresAt: null, reason: "sócio", now: NOW });
+    expect(r).toEqual({ ok: true });
+    expect(db.tables.access_grants).toEqual([expect.objectContaining({ user_id: "c1", kind: "courtesy", expires_at: null })]);
+    expect(db.tables.admin_audit_log).toEqual([expect.objectContaining({ action: "courtesy_grant", details: { expires_at: null, reason: "sócio" } })]);
+  });
+
   it("recusa validade no passado, acima de 5 anos e motivo vazio/longo", async () => {
     expect((await grantCourtesy(admin(), { adminId: "user-1", targetUserId: "c1", expiresAt: new Date("2026-10-01"), reason: "x", now: NOW })).ok).toBe(false);
     expect((await grantCourtesy(admin(), { adminId: "user-1", targetUserId: "c1", expiresAt: new Date("2032-01-01"), reason: "x", now: NOW })).ok).toBe(false);

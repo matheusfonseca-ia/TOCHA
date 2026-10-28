@@ -83,13 +83,17 @@ async function writeWithAudit(
 
 export async function grantCourtesy(
   admin: QueryClient,
-  input: { adminId: string; targetUserId: string; expiresAt: Date; reason: string; now?: Date }
+  /** `expiresAt` nulo = cortesia sem prazo (vale até um admin remover). */
+  input: { adminId: string; targetUserId: string; expiresAt: Date | null; reason: string; now?: Date }
 ): Promise<GrantResult> {
   const now = input.now ?? new Date();
-  const expires = input.expiresAt.getTime();
-  if (Number.isNaN(expires) || expires <= now.getTime() || expires > now.getTime() + MAX_FUTURE_MS) {
-    return { ok: false, error: "A validade precisa ser uma data futura de até 5 anos." };
+  if (input.expiresAt) {
+    const expires = input.expiresAt.getTime();
+    if (Number.isNaN(expires) || expires <= now.getTime() || expires > now.getTime() + MAX_FUTURE_MS) {
+      return { ok: false, error: "A validade precisa ser uma data futura de até 5 anos." };
+    }
   }
+  const expiresAtIso = input.expiresAt ? input.expiresAt.toISOString() : null;
   const reasonError = badReason(input.reason);
   if (reasonError) return { ok: false, error: reasonError };
   if (isAdmin(input.targetUserId)) return { ok: false, error: ADMIN_TARGET_ERROR };
@@ -102,13 +106,13 @@ export async function grantCourtesy(
         {
           user_id: input.targetUserId,
           kind: "courtesy",
-          expires_at: input.expiresAt.toISOString(),
+          expires_at: expiresAtIso,
           reason: input.reason.trim(),
           granted_by: input.adminId,
         },
         { onConflict: "user_id" }
       ),
-    { adminId: input.adminId, action: "courtesy_grant", details: { expires_at: input.expiresAt.toISOString(), reason: input.reason.trim() } },
+    { adminId: input.adminId, action: "courtesy_grant", details: { expires_at: expiresAtIso, reason: input.reason.trim() } },
     (previous) => (previous?.kind === "block" ? "Cliente bloqueado: desbloqueie antes de dar cortesia." : null)
   );
 }

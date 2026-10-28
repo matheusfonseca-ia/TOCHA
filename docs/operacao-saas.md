@@ -28,6 +28,7 @@ Fatos que valem para tudo (vêm da spec `docs/superpowers/specs/2026-10-15-falow
 | `0020_subscriptions.sql` (era a 0016 da spec e do plano) | Passo 2, antes do deploy |
 | `0021_admin_access_grants.sql` (era a 0018) | Passo 2, junto com a 0020 |
 | `0022_ig_accounts_select_only.sql` (era a 0017) | Passo 12, só depois do código novo no ar |
+| `0023_courtesy_without_expiry.sql` | Antes do deploy que traz a cortesia sem prazo (28/10/2026); aditiva |
 
 A spec e os planos em `docs/superpowers/` continuam com os números antigos (são histórico); vale a numeração desta tabela.
 
@@ -962,7 +963,7 @@ Admin é o dono (`FALOW_OWNER_USER_ID`) mais os UUIDs da variável `FALOW_ADMIN_
 Em `https://falow.app.br/sistema/admin` (404 para quem não é admin):
 
 - Lista os clientes com e-mail, data de cadastro, último login, @ conectado, status e fim do período da assinatura, `purge_after`, cortesia e bloqueio.
-- **Cortesia:** dá acesso por um prazo, sem pagamento, com um motivo. Cortesia para quem tem assinatura **cancelada** só adia o purge, não remarca: o `purge_after` continua o mesmo, e se ele já tiver passado quando a cortesia acabar, o cron do dia seguinte apaga tudo. O `/assinatura` do cliente mostra a cortesia, a data de exclusão e o botão Reativar.
+- **Cortesia:** dá acesso por um prazo (30, 90, 365 dias ou uma data) ou **sem prazo** (vale até um admin remover; precisa da migration 0023), sem pagamento, com um motivo. É também o jeito de dar acesso a sócios e membros da equipe que não são admins. Cortesia para quem tem assinatura **cancelada** só adia o purge, não remarca: o `purge_after` continua o mesmo, e se ele já tiver passado quando a cortesia acabar, o cron do dia seguinte apaga tudo. O `/assinatura` do cliente mostra a cortesia, a data de exclusão e o botão Reativar.
 - **Bloqueio:** tira o acesso na hora (o painel redireciona para `/assinatura` com "Conta bloqueada" e o bot para de responder). O bloqueio prevalece sobre uma assinatura paga.
 - **Reenviar acesso:** reenvia o convite ou o link de nova senha.
 - Registra toda ação de escrita no registro de ações.

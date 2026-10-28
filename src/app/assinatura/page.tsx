@@ -5,7 +5,7 @@ import { signOut } from "@/app/login/actions";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { withBasePath } from "@/lib/app-url";
-import { accessGrantOf, isAccessStatus, isAdmin } from "@/lib/billing/access";
+import { accessGrantOf, isAccessStatus, isAdmin, isCourtesyValid } from "@/lib/billing/access";
 import { formatPurgeDate } from "@/lib/billing/format";
 import { createClient } from "@/lib/supabase/server";
 import type { Subscription } from "@/types/database";
@@ -80,10 +80,9 @@ export default async function AssinaturaPage() {
     );
   }
 
-  const courtesyUntil =
-    grant?.kind === "courtesy" && grant.expires_at && new Date(grant.expires_at) > new Date()
-      ? grant.expires_at
-      : null;
+  // Cortesia sem prazo (expires_at nulo) vale até um admin remover.
+  const courtesy = isCourtesyValid(grant);
+  const courtesyUntil = courtesy ? grant?.expires_at ?? null : null;
   const active = isAccessStatus(sub?.status);
 
   return (
@@ -91,9 +90,17 @@ export default async function AssinaturaPage() {
       <Card className="w-full max-w-md space-y-5 p-6">
         <h1 className="font-display text-xl font-semibold tracking-tight">Sua assinatura</h1>
         {/* Cortesia é uma linha a mais: o status, o aviso de exclusão e os botões continuam. */}
-        {courtesyUntil && (
+        {courtesy && (
           <p>
-            Cortesia válida até <strong>{formatPurgeDate(courtesyUntil)}</strong>
+            {courtesyUntil ? (
+              <>
+                Cortesia válida até <strong>{formatPurgeDate(courtesyUntil)}</strong>
+              </>
+            ) : (
+              <>
+                Cortesia <strong>sem prazo</strong>
+              </>
+            )}
           </p>
         )}
 
@@ -102,13 +109,13 @@ export default async function AssinaturaPage() {
         </p>
 
         {/* Com cortesia o purge só espera, não remarca: quando ela acaba, a data já pode ter passado. */}
-        {!active && sub?.purge_after && courtesyUntil && (
+        {!active && sub?.purge_after && courtesy && (
           <p className="text-sm text-muted-foreground">
             A exclusão está agendada para <strong>{formatPurgeDate(sub.purge_after)}</strong> e só espera a
             cortesia acabar: no fim dela, seus dados serão apagados. Reative antes disso e tudo continua como está.
           </p>
         )}
-        {!active && sub?.purge_after && !courtesyUntil && (
+        {!active && sub?.purge_after && !courtesy && (
           <p className="text-sm text-muted-foreground">
             O bot está pausado. Seus dados serão apagados a partir de{" "}
             <strong>{formatPurgeDate(sub.purge_after)}</strong>. Reative antes disso e tudo volta como estava.
@@ -129,7 +136,7 @@ export default async function AssinaturaPage() {
             <form action={withBasePath("/api/billing/checkout")} method="post">
               <Button type="submit" className="w-full">Reativar assinatura</Button>
             </form>
-            {courtesyUntil && (
+            {courtesy && (
               <Button asChild variant="outline" className="w-full">
                 <Link href="/dashboard">Ir para o painel</Link>
               </Button>

@@ -197,6 +197,10 @@ describe("hasActiveAccess com access_grants", () => {
     db.tables.access_grants.push({ user_id: "c2", kind: "courtesy", expires_at: "2026-11-16T00:00:00Z", reason: "parceiro", granted_by: "user-1" });
     expect(await hasActiveAccess(db.client, "c2", NOW)).toBe(true);
   });
+  it("cortesia sem prazo (expires_at nulo) dá acesso", async () => {
+    db.tables.access_grants.push({ user_id: "c5", kind: "courtesy", expires_at: null, reason: "sócio", granted_by: "user-1" });
+    expect(await hasActiveAccess(db.client, "c5", NOW)).toBe(true);
+  });
   it("cortesia vencida não dá acesso; cai para a assinatura", async () => {
     db.tables.access_grants.push({ user_id: "c3", kind: "courtesy", expires_at: "2026-10-01T00:00:00Z", reason: "x", granted_by: "user-1" });
     expect(await hasActiveAccess(db.client, "c3", NOW)).toBe(false);

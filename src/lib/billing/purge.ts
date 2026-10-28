@@ -1,4 +1,4 @@
-import { accessGrantOf, hasActiveAccess, isAccessStatus, isAdmin, type QueryClient } from "@/lib/billing/access";
+import { accessGrantOf, hasActiveAccess, isAccessStatus, isAdmin, isCourtesyValid, type QueryClient } from "@/lib/billing/access";
 
 /**
  * Exclusão LGPD: 30 dias depois do cancelamento, apaga os arquivos do
@@ -51,7 +51,7 @@ export async function purgeExpiredUsers(deps: PurgeDeps): Promise<{ purged: stri
       // Erro ao ler a cortesia = dúvida = pula (hasActiveAccess é fail-closed pra ACESSO, o que aqui viraria "pode apagar").
       const { grant, error: grantError } = await accessGrantOf(deps.admin, row.user_id);
       if (grantError) continue;
-      if (grant?.kind === "courtesy" && grant.expires_at && new Date(grant.expires_at) > now) continue;
+      if (isCourtesyValid(grant, now)) continue;
       if (await hasActiveAccess(deps.admin, row.user_id, now)) continue;
 
       const { data: accounts } = await deps.admin.from("ig_accounts").select("id").eq("user_id", row.user_id);

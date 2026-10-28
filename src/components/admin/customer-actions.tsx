@@ -26,7 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 
 type Result = { ok: true } | { ok: false; error: string };
 
-/** Validade da cortesia: 30/90/365 dias ou uma data escolhida. */
+/** Validade da cortesia: 30/90/365 dias, uma data escolhida ou sem prazo. */
 export function ValidityField({
   preset,
   onPresetChange,
@@ -52,6 +52,7 @@ export function ValidityField({
           <SelectItem value="90">90 dias</SelectItem>
           <SelectItem value="365">365 dias</SelectItem>
           <SelectItem value="date">Escolher data</SelectItem>
+          <SelectItem value="never">Sem prazo (indeterminado)</SelectItem>
         </SelectContent>
       </Select>
       {preset === "date" && (
@@ -61,9 +62,12 @@ export function ValidityField({
   );
 }
 
-/** ISO da validade. Data escolhida vale até o fim do dia em São Paulo. */
+/** ISO da validade ("" = sem prazo). Data escolhida vale até o fim do dia em São Paulo. */
 export function expiresAtFrom(preset: string, customDate: string): string {
-  if (preset === "date") return customDate ? `${customDate}T23:59:59-03:00` : "";
+  if (preset === "never") return "";
+  // Sem data escolhida manda um valor inválido: o servidor recusa ("Data inválida."),
+  // em vez de "" virar cortesia sem prazo.
+  if (preset === "date") return customDate ? `${customDate}T23:59:59-03:00` : "sem-data";
   return new Date(Date.now() + Number(preset) * 86_400_000).toISOString();
 }
 
