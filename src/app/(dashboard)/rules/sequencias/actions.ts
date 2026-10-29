@@ -176,8 +176,8 @@ const graphSchema = z.object({
 });
 
 const sequenceSchema = z.object({
-  id: z.string().uuid().optional(),
-  account_id: z.string().uuid("Selecione uma conta."),
+  id: z.guid().optional(),
+  account_id: z.guid("Selecione uma conta."),
   name: z.string().trim().min(1, "Dê um nome à sequência.").max(80),
   is_active: z.boolean(),
   graph: graphSchema,
@@ -216,7 +216,7 @@ const SEQUENCE_ACCOUNT_CHANGE_ERROR =
  * workflow pausado pode ter ficado com referência apagada nesse meio tempo.
  */
 async function validateGraphReferences(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Awaited<ReturnType<typeof createClient>>,
   graph: SequenceGraph,
   accountId: string,
   selfSequenceId: string | undefined
@@ -271,7 +271,7 @@ type ConflictCandidate = { id: string; name: string; graph: SequenceGraph };
  * `graph`: mesma palavra-chave, ou ambas em "qualquer mensagem".
  */
 async function findConflictingSequenceName(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Awaited<ReturnType<typeof createClient>>,
   params: { id?: string; account_id: string; graph: SequenceGraph }
 ): Promise<string | null> {
   const trigger = findTriggerNode(params.graph);
@@ -332,7 +332,7 @@ export async function saveSequence(
 ): Promise<SequenceActionResult> {
   const parsed = sequenceSchema.safeParse(raw);
   if (!parsed.success) {
-    return { error: parsed.error.errors[0].message };
+    return { error: parsed.error.issues[0].message };
   }
   const input = parsed.data;
 
@@ -340,7 +340,7 @@ export async function saveSequence(
   if (expiryError) return { error: expiryError };
 
   const graph = input.graph as SequenceGraph;
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // Workflow existente (RLS: só do usuário) + validação das referências, em paralelo.
   const [existingResult, graphError] = await Promise.all([
@@ -435,7 +435,7 @@ export async function saveSequence(
 
 /** Versão pro histórico do editor; poda pra manter só as 30 mais recentes por sequência. */
 async function saveVersionSnapshot(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Awaited<ReturnType<typeof createClient>>,
   sequenceId: string,
   accountId: string,
   name: string,
@@ -467,7 +467,7 @@ export async function toggleSequence(
   id: string,
   isActive: boolean
 ): Promise<SequenceActionResult> {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   // Reativar revalida o grafo como no save (N-10): enquanto pausado, uma
   // automação, etapa ou workflow de destino pode ter sido apagado, e cada
@@ -512,7 +512,7 @@ export async function toggleSequence(
 }
 
 export async function deleteSequence(id: string): Promise<SequenceActionResult> {
-  const supabase = createClient();
+  const supabase = await createClient();
   // As execuções (sequence_runs) caem junto via ON DELETE CASCADE.
   const { error } = await supabase.from("sequences").delete().eq("id", id);
 
@@ -535,7 +535,7 @@ const SEQUENCE_NAME_MAX = 80;
 export async function duplicateSequence(
   id: string
 ): Promise<SequenceActionResult> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: original, error: fetchError } = await supabase
     .from("sequences")
     .select("account_id, name, graph")

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function NovaAutomacaoResponderDmPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: accounts } = await supabase
     .from("ig_accounts")

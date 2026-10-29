@@ -22,7 +22,7 @@ type Row = Contact & { ig_accounts: { ig_username: string } | null };
  * contas dele.
  */
 export async function GET(request: Request) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

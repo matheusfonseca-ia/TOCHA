@@ -19,10 +19,10 @@ const PRESETS_MIGRATION_ERROR =
   "Para salvar textos, aplique a migration 0014_message_presets.sql no Supabase.";
 const NO_ACCESS_ERROR = "Sua assinatura não está ativa. Acesse Minha assinatura para reativar.";
 const NOT_FOUND_ERROR = "Texto não encontrado. Atualize a página e tente de novo.";
-const uuid = z.string().uuid();
+const uuid = z.guid();
 
 export async function listPresets(): Promise<MessagePreset[]> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("message_presets")
     .select("id, account_id, scope, label, text, created_at")
@@ -49,7 +49,7 @@ export async function savePreset(input: {
   const normalized = normalizePreset(input);
   if ("error" in normalized) return normalized;
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("message_presets")
     .insert({ account_id: input.accountId, ...normalized.preset })
@@ -70,7 +70,7 @@ export async function savePreset(input: {
 export async function deletePreset(id: string): Promise<{ error?: string }> {
   if (!(await activeUserId())) return { error: NO_ACCESS_ERROR };
   if (!uuid.safeParse(id).success) return { error: NOT_FOUND_ERROR };
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("message_presets")
     .delete()

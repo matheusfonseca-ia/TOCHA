@@ -10,7 +10,7 @@ import { stageOptionsFromRows } from "@/modules/crm/pipeline/services/pipeline.q
 import type { Rule } from "@/types/database";
 
 export default async function NovaSequenciaPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const [{ data: storedAccounts }, { data: rules }, { data: sequences }, tags, { data: stageRows }] =
     await Promise.all([

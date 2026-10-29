@@ -53,7 +53,7 @@ export async function generateForField(input: {
 }): Promise<GenerateResult> {
   const parsed = generateSchema.safeParse(input);
   if (!parsed.success) {
-    const issue = parsed.error.errors[0];
+    const issue = parsed.error.issues[0];
     return {
       error: issue.path[0] === "instruction" ? issue.message : "Pedido inválido para a IA. Recarregue a página e tente de novo.",
     };

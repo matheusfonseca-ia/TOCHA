@@ -60,7 +60,7 @@ export async function saveAiSettings(input: {
     return { ok: false, error: modelFormatHint(provider) };
   }
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return { ok: false, error: "Sessão expirada. Entre de novo." };
   // Gravar chave/modelo é uso do painel: exige acesso ativo (bloqueio/assinatura).
@@ -131,7 +131,7 @@ export async function saveAiSettings(input: {
  * usuário; a policy deixa o client dele apagar a própria linha).
  */
 export async function removeAiSettings(): Promise<AiSettingsActionResult> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return { ok: false, error: "Sessão expirada. Entre de novo." };
 

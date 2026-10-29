@@ -76,7 +76,8 @@ function GrantCell({ customer }: { customer: CustomerRow }) {
   );
 }
 
-export default async function AdminCustomersPage({ searchParams }: { searchParams: { q?: string; page?: string } }) {
+export default async function AdminCustomersPage(props: { searchParams: Promise<{ q?: string; page?: string }> }) {
+  const searchParams = await props.searchParams;
   await requireAdminPage();
   const search = (searchParams.q ?? "").trim();
 

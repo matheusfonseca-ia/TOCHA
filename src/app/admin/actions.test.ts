@@ -10,7 +10,7 @@ const h = vi.hoisted(() => ({
     resetPasswordForEmail: ReturnType<typeof import("vitest").vi.fn>;
   },
   rpc: null as unknown as ReturnType<typeof import("vitest").vi.fn>,
-  createAdminClient: null as unknown as ReturnType<typeof import("vitest").vi.fn>,
+  createAdminClient: null as unknown as import("vitest").Mock<(...args: unknown[]) => unknown>,
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));

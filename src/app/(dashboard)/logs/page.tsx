@@ -31,12 +31,11 @@ const FILTERS: { value: string; label: string }[] = [
 
 type LogRow = Interaction & { ig_accounts: { ig_username: string } | null };
 
-export default async function LogsPage({
-  searchParams,
-}: {
-  searchParams: { status?: string };
+export default async function LogsPage(props: {
+  searchParams: Promise<{ status?: string }>;
 }) {
-  const supabase = createClient();
+  const searchParams = await props.searchParams;
+  const supabase = await createClient();
   const statusFilter = searchParams.status ?? "";
 
   let query = supabase

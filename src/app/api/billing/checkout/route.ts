@@ -21,7 +21,7 @@ export async function POST(request: Request) {
     return new NextResponse("Origem não permitida", { status: 403 });
   }
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

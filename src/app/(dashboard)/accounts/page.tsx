@@ -26,11 +26,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   unknown: "Erro inesperado ao conectar. Tente novamente.",
 };
 
-export default async function AccountsPage({
-  searchParams,
-}: {
-  searchParams: { connected?: string; error?: string; webhook?: string; account?: string };
+export default async function AccountsPage(props: {
+  searchParams: Promise<{ connected?: string; error?: string; webhook?: string; account?: string }>;
 }) {
+  const searchParams = await props.searchParams;
   // hasOwn: `?error=__proto__` não pode achar nada no protótipo do objeto.
   const errorMessage = searchParams.error
     ? Object.hasOwn(ERROR_MESSAGES, searchParams.error)
@@ -40,7 +39,7 @@ export default async function AccountsPage({
   // A conexão foi salva, mas a Meta recusou a inscrição no webhook: sem ela
   // nenhum evento chega e as automações ficam mudas.
   const webhookFailed = Boolean(searchParams.connected && searchParams.webhook === "failed");
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase
     .from("ig_accounts")
     .select("id, ig_username, page_name, profile_picture_url, status, connected_at, access_token_enc")

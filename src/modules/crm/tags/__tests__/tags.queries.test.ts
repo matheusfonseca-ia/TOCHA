@@ -6,7 +6,7 @@ import { createFakeAdmin } from "@/lib/sequences/__tests__/fake-supabase";
 import { attachTagsToConversations, listSenderIdsWithTag } from "../services/tags.queries";
 
 function userClient(fake: ReturnType<typeof createFakeAdmin>) {
-  return fake.client as unknown as ReturnType<typeof createClient>;
+  return fake.client as unknown as Awaited<ReturnType<typeof createClient>>;
 }
 
 const ACCOUNT = "acc-1";

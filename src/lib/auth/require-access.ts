@@ -15,7 +15,7 @@ export class AccessRequiredError extends Error {
 
 /** Usuário logado com acesso ativo, ou null. Para actions que devolvem `{ error }`. */
 export async function activeUserId(): Promise<string | null> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

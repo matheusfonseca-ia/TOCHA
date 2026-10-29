@@ -108,7 +108,7 @@ export async function deleteTag(
 
 export async function getTagWorkflowUsage(accountId: string, tagName: string): Promise<TagWorkflowUsage> {
   if (!(await activeUserId())) return { count: 0, sequenceNames: [] };
-  const supabase = createClient();
+  const supabase = await createClient();
   return queryTagWorkflowUsage(supabase, accountId, tagName);
 }
 

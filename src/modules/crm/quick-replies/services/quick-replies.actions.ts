@@ -30,7 +30,8 @@ export async function createQuickReply(
 }
 
 async function ownQuickReplyAccountId(quickReplyId: string): Promise<string | null> {
-  const { data } = await createClient()
+  const supabase = await createClient();
+  const { data } = await supabase
     .from("quick_replies")
     .select("account_id")
     .eq("id", quickReplyId)

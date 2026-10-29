@@ -73,7 +73,7 @@ function decryptOrNull(enc: string): string | null {
 
 /** Config que o botão ✨ usa agora: chave do usuário logado, senão a da instalação (só dono e admins). */
 export async function getEffectiveAiConfig(): Promise<AiConfig | null> {
-  const { row, userId } = await readUserRow(createClient());
+  const { row, userId } = await readUserRow(await createClient());
   // Sem sessão não há IA: senão qualquer um gastaria a chave da instalação.
   if (!userId) return null;
   const apiKey = row ? decryptOrNull(row.api_key_enc) : null;
@@ -85,7 +85,7 @@ export async function getEffectiveAiConfig(): Promise<AiConfig | null> {
 }
 
 export async function getAiSettingsStatus(): Promise<AiSettingsStatus> {
-  const { row, migrationMissing, userId } = await readUserRow(createClient());
+  const { row, migrationMissing, userId } = await readUserRow(await createClient());
   const apiKey = row ? decryptOrNull(row.api_key_enc) : null;
   const installation = userId ? installationConfigFor(userId) : null;
 

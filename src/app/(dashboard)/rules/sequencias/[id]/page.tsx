@@ -7,12 +7,11 @@ import { stageOptionsFromRows } from "@/modules/crm/pipeline/services/pipeline.q
 import type { Rule } from "@/types/database";
 import type { Sequence, SequenceRun, SequenceVersion } from "@/types/sequence";
 
-export default async function EditarSequenciaPage({
-  params,
-}: {
-  params: { id: string };
+export default async function EditarSequenciaPage(props: {
+  params: Promise<{ id: string }>;
 }) {
-  const supabase = createClient();
+  const params = await props.params;
+  const supabase = await createClient();
 
   const [
     { data: sequence },

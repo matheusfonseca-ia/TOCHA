@@ -30,7 +30,9 @@ export async function refreshLeadPhotos(conversationIds: string[]): Promise<void
   if (ids.length === 0) return;
   if (!(await activeUserId())) return;
 
-  const { data } = await createClient()
+  const supabase = await createClient();
+
+  const { data } = await supabase
     .from("conversations")
     .select("account_id, ig_sender_id, ig_profile_fetched_at")
     .in("id", ids);

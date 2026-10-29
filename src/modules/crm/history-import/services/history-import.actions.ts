@@ -39,7 +39,7 @@ export async function importHistoryStep(
     return { ...empty, error: "Sua assinatura não está ativa. Acesse Minha assinatura para reativar." };
   }
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: owned } = await supabase
     .from("ig_accounts")
     .select("id")

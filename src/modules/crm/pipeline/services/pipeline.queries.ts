@@ -20,7 +20,7 @@ import type {
  * vê os próprios funis/leads). Só servidor: Server Components e Server Actions.
  */
 
-type UserClient = ReturnType<typeof createClient>;
+type UserClient = Awaited<ReturnType<typeof createClient>>;
 
 const CARDS_PER_COLUMN = 50;
 

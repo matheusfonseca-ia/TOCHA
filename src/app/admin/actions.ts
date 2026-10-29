@@ -16,9 +16,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * auditoria (admin-actions.audit.test.ts) falha se uma delas não começar.
  */
 
-const uuid = z.string().uuid("Cliente inválido.");
+const uuid = z.guid("Cliente inválido.");
 const reason = z.string().trim().min(1, "Informe o motivo.").max(200, "Motivo de até 200 caracteres.");
-const date = z.coerce.date({ errorMap: () => ({ message: "Data inválida." }) });
+const date = z.coerce.date({ error: "Data inválida." });
 // O convite cria a conta antes da cortesia: confere a validade antes, para não
 // convidar alguém e depois recusar a cortesia (grantCourtesy confere de novo).
 const MAX_FUTURE_MS = 5 * 366 * 86_400_000;
@@ -47,7 +47,7 @@ async function guarded(run: (adminId: string) => Promise<GrantResult>): Promise<
 export async function grantCourtesyAction(formData: FormData): Promise<GrantResult> {
   return guarded(async (adminId) => {
     const parsed = z.object({ userId: uuid, expiresAt: optionalDate, reason }).safeParse(Object.fromEntries(formData));
-    if (!parsed.success) return { ok: false, error: parsed.error.errors[0].message };
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
     return grantCourtesy(createAdminClient(), { adminId, targetUserId: parsed.data.userId, expiresAt: parsed.data.expiresAt, reason: parsed.data.reason });
   });
 }
@@ -55,7 +55,7 @@ export async function grantCourtesyAction(formData: FormData): Promise<GrantResu
 export async function revokeCourtesyAction(userId: string): Promise<GrantResult> {
   return guarded(async (adminId) => {
     const parsed = uuid.safeParse(userId);
-    if (!parsed.success) return { ok: false, error: parsed.error.errors[0].message };
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
     return revokeCourtesy(createAdminClient(), { adminId, targetUserId: parsed.data });
   });
 }
@@ -63,7 +63,7 @@ export async function revokeCourtesyAction(userId: string): Promise<GrantResult>
 export async function blockUserAction(formData: FormData): Promise<GrantResult> {
   return guarded(async (adminId) => {
     const parsed = z.object({ userId: uuid, reason }).safeParse(Object.fromEntries(formData));
-    if (!parsed.success) return { ok: false, error: parsed.error.errors[0].message };
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
     return blockUser(createAdminClient(), { adminId, targetUserId: parsed.data.userId, reason: parsed.data.reason });
   });
 }
@@ -71,7 +71,7 @@ export async function blockUserAction(formData: FormData): Promise<GrantResult> 
 export async function unblockUserAction(userId: string): Promise<GrantResult> {
   return guarded(async (adminId) => {
     const parsed = uuid.safeParse(userId);
-    if (!parsed.success) return { ok: false, error: parsed.error.errors[0].message };
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
     return unblockUser(createAdminClient(), { adminId, targetUserId: parsed.data });
   });
 }
@@ -79,7 +79,7 @@ export async function unblockUserAction(userId: string): Promise<GrantResult> {
 export async function resendAccessAction(userId: string): Promise<GrantResult> {
   return guarded(async (adminId) => {
     const parsed = uuid.safeParse(userId);
-    if (!parsed.success) return { ok: false, error: parsed.error.errors[0].message };
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
     const admin = createAdminClient();
     if (!(await withinEmailQuota(admin, adminId))) return { ok: false, error: ADMIN_EMAIL_QUOTA_ERROR };
     return resendAccessEmail(admin, { adminId, targetUserId: parsed.data });
@@ -91,7 +91,7 @@ export async function inviteWithCourtesyAction(formData: FormData): Promise<Gran
     const parsed = z
       .object({ email: z.string().trim().toLowerCase().email("E-mail inválido."), expiresAt: optionalFutureDate, reason })
       .safeParse(Object.fromEntries(formData));
-    if (!parsed.success) return { ok: false, error: parsed.error.errors[0].message };
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
     const { email, expiresAt } = parsed.data;
     const admin = createAdminClient();
     if (!(await withinEmailQuota(admin, adminId))) return { ok: false, error: ADMIN_EMAIL_QUOTA_ERROR };

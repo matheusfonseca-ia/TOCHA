@@ -17,12 +17,11 @@ const PAGE_SIZE = 200;
 const CONTACT_COLUMNS =
   "id, account_id, ig_sender_id, ig_username, fields, tags, created_at, updated_at, ig_accounts(ig_username)";
 
-export default async function ContactsPage({
-  searchParams,
-}: {
-  searchParams: { conta?: string; pagina?: string };
+export default async function ContactsPage(props: {
+  searchParams: Promise<{ conta?: string; pagina?: string }>;
 }) {
-  const supabase = createClient();
+  const searchParams = await props.searchParams;
+  const supabase = await createClient();
 
   const { data: accountsData } = await supabase
     .from("ig_accounts")

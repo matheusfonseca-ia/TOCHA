@@ -10,12 +10,11 @@ import { getThread, listAllTagNames, listConversations, listTagCatalog } from "@
 
 export const dynamic = "force-dynamic";
 
-export default async function ConversasPage({
-  searchParams,
-}: {
-  searchParams: { c?: string; conta?: string; filtro?: string; q?: string; tag?: string };
+export default async function ConversasPage(props: {
+  searchParams: Promise<{ c?: string; conta?: string; filtro?: string; q?: string; tag?: string }>;
 }) {
-  const supabase = createClient();
+  const searchParams = await props.searchParams;
+  const supabase = await createClient();
 
   const { data: accountsData } = await supabase
     .from("ig_accounts")

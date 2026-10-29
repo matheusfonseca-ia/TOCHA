@@ -11,7 +11,7 @@ import type { AutomationCounts } from "./types";
  * o RLS já limita às automações e workflows do usuário.
  */
 export async function getAutomationCounts(): Promise<AutomationCounts> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const [rules, sequences] = await Promise.all([
     supabase.from("rules").select("id", { count: "exact", head: true }),
     supabase.from("sequences").select("id", { count: "exact", head: true }),

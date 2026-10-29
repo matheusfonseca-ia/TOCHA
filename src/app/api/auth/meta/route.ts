@@ -13,7 +13,7 @@ import { createClient } from "@/lib/supabase/server";
  * estiver logado for o mesmo usuário que clicou em "Conectar".
  */
 export async function GET() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -27,7 +27,7 @@ export async function GET() {
   }
 
   const state = randomUUID();
-  cookies().set(META_OAUTH_COOKIE, `${state}:${user.id}`, {
+  (await cookies()).set(META_OAUTH_COOKIE, `${state}:${user.id}`, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",

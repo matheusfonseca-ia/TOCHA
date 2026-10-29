@@ -28,10 +28,10 @@ export async function signIn(formData: FormData): Promise<AuthResult> {
     password: formData.get("password"),
   });
   if (!parsed.success) {
-    return { error: parsed.error.errors[0].message };
+    return { error: parsed.error.issues[0].message };
   }
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const { error } = await supabase.auth.signInWithPassword(parsed.data);
 
   if (error) {
@@ -43,17 +43,18 @@ export async function signIn(formData: FormData): Promise<AuthResult> {
 
 export async function requestPasswordReset(formData: FormData): Promise<AuthResult> {
   const email = z.string().email("E-mail inválido.").safeParse(formData.get("email"));
-  if (!email.success) return { error: email.error.errors[0].message };
+  if (!email.success) return { error: email.error.issues[0].message };
 
   // Mesma resposta exista ou não a conta: não revela quem é cliente.
-  await createClient().auth.resetPasswordForEmail(email.data, {
+  const supabase = await createClient();
+  await supabase.auth.resetPasswordForEmail(email.data, {
     redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/definir-senha`,
   });
   return { message: "Se esse e-mail tiver conta, o link para redefinir a senha chega em alguns minutos." };
 }
 
 export async function signOut(): Promise<void> {
-  const supabase = createClient();
+  const supabase = await createClient();
   await supabase.auth.signOut();
   redirect("/login");
 }

@@ -19,12 +19,12 @@ const FOLDERS_MIGRATION_ERROR =
 const NO_ACCESS_ERROR = "Sua assinatura não está ativa. Acesse Minha assinatura para reativar.";
 const NOT_FOUND_ERROR = "Pasta ou item não encontrado. Atualize a página e tente de novo.";
 
-const uuid = z.string().uuid();
+const uuid = z.guid();
 const createSchema = z.object({ accountId: uuid, name: z.string(), color: z.enum(FOLDER_COLORS) });
 const moveSchema = z.object({ kind: z.enum(["rule", "sequence"]), id: uuid, folderId: uuid.nullable() });
 
 export async function listFolders(): Promise<Folder[]> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("folders")
     .select("id, name, color")
@@ -47,7 +47,7 @@ export async function createFolder(input: {
   const normalized = normalizeFolderName(parsed.data.name);
   if ("error" in normalized) return normalized;
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("folders")
     .insert({
@@ -77,7 +77,7 @@ export async function renameFolder(
   const normalized = normalizeFolderName(name);
   if ("error" in normalized) return normalized;
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("folders")
     .update({ name: normalized.name })
@@ -97,7 +97,7 @@ export async function renameFolder(
 export async function deleteFolder(id: string): Promise<{ error?: string }> {
   if (!(await activeUserId())) return { error: NO_ACCESS_ERROR };
   if (!uuid.safeParse(id).success) return { error: NOT_FOUND_ERROR };
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data, error } = await supabase.from("folders").delete().eq("id", id).select("id").maybeSingle();
 
   if (error) return { error: "Não foi possível apagar a pasta." };
@@ -118,7 +118,7 @@ export async function moveToFolder(input: {
   if (!parsed.success) return { error: NOT_FOUND_ERROR };
   const { kind, id, folderId } = parsed.data;
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const table = kind === "rule" ? "rules" : "sequences";
 
   // A FK só confere que a pasta existe, não de quem é: a pasta precisa ser

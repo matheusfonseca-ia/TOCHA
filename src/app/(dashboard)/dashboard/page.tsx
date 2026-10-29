@@ -29,7 +29,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { Interaction, InteractionStatus } from "@/types/database";
 
 export default async function DashboardPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: accounts } = await supabase
     .from("ig_accounts")

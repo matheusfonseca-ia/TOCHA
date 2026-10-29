@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { RulesManager, type RuleWithAccount } from "@/modules/automations";
 
 export default async function RulesPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const [accountsRes, rulesRes] = await Promise.all([
     supabase

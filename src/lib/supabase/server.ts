@@ -6,8 +6,8 @@ import { SESSION_COOKIE_OPTIONS } from "./cookie-options";
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
 /** Client autenticado pelo cookie da sessão — usar em Server Components e Server Actions. */
-export function createClient() {
-  const cookieStore = cookies();
+export async function createClient() {
+  const cookieStore = await cookies();
 
   return createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,

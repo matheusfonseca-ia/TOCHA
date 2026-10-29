@@ -41,7 +41,8 @@ interface ConversationOwner {
 
 /** Confere a posse da conversa com o client do usuário (RLS). */
 async function ownConversation(conversationId: string): Promise<ConversationOwner | null> {
-  const { data } = await createClient()
+  const supabase = await createClient();
+  const { data } = await supabase
     .from("conversations")
     .select("id, account_id, ig_sender_id, last_inbound_at")
     .eq("id", conversationId)

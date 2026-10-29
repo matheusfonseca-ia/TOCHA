@@ -11,7 +11,8 @@ import { createClient } from "@/lib/supabase/server";
  */
 export async function hideMessageForMe(messageId: string): Promise<void> {
   if (!(await activeUserId())) return;
-  const { data } = await createClient()
+  const supabase = await createClient();
+  const { data } = await supabase
     .from("messages")
     .select("id")
     .eq("id", messageId)

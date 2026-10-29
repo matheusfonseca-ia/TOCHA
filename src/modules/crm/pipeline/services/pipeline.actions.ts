@@ -84,7 +84,7 @@ export async function moveLeadAction(raw: {
   const userId = await activeUserId();
   if (!userId) return { error: NO_ACCESS };
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: lead } = await supabase
     .from("leads")
     .select("id, account_id")
@@ -117,7 +117,7 @@ export async function moveLeadAction(raw: {
 /** Ficha do lead pro drawer do board: carregada sob demanda, ao abrir o card. */
 export async function getLeadDetailAction(leadId: string): Promise<LeadDetail | null> {
   if (!id.safeParse(leadId).success || !(await activeUserId())) return null;
-  return getLeadDetail(createClient(), leadId);
+  return getLeadDetail(await createClient(), leadId);
 }
 
 /** "Carregar mais" de uma coluna do board. */
@@ -128,7 +128,7 @@ export async function loadMoreLeadsAction(
 ): Promise<{ cards: BoardLeadCard[]; hasMore: boolean }> {
   const valid = id.safeParse(pipelineId).success && id.safeParse(stageId).success && Number.isFinite(afterPosition);
   if (!valid || !(await activeUserId())) return { cards: [], hasMore: false };
-  return loadMoreStageLeads(createClient(), pipelineId, stageId, afterPosition);
+  return loadMoreStageLeads(await createClient(), pipelineId, stageId, afterPosition);
 }
 
 export async function updateLeadValueAction(leadId: string, value: number | null): Promise<ActionResult> {
@@ -137,7 +137,7 @@ export async function updateLeadValueAction(leadId: string, value: number | null
     return { error: "Valor inválido." };
   }
   if (!(await activeUserId())) return { error: NO_ACCESS };
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: lead } = await supabase.from("leads").select("id").eq("id", leadId).maybeSingle<{ id: string }>();
   if (!lead) return { error: "Lead não encontrado." };
 
@@ -160,7 +160,7 @@ export async function bringExistingConversationsAction(
     return { error: "Funil não encontrado." };
   }
   if (!(await activeUserId())) return { error: NO_ACCESS };
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: pipeline } = await supabase.from("pipelines").select("id, account_id").eq("id", pipelineId).maybeSingle<{ id: string; account_id: string }>();
   if (!pipeline) return { error: "Funil não encontrado." };
 
@@ -180,7 +180,7 @@ export async function bringExistingConversationsAction(
 export async function toggleAutoEnrollAction(pipelineId: string, autoEnroll: boolean): Promise<ActionResult> {
   if (!id.safeParse(pipelineId).success || typeof autoEnroll !== "boolean") return { error: "Funil não encontrado." };
   if (!(await activeUserId())) return { error: NO_ACCESS };
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: pipeline } = await supabase.from("pipelines").select("id").eq("id", pipelineId).maybeSingle<{ id: string }>();
   if (!pipeline) return { error: "Funil não encontrado." };
 
@@ -197,7 +197,7 @@ export async function createStageAction(
   if (!id.safeParse(pipelineId).success || !parsed.success) return { error: "Dados inválidos para a etapa." };
   const input = parsed.data;
   if (!(await activeUserId())) return { error: NO_ACCESS };
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: pipeline } = await supabase.from("pipelines").select("id").eq("id", pipelineId).maybeSingle<{ id: string }>();
   if (!pipeline) return { error: "Funil não encontrado." };
   if (!input.name.trim()) return { error: "Dê um nome à etapa." };
@@ -231,7 +231,7 @@ export async function updateStageAction(
   if (!id.safeParse(stageId).success || !parsed.success) return { error: "Dados inválidos para a etapa." };
   const patch = parsed.data;
   if (!(await activeUserId())) return { error: NO_ACCESS };
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: stage } = await supabase
     .from("pipeline_stages")
     .select("id, stage_type")
@@ -289,7 +289,7 @@ export async function reorderStagesAction(pipelineId: string, orderedStageIds: s
     return { error: "Dados inválidos para reordenar." };
   }
   if (!(await activeUserId())) return { error: NO_ACCESS };
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: pipeline } = await supabase.from("pipelines").select("id").eq("id", pipelineId).maybeSingle<{ id: string }>();
   if (!pipeline) return { error: "Funil não encontrado." };
 
@@ -307,7 +307,7 @@ export async function deleteStageAction(stageId: string, moveLeadsToStageId: str
   if (!id.safeParse(stageId).success || !id.safeParse(moveLeadsToStageId).success) return { error: "Etapa não encontrada." };
   if (stageId === moveLeadsToStageId) return { error: "Escolha outra etapa de destino." };
   if (!(await activeUserId())) return { error: NO_ACCESS };
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: stage } = await supabase
     .from("pipeline_stages")
     .select("id, pipeline_id")

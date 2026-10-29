@@ -133,7 +133,7 @@ DM chega → Meta dispara webhook → /api/webhooks/meta
 | Sem regra → não responde | Log `no_match`, nenhuma chamada à API |
 | Delay humanizado | 2–5s, configurável por regra |
 
-**Stack:** Next.js 14 (App Router) · TypeScript · Tailwind + shadcn/ui · Supabase (Auth + Postgres com RLS) · API do Instagram com Login do Instagram (graph.instagram.com) · React Flow (canvas das Sequências). Pagamentos com Stripe (Checkout + portal do cliente). Hospedagem em Cloudflare Workers via OpenNext. Tokens são criptografados no banco (AES-256-GCM) e renovados automaticamente antes de expirar.
+**Stack:** Next.js 16 (App Router, React 19) · TypeScript · Tailwind + shadcn/ui · Supabase (Auth + Postgres com RLS) · API do Instagram com Login do Instagram (graph.instagram.com) · React Flow (canvas das Sequências). Pagamentos com Stripe (Checkout + portal do cliente). Hospedagem em Cloudflare Workers via OpenNext. Tokens são criptografados no banco (AES-256-GCM) e renovados automaticamente antes de expirar.
 
 ## Sequências (fluxos no canvas)
 

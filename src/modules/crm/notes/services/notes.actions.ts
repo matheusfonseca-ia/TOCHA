@@ -12,7 +12,8 @@ const NO_ACCESS = "Sua assinatura não está ativa. Acesse Minha assinatura para
 export type NoteActionResult = { ok: true } | { error: string };
 
 async function ownNoteAccountId(noteId: string): Promise<string | null> {
-  const { data } = await createClient()
+  const supabase = await createClient();
+  const { data } = await supabase
     .from("crm_notes")
     .select("account_id")
     .eq("id", noteId)
@@ -35,7 +36,8 @@ export async function createNote(
   if (typeof igSenderId !== "string" || !igSenderId || igSenderId.length > MAX_SENDER_ID) {
     return { error: "Contato não encontrado." };
   }
-  const { data: conversation } = await createClient()
+  const supabase = await createClient();
+  const { data: conversation } = await supabase
     .from("conversations")
     .select("id")
     .eq("account_id", accountId)

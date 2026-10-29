@@ -32,18 +32,18 @@ function retryCookieOptions(maxAge: number) {
   };
 }
 
-function markRetry(userId: string, now = Date.now()): void {
+async function markRetry(userId: string, now = Date.now()): Promise<void> {
   try {
     const value = encryptToken(JSON.stringify({ uid: userId, exp: now + RETRY_TTL_SECONDS * 1000 }));
-    cookies().set(RETRY_COOKIE, value, retryCookieOptions(RETRY_TTL_SECONDS));
+    (await cookies()).set(RETRY_COOKIE, value, retryCookieOptions(RETRY_TTL_SECONDS));
   } catch (err) {
     // Sem TOKEN_ENCRYPTION_KEY não há marca: a retentativa pede um link novo.
     console.error("[definir-senha] não foi possível marcar a retentativa:", err instanceof Error ? err.message : err);
   }
 }
 
-function hasRetryMark(userId: string, now = Date.now()): boolean {
-  const raw = cookies().get(RETRY_COOKIE)?.value;
+async function hasRetryMark(userId: string, now = Date.now()): Promise<boolean> {
+  const raw = (await cookies()).get(RETRY_COOKIE)?.value;
   if (!raw) return false;
   try {
     const mark = JSON.parse(decryptToken(raw)) as { uid?: unknown; exp?: unknown };
@@ -53,8 +53,8 @@ function hasRetryMark(userId: string, now = Date.now()): boolean {
   }
 }
 
-function clearRetryMark(): void {
-  cookies().set(RETRY_COOKIE, "", retryCookieOptions(0));
+async function clearRetryMark(): Promise<void> {
+  (await cookies()).set(RETRY_COOKIE, "", retryCookieOptions(0));
 }
 
 /**
@@ -67,7 +67,7 @@ function clearRetryMark(): void {
 const schema = z
   .object({
     token_hash: z.string().min(1, INVALID_LINK).optional(),
-    type: z.enum(["invite", "recovery"], { errorMap: () => ({ message: INVALID_LINK }) }).optional(),
+    type: z.enum(["invite", "recovery"], { error: INVALID_LINK }).optional(),
     password: z.string().min(8, "A senha precisa de ao menos 8 caracteres."),
     confirm: z.string(),
   })
@@ -111,10 +111,10 @@ function passwordErrorMessage(code: string | undefined): string {
  */
 export async function setPassword(formData: FormData): Promise<{ error?: string; sessionReady?: boolean }> {
   const parsed = schema.safeParse(Object.fromEntries(formData));
-  if (!parsed.success) return { error: parsed.error.errors[0].message };
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
   const { otp, password } = parsed.data;
 
-  const supabase = createClient();
+  const supabase = await createClient();
 
   let userId: string | null = null;
   if (otp) {
@@ -125,17 +125,17 @@ export async function setPassword(formData: FormData): Promise<{ error?: string;
     const {
       data: { user },
     } = await supabase.auth.getUser();
-    if (!user || !hasRetryMark(user.id)) return { error: SESSION_EXPIRED };
+    if (!user || !(await hasRetryMark(user.id))) return { error: SESSION_EXPIRED };
     userId = user.id;
   }
 
   const { error } = await supabase.auth.updateUser({ password });
   if (error) {
-    if (userId) markRetry(userId);
+    if (userId) await markRetry(userId);
     return { error: passwordErrorMessage(error.code), sessionReady: true };
   }
 
-  clearRetryMark();
+  await clearRetryMark();
   const { error: signOutError } = await supabase.auth.signOut({ scope: "others" });
   if (signOutError) {
     console.error("[definir-senha] senha trocada, mas as outras sessões não foram encerradas:", signOutError.message);

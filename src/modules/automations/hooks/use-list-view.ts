@@ -35,7 +35,7 @@ function writeSession(key: string, value: string) {
 
 /**
  * Busca, filtros, ordenação e pasta da lista, espelhados na URL. A troca usa
- * `history.replaceState` (o Next 14.2 sincroniza com `useSearchParams`), então
+ * `history.replaceState` (o Next sincroniza com `useSearchParams` desde o 14.1), então
  * digitar na busca não busca dados no servidor. O editor e os builders voltam
  * com `router.push("/rules")` sem parâmetros: nesse caso só a ORDENAÇÃO da
  * sessão (sessionStorage) é retomada. Busca, status, pasta, tipo e conta não:

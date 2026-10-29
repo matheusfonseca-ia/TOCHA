@@ -10,7 +10,7 @@ import { findTagWorkflowUsage, type TagWorkflowUsage } from "../utils/tag-usage"
  * usuário (RLS garante que ele só vê as próprias contas). Só servidor.
  */
 
-type UserClient = ReturnType<typeof createClient>;
+type UserClient = Awaited<ReturnType<typeof createClient>>;
 
 export async function listTagCatalog(supabase: UserClient, accountId: string): Promise<CrmTag[]> {
   const { data, error } = await supabase

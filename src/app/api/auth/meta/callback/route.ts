@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
   // Validação do state anti-CSRF. O cookie é `state:user_id` (quem iniciou).
   const code = searchParams.get("code");
   const state = searchParams.get("state");
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const [expectedState, startedBy] = (cookieStore.get(META_OAUTH_COOKIE)?.value ?? "").split(":");
   cookieStore.delete({ name: META_OAUTH_COOKIE, path: META_OAUTH_COOKIE_PATH });
 
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     return redirectToAccounts("error=invalid_state");
   }
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

@@ -22,7 +22,7 @@ const PATHS: Record<ExpiryKind, string> = {
 
 const extendSchema = z.object({
   kind: z.enum(["rule", "sequence"]),
-  id: z.string().uuid(),
+  id: z.guid(),
   expiresAt: z.string().datetime({ message: "Data de expiração inválida." }).nullable(),
   expireAction: z.enum(EXPIRE_ACTIONS).optional(),
 });
@@ -49,14 +49,14 @@ export async function extendExpiry(
     return { error: "Sua assinatura não está ativa. Acesse Minha assinatura para reativar." };
   }
   const parsed = extendSchema.safeParse({ kind, id, expiresAt, expireAction });
-  if (!parsed.success) return { error: parsed.error.errors[0].message };
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
 
   const now = new Date();
   const invalid = validateExpiry(parsed.data.expiresAt, now);
   if (invalid) return { error: invalid };
 
   const table = TABLE[parsed.data.kind];
-  const supabase = createClient();
+  const supabase = await createClient();
   // RLS: só encontra (e só atualiza) o que pertence ao usuário logado.
   const { data: current } = await supabase
     .from(table)

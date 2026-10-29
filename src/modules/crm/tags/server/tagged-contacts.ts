@@ -3,7 +3,7 @@ import type { createClient } from "@/lib/supabase/server";
 
 import { normalizeTag, sameTag } from "../utils/normalize-tag";
 
-type AnyClient = ReturnType<typeof createAdminClient> | ReturnType<typeof createClient>;
+type AnyClient = ReturnType<typeof createAdminClient> | Awaited<ReturnType<typeof createClient>>;
 
 /** O PostgREST devolve no máximo 1000 linhas por consulta. */
 const PAGE = 1000;

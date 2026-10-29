@@ -18,7 +18,9 @@ import type { ActionResult } from "./actions";
 export async function resubscribeAccount(id: string): Promise<ActionResult> {
   if (!(await activeUserId())) return { error: "Sua assinatura não está ativa." };
 
-  const { data } = await createClient()
+  const supabase = await createClient();
+
+  const { data } = await supabase
     .from("ig_accounts")
     .select("status, access_token_enc")
     .eq("id", id)

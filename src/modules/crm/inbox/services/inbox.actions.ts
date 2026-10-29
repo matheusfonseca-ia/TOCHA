@@ -15,7 +15,7 @@ import type { IgAccount } from "@/types/database";
  */
 export async function markConversationRead(conversationId: string): Promise<void> {
   if (!(await activeUserId())) return;
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase
     .from("conversations")
     .select("id, unread_count, account_id, ig_sender_id")

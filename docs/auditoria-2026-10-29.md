@@ -2281,3 +2281,28 @@ Verificado sem problema nessas áreas: ciclos no grafo, limites de tamanho do gr
 **Evidência:** worker.ts:15-19 `interface Env { CRON_SECRET?: string; NEXT_PUBLIC_APP_URL?: string; [key: string]: unknown; }`; worker.ts:24 `async scheduled(controller: { cron: string }, env: Env, ctx: { waitUntil(p: Promise<unknown>): void })`; tsconfig.json:20 `"exclude": ["node_modules", "worker.ts"]`.
 
 **Recomendação:** Rodar `npx wrangler types` (gera Env/Cloudflare types), tipar `scheduled(controller: ScheduledController, env: Env, ctx: ExecutionContext)` e fechar com `satisfies ExportedHandler<Env>`; incluir worker.ts num tsconfig secundário com `types: ["@cloudflare/workers-types"]` e stub para `.open-next/worker.js`; migrar para wrangler.jsonc quando conveniente (sem mudança funcional).
+
+## Correções aplicadas (29/10)
+
+Todas as correções estão no branch `claude/beautiful-allen-yvk5ka`, em commits separados por bloco: banco (migration 0024), cobrança e OAuth, autenticação e admin, CRM, webhook da Meta e sequências, e atualização de dependências (Next 16.4, React 19, OpenNext 1.20, zod 4). Resultado: checagem de tipos limpa, 1098 testes passando, build do Next e do OpenNext ok, `npm audit` com 0 vulnerabilidades.
+
+### Ordem do deploy
+1. `npm ci` (lockfile mudou; Node 22.12 ou mais novo).
+2. Deploy do código (`npm run deploy:cloudflare`). Testar em preview: login, uma ação do painel e um anexo de ~20 MB no composer.
+3. Depois do deploy, rodar `supabase/migrations/0024_auditoria_hardening.sql` no SQL Editor, fora do pico. Antes do código novo ela derrubaria o acesso de todos os clientes.
+4. Conferir `select * from public.falow_rls_report();` (deve voltar vazio) e rodar `node scripts/check-tenant-isolation.mjs`.
+5. Conferir que as URLs cadastradas na Meta e na Stripe terminam em `/sistema/api/webhooks/meta` e `/sistema/api/webhooks/stripe`.
+6. Se usava `?secret=` em algum agendador externo do cron, trocar pelo header `Authorization: Bearer`.
+
+### O que depende de você (fora do código)
+- Cloudflare: regras de Rate Limiting para `/sistema/login*`, `/sistema/definir-senha*` e `/sistema/api/billing/*`; bloquear `/sistema/api/cron/*` vindo de fora; limite de corpo de 1 MB em `/sistema/api/webhooks/*`; HSTS da zona.
+- `FALOW_ADMIN_REQUIRE_MFA=true` só depois de todos os admins cadastrarem o fator em `/sistema/admin/mfa`.
+
+### Não corrigido ou parcial
+- Rate limit de login e checkout: precisa de regra na Cloudflare.
+- Limite de 26 MB nas server actions: continua, porque o upload do composer passa por elas. Resolver exige upload direto ao Storage com URL assinada.
+- AAD na criptografia de tokens: não aplicado para não quebrar rollback; rotação de chave foi adicionada.
+- Atualização atômica de campos do contato (N-04), estatísticas do funil e contagens via RPC, gatilho de workflow materializado: precisam de uma migration futura com funções SQL. A versão atual reduz o problema mas não o elimina.
+- Filtro por tag do Inbox agora usa o índice e pode não achar grafias raras (acento só em parte da tag).
+- Busca da tabela de Contatos filtra só a página aberta; a exportação CSV continua completa.
+- Retenção de `interactions` e `sequence_runs` concluídos: decisão de produto.

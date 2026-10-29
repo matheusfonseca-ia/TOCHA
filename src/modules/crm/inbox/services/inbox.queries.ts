@@ -22,7 +22,7 @@ import type {
  * vê as próprias contas). Só servidor: Server Components e Server Actions.
  */
 
-type UserClient = ReturnType<typeof createClient>;
+type UserClient = Awaited<ReturnType<typeof createClient>>;
 
 const LIST_LIMIT = 60;
 const THREAD_LIMIT = 100;

@@ -21,7 +21,7 @@ export class AdminMfaRequiredError extends AdminRequiredError {
 type AdminSession = { userId: string | null; needsMfa: boolean };
 
 async function loadAdminSession(): Promise<AdminSession> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

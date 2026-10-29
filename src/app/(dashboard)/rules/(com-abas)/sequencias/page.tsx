@@ -12,7 +12,7 @@ import {
 } from "@/modules/automations";
 
 export default async function SequenciasPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const [accountsRes, sequencesRes] = await Promise.all([
     supabase

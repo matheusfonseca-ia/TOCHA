@@ -28,12 +28,16 @@ const nextConfig = {
   poweredByHeader: false,
   experimental: {
     // Anexo do composer do CRM (PDF até 25MB) sobe por server action; o
-    // padrão do Next é 1MB e barraria qualquer foto de celular. No Next 14 o
-    // limite é global (vale também para as actions públicas de /login e
+    // padrão do Next é 1MB e barraria qualquer foto de celular. O limite é
+    // global (vale também para as actions públicas de /login e
     // /definir-senha): baixá-lo exige tirar o upload da server action (URL
     // assinada do Storage). Até lá, limite o corpo dos POSTs de /sistema/login
     // e /sistema/definir-senha numa regra de WAF da Cloudflare.
     serverActions: { bodySizeLimit: "26mb" },
+    // Desde o Next 15.5 o corpo que passa pelo middleware é cortado em 10MB
+    // por padrão; o anexo do composer passa pelo middleware (matcher pega
+    // tudo), então o teto acompanha o bodySizeLimit acima.
+    proxyClientMaxBodySize: "26mb",
   },
   images: {
     remotePatterns: [

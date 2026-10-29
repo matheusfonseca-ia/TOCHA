@@ -19,7 +19,7 @@ export default async function AdminMfaPage() {
     notFound();
   }
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const [{ data: aal }, { data: factors }] = await Promise.all([
     supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
     supabase.auth.mfa.listFactors(),

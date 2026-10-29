@@ -70,8 +70,8 @@ const WELCOME_TEXT_MAX = 640;
 const MAX_REPLY_VARIANTS = MAX_VARIANTS - 1;
 
 const ruleSchema = z.object({
-  id: z.string().uuid().optional(),
-  account_id: z.string().uuid("Selecione uma conta."),
+  id: z.guid().optional(),
+  account_id: z.guid("Selecione uma conta."),
   name: z.string().trim().max(80, "Nome muito longo.").optional(),
   trigger_type: z.enum(["dm", "comment"]).default("dm"),
   keyword: z.string().trim().max(80, "Palavra-chave muito longa.").optional(),
@@ -168,7 +168,7 @@ function commentRulesOverlap(a: ConflictTarget, b: ConflictTarget): boolean {
  * palavra em comum (comentário). Não bloqueia o salvamento, só informa.
  */
 async function findConflictingRuleName(
-  supabase: ReturnType<typeof createClient>,
+  supabase: Awaited<ReturnType<typeof createClient>>,
   input: ConflictTarget & {
     id?: string;
     account_id: string;
@@ -265,12 +265,13 @@ function oversizedList(raw: unknown): boolean {
 
 export async function saveRule(raw: RuleInput): Promise<ActionResult> {
   if (!(await activeUserId())) return { error: NO_ACCESS_ERROR };
-  // zod 3 valida todos os itens mesmo depois de estourar o .max(): lista
-  // gigante (corpo de até 26 MB) é recusada antes do parse.
+  // Guarda antes do parse: o zod 3 validava todos os itens mesmo depois de
+  // estourar o .max(); com o corte aqui, lista gigante (corpo de até 26 MB)
+  // é recusada sem chegar ao zod, seja qual for a versão.
   if (oversizedList(raw)) return { error: "Automação inválida: listas acima do limite." };
   const parsed = ruleSchema.safeParse(raw);
   if (!parsed.success) {
-    return { error: parsed.error.errors[0].message };
+    return { error: parsed.error.issues[0].message };
   }
   const input = parsed.data;
 
@@ -315,7 +316,7 @@ export async function saveRule(raw: RuleInput): Promise<ActionResult> {
     updated_at: new Date().toISOString(),
   };
 
-  const supabase = createClient();
+  const supabase = await createClient();
   if (
     input.id &&
     input.is_active &&
@@ -396,8 +397,8 @@ export async function toggleRule(
   isActive: boolean
 ): Promise<ActionResult> {
   if (!(await activeUserId())) return { error: NO_ACCESS_ERROR };
-  if (!z.string().uuid().safeParse(id).success) return { error: RULE_NOT_FOUND_ERROR };
-  const supabase = createClient();
+  if (!z.guid().safeParse(id).success) return { error: RULE_NOT_FOUND_ERROR };
+  const supabase = await createClient();
   if (isActive && (await isStoredExpired(supabase, "rules", id))) {
     return { error: EXPIRED_RULE_ACTIVATION_ERROR };
   }
@@ -443,7 +444,7 @@ export async function toggleRule(
  * depois de excluída, esses nós ficam como "Automação removida".
  */
 export async function listRuleWorkflowUsage(id: string): Promise<string[]> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data: rule } = await supabase
     .from("rules")
     .select("account_id")
@@ -463,8 +464,8 @@ export async function listRuleWorkflowUsage(id: string): Promise<string[]> {
 
 export async function deleteRule(id: string): Promise<ActionResult> {
   if (!(await activeUserId())) return { error: NO_ACCESS_ERROR };
-  if (!z.string().uuid().safeParse(id).success) return { error: RULE_NOT_FOUND_ERROR };
-  const supabase = createClient();
+  if (!z.guid().safeParse(id).success) return { error: RULE_NOT_FOUND_ERROR };
+  const supabase = await createClient();
   const { data: deleted, error } = await supabase
     .from("rules")
     .delete()
@@ -491,7 +492,7 @@ const RULE_NAME_MAX = 80;
  */
 export async function duplicateRule(id: string): Promise<ActionResult> {
   if (!(await activeUserId())) return { error: NO_ACCESS_ERROR };
-  const supabase = createClient();
+  const supabase = await createClient();
   // select("*") + RLS: só encontra a regra se pertencer ao usuário logado.
   const { data: original, error: fetchError } = await supabase
     .from("rules")

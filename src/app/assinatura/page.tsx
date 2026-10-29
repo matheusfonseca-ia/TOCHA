@@ -42,7 +42,7 @@ function ErroNeutro() {
 }
 
 export default async function AssinaturaPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
