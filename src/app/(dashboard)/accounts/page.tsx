@@ -1,6 +1,7 @@
 import { AlertTriangle, CheckCircle2, Instagram } from "lucide-react";
 
 import { AccountCard } from "@/components/accounts/account-card";
+import { ResubscribeButton } from "@/components/accounts/resubscribe-button";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
@@ -20,15 +21,25 @@ const ERROR_MESSAGES: Record<string, string> = {
   exchange_failed:
     "Falha ao conectar. Confira INSTAGRAM_APP_ID/INSTAGRAM_APP_SECRET e se a conta aceitou o convite de testadora no painel Meta.",
   account_limit: "Seu plano permite 1 conta do Instagram. Desconecte a atual para conectar outra.",
-  account_taken: "Esse @ já está conectado em outra conta do Falow. Desconecte por lá primeiro.",
+  account_taken:
+    "Esse @ já está conectado em outra conta ativa do Falow. Desconecte por lá primeiro ou fale com o suporte.",
   unknown: "Erro inesperado ao conectar. Tente novamente.",
 };
 
 export default async function AccountsPage({
   searchParams,
 }: {
-  searchParams: { connected?: string; error?: string };
+  searchParams: { connected?: string; error?: string; webhook?: string; account?: string };
 }) {
+  // hasOwn: `?error=__proto__` não pode achar nada no protótipo do objeto.
+  const errorMessage = searchParams.error
+    ? Object.hasOwn(ERROR_MESSAGES, searchParams.error)
+      ? ERROR_MESSAGES[searchParams.error]
+      : ERROR_MESSAGES.unknown
+    : null;
+  // A conexão foi salva, mas a Meta recusou a inscrição no webhook: sem ela
+  // nenhum evento chega e as automações ficam mudas.
+  const webhookFailed = Boolean(searchParams.connected && searchParams.webhook === "failed");
   const supabase = createClient();
   const { data } = await supabase
     .from("ig_accounts")
@@ -66,7 +77,19 @@ export default async function AccountsPage({
         </Button>
       </PageHeader>
 
-      {searchParams.connected && (
+      {searchParams.connected && webhookFailed && (
+        <div className="mb-6 flex flex-wrap items-center gap-2.5 rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-amber-900 dark:text-amber-200 animate-fade-up">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span className="min-w-0 flex-1">
+            Conta conectada, mas a Meta não confirmou o envio de mensagens e comentários para o Falow. Enquanto
+            isso as automações não disparam. Tente de novo; se continuar, reconecte a conta e aceite todas as
+            permissões.
+          </span>
+          {searchParams.account && <ResubscribeButton accountId={searchParams.account} />}
+        </div>
+      )}
+
+      {searchParams.connected && !webhookFailed && (
         <div className="mb-6 flex items-center gap-2.5 rounded-lg border border-success/25 bg-success/10 px-4 py-3 text-sm text-emerald-900 dark:text-emerald-200 animate-fade-up">
           <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
           <span>
@@ -76,11 +99,11 @@ export default async function AccountsPage({
         </div>
       )}
 
-      {searchParams.error && (
+      {errorMessage && (
         <div className="mb-6 flex items-center gap-2.5 rounded-lg border border-destructive/25 bg-destructive/10 px-4 py-3 text-sm text-red-900 dark:text-red-200 animate-fade-up">
           <AlertTriangle className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
           <span>
-            {ERROR_MESSAGES[searchParams.error] ?? ERROR_MESSAGES.unknown}
+            {errorMessage}
           </span>
         </div>
       )}

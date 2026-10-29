@@ -4,10 +4,14 @@ import { NextResponse } from "next/server";
 
 import { appUrl } from "@/lib/app-url";
 import { hasActiveAccess } from "@/lib/billing/access";
-import { getOAuthDialogUrl } from "@/lib/meta/oauth";
+import { getOAuthDialogUrl, META_OAUTH_COOKIE, META_OAUTH_COOKIE_PATH } from "@/lib/meta/oauth";
 import { createClient } from "@/lib/supabase/server";
 
-/** Inicia o fluxo OAuth: gera state anti-CSRF e redireciona ao diálogo do Facebook. */
+/**
+ * Inicia o fluxo OAuth: gera state anti-CSRF e redireciona ao diálogo do
+ * Instagram. O cookie guarda `state:user_id`: o callback só aceita se quem
+ * estiver logado for o mesmo usuário que clicou em "Conectar".
+ */
 export async function GET() {
   const supabase = createClient();
   const {
@@ -23,12 +27,12 @@ export async function GET() {
   }
 
   const state = randomUUID();
-  cookies().set("meta_oauth_state", state, {
+  cookies().set(META_OAUTH_COOKIE, `${state}:${user.id}`, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
     maxAge: 600,
-    path: "/",
+    path: META_OAUTH_COOKIE_PATH,
   });
 
   return NextResponse.redirect(getOAuthDialogUrl(state));

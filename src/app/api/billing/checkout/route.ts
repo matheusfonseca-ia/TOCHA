@@ -1,15 +1,26 @@
 import { NextResponse } from "next/server";
 
 import { appUrl } from "@/lib/app-url";
-import { isAdmin } from "@/lib/billing/access";
-import { checkoutDecision } from "@/lib/billing/checkout";
+import { accessGrantOf, isAdmin } from "@/lib/billing/access";
+import { checkoutDecision, hasOpenSubscription, isSameOriginRequest } from "@/lib/billing/checkout";
 import { getStripe } from "@/lib/billing/stripe";
+import { CHECKOUT_USER_METADATA } from "@/lib/billing/stripe-events";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
-/** Botão "Assinar" (landing) e "Reativar" (/assinatura). */
-export async function POST() {
+/**
+ * Botão "Assinar" (landing) e "Reativar" (/assinatura).
+ *
+ * Aceita visitante anônimo (botão da landing), mas só de POST da mesma origem.
+ * O limite de taxa contra criação em massa de sessões fica na borda (regra de
+ * Rate Limiting da Cloudflare em /sistema/api/billing/*).
+ */
+export async function POST(request: Request) {
+  if (!isSameOriginRequest(request.headers, appUrl("/"))) {
+    return new NextResponse("Origem não permitida", { status: 403 });
+  }
+
   const supabase = createClient();
   const {
     data: { user },
@@ -30,10 +41,42 @@ export async function POST() {
     return NextResponse.redirect(appUrl("/assinatura"), 303);
   }
 
-  const decision = checkoutDecision({ userId: user?.id ?? null, owner: isAdmin(user?.id), subscription });
-  if (decision.kind === "dashboard") return NextResponse.redirect(appUrl("/dashboard"), 303);
+  // Bloqueado não vai para a Stripe. Erro ao ler o bloqueio = dúvida = não cobra.
+  let blocked = false;
+  if (user && !isAdmin(user.id)) {
+    const { grant, error: grantError } = await accessGrantOf(supabase, user.id);
+    if (grantError) return NextResponse.redirect(appUrl("/assinatura"), 303);
+    blocked = grant?.kind === "block";
+  }
 
-  const session = await getStripe().checkout.sessions.create({
+  const decision = checkoutDecision({ userId: user?.id ?? null, owner: isAdmin(user?.id), blocked, subscription });
+  if (decision.kind === "dashboard") return NextResponse.redirect(appUrl("/dashboard"), 303);
+  if (decision.kind === "blocked") return NextResponse.redirect(appUrl("/assinatura"), 303);
+
+  const stripe = getStripe();
+
+  // Reativação: se o cliente ainda tem uma assinatura que pode cobrar
+  // (incomplete com 3DS pendente, unpaid, past_due...), outro Checkout abriria
+  // a segunda assinatura no mesmo cliente. Manda para o portal pagar a pendente.
+  if (decision.customer) {
+    let statuses: string[];
+    try {
+      const list = await stripe.subscriptions.list({ customer: decision.customer, status: "all", limit: 20 });
+      statuses = list.data.map((s) => s.status);
+    } catch (err) {
+      console.error("[billing] falha ao listar as assinaturas do cliente:", err instanceof Error ? err.message : err);
+      return NextResponse.redirect(appUrl("/assinatura"), 303);
+    }
+    if (hasOpenSubscription(statuses)) {
+      const portal = await stripe.billingPortal.sessions.create({
+        customer: decision.customer,
+        return_url: appUrl("/assinatura"),
+      });
+      return NextResponse.redirect(portal.url, 303);
+    }
+  }
+
+  const session = await stripe.checkout.sessions.create({
     mode: "subscription",
     line_items: [{ price: process.env.STRIPE_PRICE_ID!, quantity: 1 }],
     success_url: appUrl("/assinatura/obrigado"),
@@ -45,6 +88,15 @@ export async function POST() {
       : user?.email
         ? { customer_email: user.email }
         : {}),
+    // Compra logada: o webhook liga a assinatura a este usuário, não ao e-mail
+    // digitado no Checkout (que a Stripe não verifica).
+    ...(user
+      ? {
+          client_reference_id: user.id,
+          metadata: { [CHECKOUT_USER_METADATA]: user.id },
+          subscription_data: { metadata: { [CHECKOUT_USER_METADATA]: user.id } },
+        }
+      : {}),
   });
 
   return NextResponse.redirect(session.url!, 303);

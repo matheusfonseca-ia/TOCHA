@@ -17,6 +17,21 @@ import { isAccessStatus, type QueryClient } from "@/lib/billing/access";
 export const PURGE_AFTER_DAYS = 30;
 const DAY_MS = 86_400_000;
 
+/**
+ * Evento de assinatura de cliente desconhecido só pede reenvio enquanto é
+ * recente (o checkout pode chegar depois). Passado isto, é cliente criado fora
+ * do Checkout ou apagado pelo purge: 200 "ignored" com log, em vez de 500 por
+ * 3 dias.
+ */
+export const UNKNOWN_CUSTOMER_RETRY_MS = 6 * 60 * 60 * 1000;
+
+/** Status em que a assinatura antiga não volta mais: religar a linha não deixa nada vivo para trás. */
+const FINAL_STATUSES = ["canceled", "incomplete_expired"];
+
+/** Metadado gravado pela rota de checkout com o usuário logado. */
+export const CHECKOUT_USER_METADATA = "falow_user_id";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export interface StripeEventDeps {
   admin: QueryClient;
   retrieveSubscription(id: string): Promise<Stripe.Subscription>;
@@ -95,7 +110,8 @@ export async function handleStripeEvent(
       return handleSubscription(
         event.data.object as Stripe.Subscription,
         event.type === "customer.subscription.deleted",
-        deps
+        deps,
+        typeof event.created === "number" ? event.created : null
       );
     default:
       return { status: "ignored" };
@@ -136,10 +152,23 @@ async function handleCheckout(
   }
   let userId = (byCustomer as { user_id?: string } | null)?.user_id ?? null;
 
+  // Compra feita logada: a rota de checkout grava o user_id no metadata da
+  // sessão (só o servidor, com a chave secreta, cria sessão com metadata). Vale
+  // mais que o e-mail digitado no Checkout, que a Stripe não verifica.
+  if (!userId) {
+    const fromMetadata = session.metadata?.[CHECKOUT_USER_METADATA];
+    if (fromMetadata && UUID_RE.test(fromMetadata)) userId = fromMetadata;
+  }
+
+  // Sem login: pelo e-mail (não verificado). `byEmail` marca que a conta foi
+  // achada só por ele, para não religar a linha de outra pessoa abaixo.
+  let byEmail = false;
   if (!userId) {
     const email = session.customer_details?.email ?? session.customer_email ?? null;
     if (!email) return { status: "retry", reason: "sessão sem e-mail" };
-    userId = (await deps.findUserIdByEmail(email)) ?? (await deps.inviteUser(email));
+    const existing = await deps.findUserIdByEmail(email);
+    byEmail = Boolean(existing);
+    userId = existing ?? (await deps.inviteUser(email));
   }
 
   const { data: previous, error: previousError } = await deps.admin
@@ -171,6 +200,17 @@ async function handleCheckout(
     return { status: "processed" };
   }
 
+  // Conta achada só pelo e-mail digitado e com uma assinatura ainda viva
+  // (incomplete, unpaid, paused) em outro cliente da Stripe: religar trocaria o
+  // cliente/assinatura dela pelos de quem pagou agora, deixando a dela órfã.
+  // Só religa sobre assinatura encerrada (canceled/incomplete_expired) ou sem linha.
+  if (byEmail && prev && prev.stripe_customer_id !== customerId && !FINAL_STATUSES.includes(prev.status ?? "")) {
+    console.error(
+      `[stripe] checkout sem login para o e-mail do usuário ${userId}, que tem a assinatura ${prev.stripe_subscription_id} (cliente ${prev.stripe_customer_id}) com status ${prev.status}: a linha não foi religada ao cliente ${customerId} / assinatura ${subscriptionId}. Conferir na Stripe e tratar à mão.`
+    );
+    return { status: "processed" };
+  }
+
   const now = (deps.now ?? (() => new Date()))();
   const { error } = await deps.admin.from("subscriptions").upsert(
     {
@@ -191,7 +231,8 @@ async function handleCheckout(
 async function handleSubscription(
   sub: Stripe.Subscription,
   deleted: boolean,
-  deps: StripeEventDeps
+  deps: StripeEventDeps,
+  eventCreated: number | null = null
 ): Promise<StripeEventResult> {
   // Assinatura de outro produto: nem consulta (sem isso cada evento dela daria
   // "cliente ainda desconhecido" e 500 por dias).
@@ -215,20 +256,44 @@ async function handleSubscription(
     status: string | null;
     purge_after: string | null;
   } | null;
-  if (!row) return { status: "retry", reason: "cliente ainda desconhecido" };
-  if (row.stripe_subscription_id && row.stripe_subscription_id !== sub.id) return { status: "ignored" };
-  // Cancelada é final para um id de assinatura (reativar sempre traz um id novo
-  // pelo checkout). Só o próprio `deleted`, reentregue, volta a mexer na linha;
-  // um updated/created atrasado não pode reabrir o acesso nem sumir com o purge.
-  if (!deleted && row.status === "canceled" && row.stripe_subscription_id === sub.id) {
-    return { status: "ignored" };
+  const now = (deps.now ?? (() => new Date()))();
+  if (!row) {
+    // Cancelamento de quem não tem linha (purgado, ou nunca entrou): nada a cancelar.
+    if (deleted) {
+      console.warn(`[stripe] deleted da assinatura ${sub.id} de cliente desconhecido (${customerId}) ignorado.`);
+      return { status: "ignored" };
+    }
+    const ageMs = eventCreated === null ? 0 : now.getTime() - eventCreated * 1000;
+    if (ageMs > UNKNOWN_CUSTOMER_RETRY_MS) {
+      console.error(
+        `[stripe] assinatura ${sub.id} do cliente ${customerId}, desconhecido há mais de ${UNKNOWN_CUSTOMER_RETRY_MS / 3_600_000}h: ignorada. Se foi criada no dashboard da Stripe, vincular o cliente ao usuário à mão.`
+      );
+      return { status: "ignored" };
+    }
+    return { status: "retry", reason: "cliente ainda desconhecido" };
   }
 
-  const now = (deps.now ?? (() => new Date()))();
   // O payload de created/updated é o retrato de quando o evento nasceu e pode
   // chegar velho: a verdade é o estado atual na Stripe. O payload do deleted já
   // é final, então não precisa de consulta.
-  const current = deleted ? sub : await deps.retrieveSubscription(sub.id);
+  let current: Stripe.Subscription | null = deleted ? sub : null;
+
+  if (row.stripe_subscription_id && row.stripe_subscription_id !== sub.id) {
+    // Outra assinatura do mesmo cliente. Quem tem acesso não troca (evento de
+    // assinatura antiga/duplicada não derruba a vigente); deleted de outra nunca
+    // mexe. Sem acesso, aceita a nova se ela dá acesso de verdade: é a
+    // assinatura criada no dashboard da Stripe para um cliente cancelado.
+    if (deleted || isAccessStatus(row.status)) return { status: "ignored" };
+    current = await deps.retrieveSubscription(sub.id);
+    if (!isAccessStatus(current.status)) return { status: "ignored" };
+  } else if (!deleted && row.status === "canceled" && row.stripe_subscription_id === sub.id) {
+    // Cancelada é final para um id de assinatura (reativar sempre traz um id
+    // novo). Só o próprio `deleted`, reentregue, volta a mexer na linha; um
+    // updated/created atrasado não pode reabrir o acesso nem sumir com o purge.
+    return { status: "ignored" };
+  }
+
+  current ??= await deps.retrieveSubscription(sub.id);
   const status = deleted ? "canceled" : current.status;
   const patch = {
     stripe_subscription_id: sub.id,

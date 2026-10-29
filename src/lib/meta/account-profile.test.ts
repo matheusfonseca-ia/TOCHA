@@ -4,7 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createFakeAdmin, type FakeSupabase } from "@/lib/sequences/__tests__/fake-supabase";
 import { makeAccount } from "@/lib/sequences/__tests__/fixtures";
 
-import { syncAccountProfile, withSyncedProfiles } from "./account-profile";
+import {
+  PROFILE_SYNC_INTERVAL_MS,
+  resetProfileSyncThrottle,
+  syncAccountProfile,
+  withSyncedProfiles,
+} from "./account-profile";
 
 const { getInstagramProfileMock } = vi.hoisted(() => ({
   getInstagramProfileMock: vi.fn(),
@@ -21,6 +26,7 @@ const db = () => fake.client as unknown as SupabaseClient;
 beforeEach(() => {
   fake = createFakeAdmin();
   vi.clearAllMocks();
+  resetProfileSyncThrottle();
 });
 
 function profile(username: string, profilePictureUrl: string | null = null) {
@@ -101,5 +107,23 @@ describe("withSyncedProfiles", () => {
 
     expect(result).toEqual({ id: "acc-x", ig_username: "salvo", profile_picture_url: null });
     expect(getInstagramProfileMock).not.toHaveBeenCalled();
+  });
+
+  it("não chama a Graph de novo dentro do intervalo; depois dele, sincroniza", async () => {
+    const account = makeAccount({ ig_username: "antigo" });
+    fake.tables.ig_accounts.push(account);
+    getInstagramProfileMock.mockResolvedValue(profile("novo"));
+    const input = [
+      { id: account.id, ig_username: "antigo", profile_picture_url: null, access_token_enc: account.access_token_enc },
+    ];
+    const t0 = 1_000_000;
+
+    await withSyncedProfiles(db(), input, { now: t0 });
+    const [cached] = await withSyncedProfiles(db(), input, { now: t0 + 60_000 });
+    expect(getInstagramProfileMock).toHaveBeenCalledTimes(1);
+    expect(cached.ig_username).toBe("antigo");
+
+    await withSyncedProfiles(db(), input, { now: t0 + PROFILE_SYNC_INTERVAL_MS + 1 });
+    expect(getInstagramProfileMock).toHaveBeenCalledTimes(2);
   });
 });

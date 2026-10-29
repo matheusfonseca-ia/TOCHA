@@ -191,8 +191,9 @@ describe("handleStripeEvent", () => {
     }
   );
 
-  it.each(["canceled", "unpaid"] as const)(
-    "quem está sem acesso (%s) volta pela landing com cliente Stripe novo e religa a mesma conta",
+  // unpaid/incomplete/paused ainda estão vivas na Stripe: não religa pelo e-mail (ver teste "assinatura viva" abaixo).
+  it.each(["canceled", "incomplete_expired"] as const)(
+    "quem está com a assinatura encerrada (%s) volta pela landing com cliente Stripe novo e religa a mesma conta",
     async (status) => {
       db.tables.subscriptions.push({
         user_id: "cliente-1",
@@ -519,6 +520,61 @@ describe("handleStripeEvent", () => {
     const result = await handleStripeEvent(evt("customer.subscription.deleted", sub("sub_1", "canceled")), deps);
     expect(result).toEqual({ status: "ignored" });
     expect(db.tables.subscriptions[0].status).toBe("active");
+  });
+
+  it("checkout logado: o user_id do metadata vale mais que o e-mail digitado", async () => {
+    const uid = "11111111-2222-4333-8444-555555555555";
+    deps.findUserIdByEmail = vi.fn(async () => "outra-conta");
+    await handleStripeEvent(checkout({ metadata: { falow_user_id: uid } }), deps);
+    expect(deps.findUserIdByEmail).not.toHaveBeenCalled();
+    expect(deps.inviteUser).not.toHaveBeenCalled();
+    expect(db.tables.subscriptions[0]).toMatchObject({ user_id: uid, stripe_customer_id: "cus_1" });
+  });
+
+  it("checkout sem login com e-mail de conta que tem assinatura viva em outro cliente: não religa", async () => {
+    deps.findUserIdByEmail = vi.fn(async () => "vitima");
+    const row = { user_id: "vitima", stripe_customer_id: "cus_vitima", stripe_subscription_id: "sub_vitima", status: "unpaid", purge_after: null };
+    db.tables.subscriptions.push({ ...row });
+    const result = await handleStripeEvent(checkout(), deps);
+    expect(result).toEqual({ status: "processed" });
+    expect(db.tables.subscriptions).toEqual([expect.objectContaining(row)]);
+    expect(errorSpy).toHaveBeenCalled();
+  });
+
+  it("checkout sem login com e-mail de conta cancelada: religa (reativação pela landing)", async () => {
+    deps.findUserIdByEmail = vi.fn(async () => "cliente-1");
+    db.tables.subscriptions.push({ user_id: "cliente-1", stripe_customer_id: "cus_velho", stripe_subscription_id: "sub_velha", status: "canceled", purge_after: "2026-11-01T00:00:00Z" });
+    await handleStripeEvent(checkout(), deps);
+    expect(db.tables.subscriptions[0]).toMatchObject({ user_id: "cliente-1", stripe_customer_id: "cus_1", stripe_subscription_id: "sub_1", status: "active", purge_after: null });
+  });
+
+  it("deleted de cliente desconhecido é ignorado (sem 500 por dias)", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const result = await handleStripeEvent(evt("customer.subscription.deleted", sub("sub_1", "canceled")), deps);
+    expect(result).toEqual({ status: "ignored" });
+  });
+
+  it("evento antigo de cliente desconhecido é ignorado com log, recente pede reenvio", async () => {
+    const old = { ...evt("customer.subscription.updated", sub("sub_1", "active")), created: Math.floor(NOW.getTime() / 1000) - 7 * 3600 } as Stripe.Event;
+    expect(await handleStripeEvent(old, deps)).toEqual({ status: "ignored" });
+    const fresh = { ...old, created: Math.floor(NOW.getTime() / 1000) - 60 } as Stripe.Event;
+    expect((await handleStripeEvent(fresh, deps)).status).toBe("retry");
+  });
+
+  it("assinatura nova criada no dashboard para cliente cancelado entra (id diferente, dá acesso)", async () => {
+    db.tables.subscriptions.push({ user_id: "c1", stripe_customer_id: "cus_1", stripe_subscription_id: "sub_velha", status: "canceled", canceled_at: "2026-10-01T00:00:00Z", purge_after: "2026-10-31T00:00:00Z" });
+    subs.sub_nova = sub("sub_nova", "active");
+    const result = await handleStripeEvent(evt("customer.subscription.created", sub("sub_nova", "active")), deps);
+    expect(result).toEqual({ status: "processed" });
+    expect(db.tables.subscriptions[0]).toMatchObject({ stripe_subscription_id: "sub_nova", status: "active", purge_after: null });
+  });
+
+  it("assinatura de id diferente sem acesso não substitui a linha", async () => {
+    db.tables.subscriptions.push({ user_id: "c1", stripe_customer_id: "cus_1", stripe_subscription_id: "sub_velha", status: "canceled", purge_after: "2026-10-31T00:00:00Z" });
+    subs.sub_nova = sub("sub_nova", "incomplete");
+    const result = await handleStripeEvent(evt("customer.subscription.created", sub("sub_nova", "incomplete")), deps);
+    expect(result).toEqual({ status: "ignored" });
+    expect(db.tables.subscriptions[0].stripe_subscription_id).toBe("sub_velha");
   });
 
   it("tipo de evento desconhecido é ignorado", async () => {

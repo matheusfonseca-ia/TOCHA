@@ -1,3 +1,4 @@
+import { appUrl } from "@/lib/app-url";
 import type { createAdminClient } from "@/lib/supabase/admin";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -12,7 +13,8 @@ export async function findUserIdByEmail(admin: AdminClient, email: string): Prom
 /** Cria a conta e manda o e-mail de definir senha (template "Invite user"). */
 export async function inviteUser(admin: AdminClient, email: string): Promise<string> {
   const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/definir-senha`,
+    // appUrl: mesma montagem do resto do app (NEXT_PUBLIC_APP_URL já termina em /sistema).
+    redirectTo: appUrl("/definir-senha"),
   });
   if (error || !data.user) throw new Error(`convite falhou: ${error?.message ?? "sem usuário"}`);
   return data.user.id;
