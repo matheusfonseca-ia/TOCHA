@@ -9,7 +9,8 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { listCustomers, type CustomerPage, type CustomerRow } from "@/lib/admin/customers";
-import { requireAdmin } from "@/lib/admin/require-admin";
+import { isAccessStatus } from "@/lib/billing/access";
+import { requireAdminPage } from "@/lib/admin/require-admin";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -33,12 +34,33 @@ const dayFormat = new Intl.DateTimeFormat("pt-BR", {
 });
 const day = (iso: string | null) => (iso ? dayFormat.format(new Date(iso)) : "-");
 
-function GrantCell({ grant }: { grant: CustomerRow["grant"] }) {
+function GrantCell({ customer }: { customer: CustomerRow }) {
+  const { grant } = customer;
   if (!grant) return <span className="text-xs text-muted-foreground/50">-</span>;
   if (grant.kind === "block") {
+    // Bloquear não cancela a Stripe: enquanto a assinatura cobrar, o aviso fica na lista.
+    const stillCharging = isAccessStatus(customer.subscriptionStatus);
     return (
       <div className="space-y-0.5">
         <Badge variant="destructive">Bloqueado</Badge>
+        {stillCharging && (
+          <p className="text-xs font-medium text-destructive">
+            Ainda cobrando na Stripe
+            {customer.stripeCustomerId && (
+              <>
+                {" · "}
+                <a
+                  href={`https://dashboard.stripe.com/customers/${encodeURIComponent(customer.stripeCustomerId)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline"
+                >
+                  cancelar
+                </a>
+              </>
+            )}
+          </p>
+        )}
         <p className="max-w-[180px] truncate text-xs text-muted-foreground" title={grant.reason}>{grant.reason}</p>
       </div>
     );
@@ -55,7 +77,7 @@ function GrantCell({ grant }: { grant: CustomerRow["grant"] }) {
 }
 
 export default async function AdminCustomersPage({ searchParams }: { searchParams: { q?: string; page?: string } }) {
-  await requireAdmin();
+  await requireAdminPage();
   const search = (searchParams.q ?? "").trim();
 
   const pageLink = (page: number) => `/admin/clientes?${new URLSearchParams({ ...(search ? { q: search } : {}), page: String(page) })}`;
@@ -121,7 +143,7 @@ export default async function AdminCustomersPage({ searchParams }: { searchParam
                       <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{day(c.currentPeriodEnd)}</TableCell>
                       <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{day(c.purgeAfter)}</TableCell>
                       <TableCell>
-                        <GrantCell grant={c.grant} />
+                        <GrantCell customer={c} />
                       </TableCell>
                       <TableCell className="text-right">
                         {!c.isAdmin && (

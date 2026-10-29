@@ -152,7 +152,15 @@ export function CustomerActions({
           Bloquear
         </Button>
       )}
-      <Button size="sm" variant="ghost" disabled={isPending} onClick={() => run(() => resendAccessAction(userId), "E-mail de acesso enviado.")}>
+      <Button
+        size="sm"
+        variant="ghost"
+        disabled={isPending}
+        onClick={() => {
+          if (!window.confirm(`Reenviar o e-mail de acesso para ${email}?`)) return;
+          run(() => resendAccessAction(userId), "E-mail de acesso enviado.");
+        }}
+      >
         Reenviar acesso
       </Button>
 

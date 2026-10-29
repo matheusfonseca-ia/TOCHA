@@ -28,6 +28,14 @@ describe("regra de acesso", () => {
     expect(isOwner("cliente-1")).toBe(false);
   });
 
+  it("dono cadastrado em maiúsculas continua dono e admin (UUID do Supabase vem em minúsculas)", () => {
+    vi.stubEnv("FALOW_OWNER_USER_ID", " 8F2C0000-AAAA-4BBB-8CCC-DDDDEEEEFFFF\n");
+    const id = "8f2c0000-aaaa-4bbb-8ccc-ddddeeeeffff";
+    expect(isOwner(id)).toBe(true);
+    expect(isAdmin(id)).toBe(true);
+    expect(isOwner("8F2C0000-AAAA-4BBB-8CCC-DDDDEEEEFFFF")).toBe(true);
+  });
+
   it("env do dono vazio ou só espaços: ninguém é dono", () => {
     for (const value of ["", "   ", "\n"]) {
       vi.stubEnv("FALOW_OWNER_USER_ID", value);
@@ -218,6 +226,23 @@ describe("hasActiveAccess com access_grants", () => {
     db.tables.subscriptions.push({ user_id: "c4", stripe_customer_id: "cus_4", status: "active" });
     expect(await hasActiveAccess(failing, "c4", NOW)).toBe(false);
     expect(spy).toHaveBeenCalledWith(expect.stringContaining("access_grants"), "boom");
+  });
+  it("status com acesso mas período vencido há mais de 7 dias: sem acesso + log", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    db.tables.subscriptions.push({ user_id: "c6", stripe_customer_id: "cus_6", status: "active", current_period_end: "2026-10-08T12:00:00Z" });
+    expect(await hasActiveAccess(db.client, "c6", NOW)).toBe(false);
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining("período vencido"));
+  });
+  it("período vencido há menos de 7 dias ou sem data: segue o status", async () => {
+    db.tables.subscriptions.push({ user_id: "c7", stripe_customer_id: "cus_7", status: "past_due", current_period_end: "2026-10-12T12:00:00Z" });
+    db.tables.subscriptions.push({ user_id: "c8", stripe_customer_id: "cus_8", status: "active", current_period_end: null });
+    expect(await hasActiveAccess(db.client, "c7", NOW)).toBe(true);
+    expect(await hasActiveAccess(db.client, "c8", NOW)).toBe(true);
+  });
+  it("cortesia válida vale mesmo com assinatura vencida", async () => {
+    db.tables.subscriptions.push({ user_id: "c9", stripe_customer_id: "cus_9", status: "active", current_period_end: "2026-01-01T00:00:00Z" });
+    db.tables.access_grants.push({ user_id: "c9", kind: "courtesy", expires_at: null, reason: "x", granted_by: "user-1" });
+    expect(await hasActiveAccess(db.client, "c9", NOW)).toBe(true);
   });
   it("accountHasAccess respeita o bloqueio (bot e cron param)", async () => {
     db.tables.ig_accounts.push({ id: "acc-c5", user_id: "c5", ig_user_id: "5", status: "active" });

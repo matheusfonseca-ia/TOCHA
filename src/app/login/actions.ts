@@ -15,6 +15,13 @@ export interface AuthResult {
   message?: string;
 }
 
+/*
+ * Limite de tentativas: não mora aqui. O Worker não tem KV/Durable Object de
+ * rate limit e o Supabase Auth só enxerga o IP de saída da Cloudflare (o mesmo
+ * para todo mundo). A trava é uma regra de Rate Limiting do WAF da Cloudflare
+ * em POST /sistema/login* e /sistema/definir-senha* (por IP), mais os limites
+ * de Auth → Rate Limits no painel do Supabase.
+ */
 export async function signIn(formData: FormData): Promise<AuthResult> {
   const parsed = credentialsSchema.safeParse({
     email: formData.get("email"),

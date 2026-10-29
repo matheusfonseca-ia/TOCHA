@@ -1,4 +1,4 @@
-import { aiFieldSpec, type AiFieldKind } from "@/lib/ai/fields";
+import { aiFieldSpec, isAiFieldKind, type AiFieldKind } from "@/lib/ai/fields";
 
 /**
  * Textos salvos ("mensagens padrão"): o que você escreve uma vez e reusa em
@@ -34,13 +34,15 @@ export type NormalizedPreset =
   | { error: string };
 
 export function normalizePreset(input: PresetInput): NormalizedPreset {
+  // A coluna `scope` não tem check no banco: escopo fora do catálogo não entra.
+  if (!isAiFieldKind(input.scope)) return { error: "Tipo de campo inválido." };
   const text = input.text.trim();
   if (!text) return { error: "Escreva o texto antes de salvar." };
   if (text.length > PRESET_TEXT_MAX) {
     return { error: `Texto muito longo: máximo de ${PRESET_TEXT_MAX} caracteres.` };
   }
 
-  const typed = input.label?.trim();
+  const typed = typeof input.label === "string" ? input.label.trim() : "";
   const label = (typed || text).slice(0, PRESET_LABEL_MAX);
 
   return { preset: { scope: input.scope, label, text } };

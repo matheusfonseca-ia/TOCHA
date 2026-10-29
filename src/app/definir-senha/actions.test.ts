@@ -1,10 +1,21 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { auth } = vi.hoisted(() => ({
-  auth: { verifyOtp: vi.fn(), updateUser: vi.fn(), getUser: vi.fn() },
+const { auth, jar } = vi.hoisted(() => ({
+  auth: { verifyOtp: vi.fn(), updateUser: vi.fn(), getUser: vi.fn(), signOut: vi.fn() },
+  /** Cookies do navegador entre uma chamada e outra (a marca da retentativa mora aqui). */
+  jar: new Map<string, { value: string; maxAge?: number }>(),
 }));
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: () => ({ auth }) }));
+vi.mock("next/headers", () => ({
+  cookies: () => ({
+    get: (name: string) => (jar.has(name) ? { name, value: jar.get(name)!.value } : undefined),
+    set: (name: string, value: string, opts: { maxAge?: number }) => {
+      if (opts?.maxAge === 0) jar.delete(name);
+      else jar.set(name, { value, maxAge: opts?.maxAge });
+    },
+  }),
+}));
 vi.mock("next/navigation", () => ({
   redirect: (url: string) => {
     throw new Error(`REDIRECT:${url}`);
@@ -34,12 +45,26 @@ function expectSupabaseUntouched() {
   expect(auth.updateUser).not.toHaveBeenCalled();
 }
 
+/** Primeira tentativa com o link gasto e a senha recusada: deixa a marca da retentativa para `uid`. */
+async function failFirstAttempt(uid: string) {
+  auth.verifyOtp = vi.fn(async () => ({ data: { user: { id: uid } }, error: null }));
+  auth.updateUser = vi.fn(async () => ({ error: { code: "weak_password", message: "weak" } }));
+  const r = await setPassword(form({ token_hash: "abc", type: "recovery", password: "segredo123", confirm: "segredo123" }));
+  expect(r.sessionReady).toBe(true);
+  auth.verifyOtp = vi.fn(async () => ({ error: null }));
+  auth.updateUser = vi.fn(async () => ({ error: null }));
+}
+
 describe("setPassword", () => {
   beforeEach(() => {
-    auth.verifyOtp = vi.fn(async () => ({ error: null }));
+    vi.stubEnv("TOKEN_ENCRYPTION_KEY", "c".repeat(64));
+    jar.clear();
+    auth.verifyOtp = vi.fn(async () => ({ data: { user: { id: "u1" } }, error: null }));
     auth.updateUser = vi.fn(async () => ({ error: null }));
+    auth.signOut = vi.fn(async () => ({ error: null }));
     withSession(null);
   });
+  afterEach(() => vi.unstubAllEnvs());
 
   it("valida o token só no envio e define a senha", async () => {
     await expect(
@@ -47,6 +72,8 @@ describe("setPassword", () => {
     ).rejects.toThrow("REDIRECT:/dashboard");
     expect(auth.verifyOtp).toHaveBeenCalledWith({ type: "invite", token_hash: "abc" });
     expect(auth.updateUser).toHaveBeenCalledWith({ password: "segredo123" });
+    // Senha trocada derruba as outras sessões do usuário.
+    expect(auth.signOut).toHaveBeenCalledWith({ scope: "others" });
   });
 
   it("recusa senhas diferentes sem gastar o token", async () => {
@@ -105,15 +132,57 @@ describe("setPassword", () => {
   });
 
   it("retentativa sem token usa a sessão que a tentativa anterior abriu", async () => {
+    await failFirstAttempt("u1");
     withSession({ id: "u1" });
     await expect(setPassword(form({ password: "segredo123", confirm: "segredo123" }))).rejects.toThrow(
       "REDIRECT:/dashboard"
     );
     expect(auth.verifyOtp).not.toHaveBeenCalled();
     expect(auth.updateUser).toHaveBeenCalledWith({ password: "segredo123" });
+    expect(auth.signOut).toHaveBeenCalledWith({ scope: "others" });
+    // A marca é de uso único: depois de salvar, a sessão sozinha não troca mais a senha.
+    expect(jar.size).toBe(0);
+  });
+
+  it("sessão aberta sem a marca da retentativa não troca a senha (N-01)", async () => {
+    withSession({ id: "u1" });
+    const r = await setPassword(form({ password: "segredo123", confirm: "segredo123" }));
+    expect(r.error).toMatch(/sessão expirou/);
+    expect(auth.updateUser).not.toHaveBeenCalled();
+  });
+
+  it("marca de outro usuário não vale para a sessão atual", async () => {
+    await failFirstAttempt("u1");
+    withSession({ id: "outra-pessoa" });
+    const r = await setPassword(form({ password: "segredo123", confirm: "segredo123" }));
+    expect(r.error).toMatch(/sessão expirou/);
+    expect(auth.updateUser).not.toHaveBeenCalled();
+  });
+
+  it("marca vencida não vale", async () => {
+    vi.useFakeTimers({ now: new Date("2026-10-29T12:00:00Z") });
+    try {
+      await failFirstAttempt("u1");
+      vi.setSystemTime(new Date("2026-10-29T12:11:00Z"));
+      withSession({ id: "u1" });
+      const r = await setPassword(form({ password: "segredo123", confirm: "segredo123" }));
+      expect(r.error).toMatch(/sessão expirou/);
+      expect(auth.updateUser).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("marca adulterada não vale", async () => {
+    withSession({ id: "u1" });
+    jar.set("falow_pwd_retry", { value: "a.b.c" });
+    const r = await setPassword(form({ password: "segredo123", confirm: "segredo123" }));
+    expect(r.error).toMatch(/sessão expirou/);
+    expect(auth.updateUser).not.toHaveBeenCalled();
   });
 
   it("retentativa sem token recusada de novo continua pronta para outra tentativa", async () => {
+    await failFirstAttempt("u1");
     withSession({ id: "u1" });
     auth.updateUser = vi.fn(async () => ({ error: { code: "weak_password", message: "weak" } }));
     const r = await setPassword(form({ password: "segredo123", confirm: "segredo123" }));

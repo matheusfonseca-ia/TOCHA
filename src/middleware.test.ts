@@ -10,9 +10,19 @@ const { state, createServerClient } = vi.hoisted(() => {
     grant: null as null | { user_id: string; kind: string; expires_at: string | null },
     error: null as null | { message: string },
     fromCalls: [] as string[],
+    aal: { currentLevel: "aal1", nextLevel: "aal1" } as { currentLevel: string; nextLevel: string },
+    /** Cookies que o getUser() "renovou" nesta requisição (setAll do @supabase/ssr). */
+    refreshed: null as null | { name: string; value: string },
   };
-  const createServerClient = vi.fn(() => ({
-    auth: { getUser: async () => ({ data: { user: state.user } }) },
+  type SetAll = (c: { name: string; value: string; options: Record<string, unknown> }[]) => void;
+  const createServerClient = vi.fn((_url: string, _key: string, opts: { cookies: { setAll: SetAll } }) => ({
+    auth: {
+      getUser: async () => {
+        if (state.refreshed) opts.cookies.setAll([{ ...state.refreshed, options: { path: "/" } }]);
+        return { data: { user: state.user } };
+      },
+      mfa: { getAuthenticatorAssuranceLevel: async () => ({ data: state.aal, error: null }) },
+    },
     from: (table: string) => {
       state.fromCalls.push(table);
       const chain = {
@@ -31,7 +41,7 @@ const { state, createServerClient } = vi.hoisted(() => {
 
 vi.mock("@supabase/ssr", () => ({ createServerClient }));
 
-import { middleware } from "@/middleware";
+import { config, middleware } from "@/middleware";
 
 function req(path: string) {
   return new NextRequest(`https://falow.app.br${path}`);
@@ -49,11 +59,14 @@ describe("middleware", () => {
     state.grant = null;
     state.error = null;
     state.fromCalls = [];
+    state.aal = { currentLevel: "aal1", nextLevel: "aal1" };
+    state.refreshed = null;
     createServerClient.mockClear();
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   it("atalhos publicos e /api nao tocam no Supabase", async () => {
@@ -160,5 +173,69 @@ describe("middleware", () => {
     expect(location(await middleware(req("/dashboard")))?.pathname).toBe("/assinatura");
     state.grant = { user_id: "u4", kind: "courtesy", expires_at: "2999-01-01T00:00:00Z" };
     expect(isNext(await middleware(req("/dashboard")))).toBe(true);
+  });
+
+  it("/assinatura abre sem consultar access_grants/subscriptions", async () => {
+    state.user = { id: "u2" };
+    expect(isNext(await middleware(req("/assinatura")))).toBe(true);
+    expect(state.fromCalls).toEqual([]);
+  });
+
+  it("redirect leva junto os cookies renovados pelo getUser()", async () => {
+    state.user = { id: "u2" };
+    state.refreshed = { name: "sb-x-auth-token", value: "novo" };
+    const r = await middleware(req("/dashboard"));
+    expect(location(r)?.pathname).toBe("/assinatura");
+    expect(r.headers.get("set-cookie")).toContain("sb-x-auth-token=novo");
+  });
+
+  it("rewrite 404 do /admin também leva os cookies renovados", async () => {
+    state.user = { id: "u2" };
+    state.refreshed = { name: "sb-x-auth-token", value: "novo" };
+    const r = await middleware(req("/admin"));
+    expect(r.headers.get("x-middleware-rewrite")).toContain("/404");
+    expect(r.headers.get("set-cookie")).toContain("sb-x-auth-token=novo");
+  });
+
+  describe("segundo fator do /admin", () => {
+    it("admin com fator cadastrado e sessão só de senha vai para /admin/mfa", async () => {
+      state.user = { id: "user-1" };
+      state.aal = { currentLevel: "aal1", nextLevel: "aal2" };
+      expect(location(await middleware(req("/admin/clientes")))?.pathname).toBe("/admin/mfa");
+      expect(isNext(await middleware(req("/admin/mfa")))).toBe(true);
+    });
+
+    it("FALOW_ADMIN_REQUIRE_MFA=true exige aal2 mesmo sem fator cadastrado", async () => {
+      vi.stubEnv("FALOW_ADMIN_REQUIRE_MFA", "true");
+      state.user = { id: "user-1" };
+      expect(location(await middleware(req("/admin")))?.pathname).toBe("/admin/mfa");
+      state.aal = { currentLevel: "aal2", nextLevel: "aal2" };
+      expect(isNext(await middleware(req("/admin")))).toBe(true);
+    });
+
+    it("sem a variável e sem fator: admin entra só com senha (padrão, não tranca o dono)", async () => {
+      state.user = { id: "user-1" };
+      expect(isNext(await middleware(req("/admin")))).toBe(true);
+    });
+
+    it("o painel do cliente não exige segundo fator", async () => {
+      vi.stubEnv("FALOW_ADMIN_REQUIRE_MFA", "true");
+      state.user = { id: "user-1" };
+      expect(isNext(await middleware(req("/dashboard")))).toBe(true);
+    });
+  });
+});
+
+describe("matcher do middleware", () => {
+  const pattern = new RegExp(`^${config.matcher[0]}$`);
+  it("pula só os arquivos do build e os ícones da raiz", () => {
+    for (const p of ["/_next/static/chunks/app.js", "/_next/image", "/favicon.ico", "/icon.svg"]) {
+      expect(pattern.test(p), p).toBe(false);
+    }
+  });
+  it("caminho do painel terminado em extensão de imagem passa pelo middleware", () => {
+    for (const p of ["/rules/sequencias/x.png", "/dashboard", "/rules/a.svg", "/admin/x.ico", "/icon.svg/x"]) {
+      expect(pattern.test(p), p).toBe(true);
+    }
   });
 });

@@ -1,9 +1,11 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 
+import { activeUserId } from "@/lib/auth/require-access";
 import { isMissingColumn, isMissingTable } from "@/lib/db/missing";
-import { normalizeFolderName, type Folder } from "@/lib/folders/folders";
+import { FOLDER_COLORS, normalizeFolderName, type Folder } from "@/lib/folders/folders";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -14,6 +16,12 @@ import { createClient } from "@/lib/supabase/server";
 
 const FOLDERS_MIGRATION_ERROR =
   "Para usar pastas, aplique a migration 0015_folders.sql no Supabase.";
+const NO_ACCESS_ERROR = "Sua assinatura não está ativa. Acesse Minha assinatura para reativar.";
+const NOT_FOUND_ERROR = "Pasta ou item não encontrado. Atualize a página e tente de novo.";
+
+const uuid = z.string().uuid();
+const createSchema = z.object({ accountId: uuid, name: z.string(), color: z.enum(FOLDER_COLORS) });
+const moveSchema = z.object({ kind: z.enum(["rule", "sequence"]), id: uuid, folderId: uuid.nullable() });
 
 export async function listFolders(): Promise<Folder[]> {
   const supabase = createClient();
@@ -33,16 +41,19 @@ export async function createFolder(input: {
   name: string;
   color: string;
 }): Promise<FolderActionResult> {
-  const normalized = normalizeFolderName(input.name);
+  if (!(await activeUserId())) return { error: NO_ACCESS_ERROR };
+  const parsed = createSchema.safeParse(input);
+  if (!parsed.success) return { error: "Pasta inválida. Atualize a página e tente de novo." };
+  const normalized = normalizeFolderName(parsed.data.name);
   if ("error" in normalized) return normalized;
 
   const supabase = createClient();
   const { data, error } = await supabase
     .from("folders")
     .insert({
-      account_id: input.accountId,
+      account_id: parsed.data.accountId,
       name: normalized.name,
-      color: input.color,
+      color: parsed.data.color,
     })
     .select("id")
     .maybeSingle();
@@ -61,16 +72,21 @@ export async function renameFolder(
   id: string,
   name: string
 ): Promise<{ error?: string }> {
+  if (!(await activeUserId())) return { error: NO_ACCESS_ERROR };
+  if (!uuid.safeParse(id).success) return { error: NOT_FOUND_ERROR };
   const normalized = normalizeFolderName(name);
   if ("error" in normalized) return normalized;
 
   const supabase = createClient();
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from("folders")
     .update({ name: normalized.name })
-    .eq("id", id);
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
 
   if (error) return { error: "Não foi possível renomear a pasta." };
+  if (!data) return { error: NOT_FOUND_ERROR };
 
   revalidatePath("/rules");
   revalidatePath("/rules/sequencias");
@@ -79,10 +95,13 @@ export async function renameFolder(
 
 /** Apagar a pasta não apaga o que está dentro: o `on delete set null` solta os itens. */
 export async function deleteFolder(id: string): Promise<{ error?: string }> {
+  if (!(await activeUserId())) return { error: NO_ACCESS_ERROR };
+  if (!uuid.safeParse(id).success) return { error: NOT_FOUND_ERROR };
   const supabase = createClient();
-  const { error } = await supabase.from("folders").delete().eq("id", id);
+  const { data, error } = await supabase.from("folders").delete().eq("id", id).select("id").maybeSingle();
 
   if (error) return { error: "Não foi possível apagar a pasta." };
+  if (!data) return { error: NOT_FOUND_ERROR };
 
   revalidatePath("/rules");
   revalidatePath("/rules/sequencias");
@@ -94,15 +113,34 @@ export async function moveToFolder(input: {
   id: string;
   folderId: string | null;
 }): Promise<{ error?: string }> {
+  if (!(await activeUserId())) return { error: NO_ACCESS_ERROR };
+  const parsed = moveSchema.safeParse(input);
+  if (!parsed.success) return { error: NOT_FOUND_ERROR };
+  const { kind, id, folderId } = parsed.data;
+
   const supabase = createClient();
-  const table = input.kind === "rule" ? "rules" : "sequences";
-  const { error } = await supabase
+  const table = kind === "rule" ? "rules" : "sequences";
+
+  // A FK só confere que a pasta existe, não de quem é: a pasta precisa ser
+  // visível para o usuário (RLS) e da mesma conta do item.
+  if (folderId) {
+    const [{ data: folder }, { data: item }] = await Promise.all([
+      supabase.from("folders").select("account_id").eq("id", folderId).maybeSingle(),
+      supabase.from(table).select("account_id").eq("id", id).maybeSingle(),
+    ]);
+    if (!folder || !item || folder.account_id !== item.account_id) return { error: NOT_FOUND_ERROR };
+  }
+
+  const { data, error } = await supabase
     .from(table)
-    .update({ folder_id: input.folderId })
-    .eq("id", input.id);
+    .update({ folder_id: folderId })
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
 
   if (isMissingColumn(error, "folder_id")) return { error: FOLDERS_MIGRATION_ERROR };
   if (error) return { error: "Não foi possível mover. Tente novamente." };
+  if (!data) return { error: NOT_FOUND_ERROR };
 
   revalidatePath("/rules");
   revalidatePath("/rules/sequencias");

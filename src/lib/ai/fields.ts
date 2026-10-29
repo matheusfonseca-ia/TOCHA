@@ -77,6 +77,12 @@ export const AI_FIELD_SPECS: Record<AiFieldKind, AiFieldSpec> = {
   },
 };
 
+export function isAiFieldKind(value: unknown): value is AiFieldKind {
+  return typeof value === "string" && Object.hasOwn(AI_FIELD_SPECS, value);
+}
+
+/** hasOwn: "__proto__"/"constructor" não podem virar um spec sem role/maxChars. */
 export function aiFieldSpec(field: AiFieldKind): AiFieldSpec {
+  if (!isAiFieldKind(field)) throw new Error(`Campo de IA desconhecido: ${String(field)}`);
   return AI_FIELD_SPECS[field];
 }

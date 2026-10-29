@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { state, generate } = vi.hoisted(() => ({
   state: {
     userId: "user-1" as string | null,
+    /** Resultado da checagem de acesso (bloqueio/assinatura). */
+    active: true,
     /** Linha de user_ai_settings do usuário logado (chave "cifrada" = enc:<chave>). */
     row: null as { api_key_enc: string; model: string | null; provider: string | null } | null,
   },
@@ -18,6 +20,9 @@ vi.mock("@/lib/supabase/server", () => ({
       }),
     }),
   }),
+}));
+vi.mock("@/lib/auth/require-access", () => ({
+  activeUserId: async () => (state.userId && state.active ? state.userId : null),
 }));
 vi.mock("@/lib/crypto", () => ({
   decryptToken: (enc: string) => enc.replace(/^enc:/, ""),
@@ -39,6 +44,7 @@ function usedKey(): string {
 describe("IA nos campos", () => {
   beforeEach(() => {
     state.userId = "user-1";
+    state.active = true;
     state.row = null;
     generate.mockClear();
   });
@@ -68,5 +74,33 @@ describe("IA nos campos", () => {
     state.userId = null;
     expect(await isAiEnabled()).toBe(false);
     expect(await generateForField({ field: "publicReply" })).toHaveProperty("error");
+  });
+
+  it("cliente bloqueado/sem assinatura não gera, mesmo com chave própria", async () => {
+    state.userId = "cliente-1";
+    state.active = false;
+    state.row = { api_key_enc: "enc:sk-or-do-cliente", model: null, provider: "openrouter" };
+    expect(await generateForField({ field: "publicReply" })).toEqual({ error: expect.stringContaining("assinatura") });
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("valida o input em runtime: campo fora do catálogo, count e tamanhos", async () => {
+    for (const bad of [
+      { field: "__proto__" },
+      { field: "inexistente" },
+      { field: "publicReply", count: Number.NaN },
+      { field: "publicReply", count: 9 },
+      { field: "publicReply", instruction: "x".repeat(301) },
+      { field: "publicReply", context: { ruleName: "x".repeat(201) } },
+    ]) {
+      expect(await generateForField(bad as never), JSON.stringify(bad)).toHaveProperty("error");
+    }
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("count padrão 3 e o pedido válido segue para o provedor", async () => {
+    await generateForField({ field: "buttonLabel", instruction: "mais curto" });
+    const calls = generate.mock.calls as unknown as Array<[{ field: string; count: number; instruction: string }]>;
+    expect(calls.at(-1)![0]).toEqual(expect.objectContaining({ field: "buttonLabel", count: 3, instruction: "mais curto" }));
   });
 });

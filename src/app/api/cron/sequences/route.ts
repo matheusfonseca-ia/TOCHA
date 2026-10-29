@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { secretEquals } from "@/lib/crypto";
 import { expireAutomationsSafe } from "@/lib/expiry/sweep";
 import { processDueRuns } from "@/lib/sequences/runtime";
 
@@ -8,26 +9,22 @@ export const maxDuration = 60;
 
 /**
  * Tick das sequências: expira automações/workflows temporários vencidos e
- * retoma execuções paradas em nós de atraso cujo horário venceu. Chamado a cada minuto pelo `scheduled()` do Worker (worker.ts)
- * e por qualquer agendador externo (cron-job.org, UptimeRobot...) — além do tick
+ * retoma execuções paradas em nós de atraso cujo horário venceu. Chamado a
+ * cada minuto pelo `scheduled()` do Worker (worker.ts), além do tick
  * oportunista que roda ao fim de cada webhook.
  *
- * Autenticação: header `Authorization: Bearer <CRON_SECRET>` (é o que o
- * `scheduled()` do Worker envia) ou
- * `?secret=<CRON_SECRET>` para agendadores que não suportam headers.
+ * Autenticação só pelo header `Authorization: Bearer <CRON_SECRET>` (é o que
+ * o `scheduled()` envia). Segredo na query string (`?secret=`) não vale mais:
+ * URL vai para os logs do Worker e de qualquer agendador externo.
  */
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
   if (!secret) {
-    return NextResponse.json(
-      { error: "CRON_SECRET não configurado" },
-      { status: 503 }
-    );
+    console.error("[cron] CRON_SECRET não configurado: /api/cron/sequences recusado");
+    return new NextResponse("Forbidden", { status: 403 });
   }
 
-  const auth = request.headers.get("authorization");
-  const bySecret = request.nextUrl.searchParams.get("secret");
-  if (auth !== `Bearer ${secret}` && bySecret !== secret) {
+  if (!secretEquals(request.headers.get("authorization"), `Bearer ${secret}`)) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 

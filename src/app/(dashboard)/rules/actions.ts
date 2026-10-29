@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { activeUserId } from "@/lib/auth/require-access";
 import { validateExpiry } from "@/lib/expiry/expiry";
 import {
   EXPIRED_RULE_ACTIVATION_ERROR,
@@ -22,23 +23,38 @@ import {
   withoutFollowGateVariantColumns,
 } from "@/lib/follow-gate/schema";
 import { keywordTerms } from "@/lib/rules/engine";
+import { isHttpUrl, URL_MAX } from "@/lib/rules/links";
 import { MAX_VARIANTS } from "@/lib/rules/variants";
 import { automationRuleIdsOf } from "@/lib/sequences/graph";
 import { createClient } from "@/lib/supabase/server";
 import type { SequenceGraph } from "@/types/sequence";
 import type { MediaRef } from "@/types/database";
 
+const NO_ACCESS_ERROR = "Sua assinatura não está ativa. Acesse Minha assinatura para reativar.";
+const RULE_NOT_FOUND_ERROR = "Automação não encontrada. Atualize a página e tente de novo.";
+
+// Só http(s): a Meta recusa outro esquema no botão e javascript:/data: nunca
+// devem ser gravados (a action pode ser chamada direto, sem o builder).
+const httpUrl = (message: string) => z.string().trim().refine(isHttpUrl, message);
+
 const buttonSchema = z.object({
   title: z.string().trim().min(1, "Título do botão é obrigatório.").max(20),
-  url: z.string().url("URL do botão inválida."),
+  url: httpUrl("URL do botão inválida (use um link http ou https)."),
 });
 
+// Dados da publicação vindos do seletor (Graph API). Tamanhos limitados e
+// URLs só http(s): thumbnail_url vira <img src> no painel.
+const optionalHttpUrl = z
+  .string()
+  .max(URL_MAX)
+  .nullable()
+  .refine((v) => v === null || isHttpUrl(v), "Publicação com link inválido.");
 const mediaRefSchema = z.object({
-  id: z.string(),
-  media_type: z.string(),
-  thumbnail_url: z.string().nullable(),
-  permalink: z.string().nullable(),
-  caption: z.string().nullable(),
+  id: z.string().min(1).max(64),
+  media_type: z.string().max(32),
+  thumbnail_url: optionalHttpUrl,
+  permalink: optionalHttpUrl,
+  caption: z.string().max(2200).nullable(),
 });
 
 /**
@@ -90,7 +106,7 @@ const ruleSchema = z.object({
   // 2ª mensagem: resposta direta (dm) ou conteúdo liberado pelo botão (comment)
   reply_type: z.enum(["text", "image", "buttons"]),
   reply_text: z.string().trim().max(1000).optional(),
-  reply_image_url: z.string().trim().optional(),
+  reply_image_url: z.string().trim().max(URL_MAX).optional(),
   reply_buttons: z.array(buttonSchema).max(3).optional(),
   delay_seconds: z.coerce.number().int().min(2).max(5),
   is_active: z.boolean(),
@@ -196,9 +212,8 @@ function validateReply(input: RuleInput): string | null {
   if (input.reply_type === "text" && !input.reply_text) {
     return "Informe o texto da resposta.";
   }
-  if (input.reply_type === "image") {
-    const url = z.string().url().safeParse(input.reply_image_url);
-    if (!url.success) return "Informe uma URL de imagem válida.";
+  if (input.reply_type === "image" && !isHttpUrl(input.reply_image_url)) {
+    return "Informe uma URL de imagem válida (http ou https).";
   }
   if (input.reply_type === "buttons") {
     if (!input.reply_text) return "Informe o texto que acompanha os botões.";
@@ -209,7 +224,8 @@ function validateReply(input: RuleInput): string | null {
 
 function validateRule(input: RuleInput): string | null {
   if (input.trigger_type === "comment") {
-    if (!input.comment_any_word && !input.keyword?.trim()) {
+    // keywordTerms, não trim: "," ou " , " passariam e nunca casariam com nada.
+    if (!input.comment_any_word && keywordTerms(input.keyword ?? null).length === 0) {
       return "Informe a palavra-chave do comentário.";
     }
     if (!input.media_mode) {
@@ -227,14 +243,31 @@ function validateRule(input: RuleInput): string | null {
     if (input.public_reply_enabled && !input.public_reply_text?.trim()) {
       return "Escreva a resposta pública ou desative a opção.";
     }
-  } else if (!input.keyword?.trim()) {
+  } else if (keywordTerms(input.keyword ?? null).length === 0) {
     return "Informe a palavra-chave.";
   }
 
   return validateReply(input);
 }
 
+const LIST_CAPS: Record<string, number> = {
+  media_refs: 30,
+  reply_buttons: 3,
+  public_reply_variants: MAX_REPLY_VARIANTS,
+  welcome_text_variants: MAX_REPLY_VARIANTS,
+};
+
+function oversizedList(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object") return false;
+  const record = raw as Record<string, unknown>;
+  return Object.entries(LIST_CAPS).some(([key, cap]) => Array.isArray(record[key]) && (record[key] as unknown[]).length > cap);
+}
+
 export async function saveRule(raw: RuleInput): Promise<ActionResult> {
+  if (!(await activeUserId())) return { error: NO_ACCESS_ERROR };
+  // zod 3 valida todos os itens mesmo depois de estourar o .max(): lista
+  // gigante (corpo de até 26 MB) é recusada antes do parse.
+  if (oversizedList(raw)) return { error: "Automação inválida: listas acima do limite." };
   const parsed = ruleSchema.safeParse(raw);
   if (!parsed.success) {
     return { error: parsed.error.errors[0].message };
@@ -297,15 +330,21 @@ export async function saveRule(raw: RuleInput): Promise<ActionResult> {
   // abaixo acharia a própria automação como "outra ativa".
   const write = async (values: typeof row) => {
     if (input.id) {
-      const { error } = await supabase.from("rules").update(values).eq("id", input.id);
-      return { id: input.id, error };
+      // select: RLS transforma id alheio/apagado em no-op silencioso; sem linha = não encontrada.
+      const { data, error } = await supabase
+        .from("rules")
+        .update(values)
+        .eq("id", input.id)
+        .select("id")
+        .maybeSingle();
+      return { id: input.id, error, missing: !error && !data };
     }
     const { data, error } = await supabase
       .from("rules")
       .insert(values)
       .select("id")
       .maybeSingle();
-    return { id: (data?.id as string | undefined) ?? undefined, error };
+    return { id: (data?.id as string | undefined) ?? undefined, error, missing: false };
   };
   let saved = await write(row);
 
@@ -330,6 +369,7 @@ export async function saveRule(raw: RuleInput): Promise<ActionResult> {
   if (saved.error) {
     return { error: "Não foi possível salvar a regra. Tente novamente." };
   }
+  if (saved.missing) return { error: RULE_NOT_FOUND_ERROR };
 
   // "layout": as contagens das abas moram no layout de /rules.
   revalidatePath("/rules", "layout");
@@ -355,17 +395,22 @@ export async function toggleRule(
   id: string,
   isActive: boolean
 ): Promise<ActionResult> {
+  if (!(await activeUserId())) return { error: NO_ACCESS_ERROR };
+  if (!z.string().uuid().safeParse(id).success) return { error: RULE_NOT_FOUND_ERROR };
   const supabase = createClient();
   if (isActive && (await isStoredExpired(supabase, "rules", id))) {
     return { error: EXPIRED_RULE_ACTIVATION_ERROR };
   }
 
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from("rules")
     .update({ is_active: isActive, updated_at: new Date().toISOString() })
-    .eq("id", id);
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
 
   if (error) return { error: "Não foi possível atualizar a regra." };
+  if (!updated) return { error: RULE_NOT_FOUND_ERROR };
 
   revalidatePath("/rules");
 
@@ -417,10 +462,18 @@ export async function listRuleWorkflowUsage(id: string): Promise<string[]> {
 }
 
 export async function deleteRule(id: string): Promise<ActionResult> {
+  if (!(await activeUserId())) return { error: NO_ACCESS_ERROR };
+  if (!z.string().uuid().safeParse(id).success) return { error: RULE_NOT_FOUND_ERROR };
   const supabase = createClient();
-  const { error } = await supabase.from("rules").delete().eq("id", id);
+  const { data: deleted, error } = await supabase
+    .from("rules")
+    .delete()
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
 
   if (error) return { error: "Não foi possível excluir a regra." };
+  if (!deleted) return { error: RULE_NOT_FOUND_ERROR };
 
   // "layout": as contagens das abas moram no layout de /rules.
   revalidatePath("/rules", "layout");
@@ -437,6 +490,7 @@ const RULE_NAME_MAX = 80;
  * permanente.
  */
 export async function duplicateRule(id: string): Promise<ActionResult> {
+  if (!(await activeUserId())) return { error: NO_ACCESS_ERROR };
   const supabase = createClient();
   // select("*") + RLS: só encontra a regra se pertencer ao usuário logado.
   const { data: original, error: fetchError } = await supabase

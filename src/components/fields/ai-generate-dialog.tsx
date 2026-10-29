@@ -129,6 +129,7 @@ export function AiGenerateDialog({
           <Input
             autoFocus
             value={instruction}
+            maxLength={300}
             placeholder="ex.: mais informal, fala de black friday"
             onChange={(e) => setInstruction(e.target.value)}
             onKeyDown={(e) => {

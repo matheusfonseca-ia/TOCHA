@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { resendAccessEmail } from "@/lib/admin/access-email";
+import { ADMIN_EMAIL_QUOTA_ERROR, withinEmailQuota } from "@/lib/admin/email-quota";
 import { ADMIN_TARGET_ERROR, blockUser, grantCourtesy, revokeCourtesy, unblockUser, type GrantResult } from "@/lib/admin/grants";
 import { AdminRequiredError, requireAdmin } from "@/lib/admin/require-admin";
 import { findUserIdByEmail, inviteUser } from "@/lib/auth/invite";
@@ -79,7 +80,9 @@ export async function resendAccessAction(userId: string): Promise<GrantResult> {
   return guarded(async (adminId) => {
     const parsed = uuid.safeParse(userId);
     if (!parsed.success) return { ok: false, error: parsed.error.errors[0].message };
-    return resendAccessEmail(createAdminClient(), { adminId, targetUserId: parsed.data });
+    const admin = createAdminClient();
+    if (!(await withinEmailQuota(admin, adminId))) return { ok: false, error: ADMIN_EMAIL_QUOTA_ERROR };
+    return resendAccessEmail(admin, { adminId, targetUserId: parsed.data });
   });
 }
 
@@ -91,6 +94,7 @@ export async function inviteWithCourtesyAction(formData: FormData): Promise<Gran
     if (!parsed.success) return { ok: false, error: parsed.error.errors[0].message };
     const { email, expiresAt } = parsed.data;
     const admin = createAdminClient();
+    if (!(await withinEmailQuota(admin, adminId))) return { ok: false, error: ADMIN_EMAIL_QUOTA_ERROR };
 
     // Reaproveita a conta se o e-mail já existe; senão convida (mesmo e-mail da compra).
     let targetUserId: string;
@@ -120,11 +124,14 @@ export async function inviteWithCourtesyAction(formData: FormData): Promise<Gran
       return { ok: false, error: "Não foi possível convidar este e-mail. Tente de novo." };
     }
 
-    // Completa o registro antes da cortesia, que pode ser recusada ou falhar.
-    const { error: auditError } = await admin.from("admin_audit_log").update({
+    // Conclusão numa linha nova (o registro só recebe INSERT, nunca UPDATE),
+    // antes da cortesia, que pode ser recusada ou falhar.
+    const { error: auditError } = await admin.from("admin_audit_log").insert({
+      admin_id: adminId,
+      action: "courtesy_invite",
       target_user_id: targetUserId,
-      details: { email, invited, status: invited ? "created" : "existing" },
-    }).eq("id", auditId!);
+      details: { email, invited, status: invited ? "created" : "existing", request_id: auditId },
+    });
     if (auditError) {
       console.error("[admin] falha ao completar auditoria do convite:", auditError.message);
       return { ok: false, error: invited

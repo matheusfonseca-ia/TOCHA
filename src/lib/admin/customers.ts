@@ -20,6 +20,8 @@ export type CustomerRow = {
   subscriptionStatus: string | null;
   currentPeriodEnd: string | null;
   purgeAfter: string | null;
+  /** Cliente na Stripe, para o link "cancelar a cobrança" de quem está bloqueado e ainda paga. */
+  stripeCustomerId: string | null;
   grant: { kind: "courtesy" | "block"; expiresAt: string | null; reason: string } | null;
 };
 
@@ -83,10 +85,16 @@ export async function listCustomers(
   if (ids.length === 0) return { customers: [], page, totalPages, total };
 
   const [subs, accounts, grants] = await Promise.all([
-    selectIn<{ user_id: string; status: string; current_period_end: string | null; purge_after: string | null }>(
+    selectIn<{
+      user_id: string;
+      status: string;
+      current_period_end: string | null;
+      purge_after: string | null;
+      stripe_customer_id: string | null;
+    }>(
       admin,
       "subscriptions",
-      "user_id, status, current_period_end, purge_after",
+      "user_id, status, current_period_end, purge_after, stripe_customer_id",
       ids
     ),
     selectIn<{ user_id: string; ig_username: string }>(admin, "ig_accounts", "user_id, ig_username", ids, (q) =>
@@ -117,6 +125,7 @@ export async function listCustomers(
       subscriptionStatus: sub?.status ?? null,
       currentPeriodEnd: sub?.current_period_end ?? null,
       purgeAfter: sub?.purge_after ?? null,
+      stripeCustomerId: sub?.stripe_customer_id ?? null,
       grant: grant ? { kind: grant.kind, expiresAt: grant.expires_at, reason: grant.reason } : null,
     };
   });

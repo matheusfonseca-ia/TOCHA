@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import { activeUserId } from "@/lib/auth/require-access";
 import { createClient } from "@/lib/supabase/server";
 
 import { EXPIRE_ACTIONS, validateExpiry, type ExpireAction } from "./expiry";
@@ -43,6 +44,10 @@ export async function extendExpiry(
   expiresAt: string | null,
   expireAction?: ExpireAction
 ): Promise<ExtendExpiryResult> {
+  // Reativar/estender automação é uso do painel: exige acesso ativo.
+  if (!(await activeUserId())) {
+    return { error: "Sua assinatura não está ativa. Acesse Minha assinatura para reativar." };
+  }
   const parsed = extendSchema.safeParse({ kind, id, expiresAt, expireAction });
   if (!parsed.success) return { error: parsed.error.errors[0].message };
 
@@ -64,7 +69,7 @@ export async function extendExpiry(
 
   const pausedByExpiry = !current.is_active && current.paused_by_expiry === true;
 
-  const { error } = await supabase
+  const { data: updated, error } = await supabase
     .from(table)
     .update({
       expires_at: parsed.data.expiresAt,
@@ -73,9 +78,12 @@ export async function extendExpiry(
       ...(pausedByExpiry && { is_active: true }),
       updated_at: now.toISOString(),
     })
-    .eq("id", parsed.data.id);
+    .eq("id", parsed.data.id)
+    .select("id")
+    .maybeSingle();
 
   if (error) return { error: "Não foi possível salvar a expiração. Tente novamente." };
+  if (!updated) return { error: "Não foi possível encontrar o item. Atualize a página e tente de novo." };
 
   revalidatePath(PATHS[parsed.data.kind]);
   revalidatePath("/dashboard");

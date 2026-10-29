@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -17,6 +17,8 @@ const ADMIN_ACTIONS: Record<string, string> = {
   "app/admin/actions.ts#unblockUserAction": "requireAdmin",
   "app/admin/actions.ts#resendAccessAction": "requireAdmin",
   "app/admin/actions.ts#inviteWithCourtesyAction": "requireAdmin",
+  "modules/ai-settings/actions.ts#saveAiSettings": "getUser + hasActiveAccess; escreve só a linha do user_id da sessão",
+  "modules/ai-settings/actions.ts#removeAiSettings": "só client do usuário (RLS)",
   "modules/crm/handoff/services/handoff.actions.ts#assumeConversation": "ownConversationId",
   "modules/crm/handoff/services/handoff.actions.ts#returnToBot": "ownConversationId",
   "modules/crm/history-import/services/history-import.actions.ts#importHistoryStep": "ig_accounts via client do usuário",
@@ -26,6 +28,7 @@ const ADMIN_ACTIONS: Record<string, string> = {
   "modules/crm/inbox/services/message-actions.ts#hideMessageForMe": "messages via client do usuário",
   "modules/crm/inbox/services/status.actions.ts#setConversationStatus": "ownConversationId",
   "modules/crm/lead-profile/services/lead-profile.actions.ts#refreshLeadPhoto": "conversations via client do usuário",
+  "modules/crm/lead-profile/services/lead-profile.actions.ts#refreshLeadPhotos": "activeUserId + conversations via client do usuário",
   "modules/crm/notes/services/notes.actions.ts#createNote": "ownAccountId",
   "modules/crm/notes/services/notes.actions.ts#updateNote": "ownNoteAccountId",
   "modules/crm/notes/services/notes.actions.ts#deleteNote": "ownNoteAccountId",
@@ -64,19 +67,49 @@ function walk(dir: string): string[] {
   });
 }
 
+/** Resolve um import `@/x` ou relativo para o arquivo .ts/.tsx em src (pacotes externos: null). */
+function resolveImport(from: string, spec: string): string | null {
+  let base: string;
+  if (spec.startsWith("@/")) base = path.join(SRC, spec.slice(2));
+  else if (spec.startsWith(".")) base = path.resolve(path.dirname(from), spec);
+  else return null;
+  for (const candidate of [`${base}.ts`, `${base}.tsx`, path.join(base, "index.ts")]) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+const ADMIN_CLIENT_MODULE = path.join(SRC, "lib", "supabase", "admin.ts");
+
+/**
+ * O arquivo usa a service role, direto (`createAdminClient` no texto) ou por
+ * um módulo que importa (um nível: helper com `admin = createAdminClient()`
+ * como parâmetro padrão escaparia de uma busca só pela literal). `import type`
+ * não conta: não executa nada.
+ */
+function usesServiceRole(file: string, text: string): boolean {
+  if (text.includes("createAdminClient")) return true;
+  for (const m of text.matchAll(/^import\s+(?!type\s)[^;]*?from\s+["']([^"']+)["']/gm)) {
+    const target = resolveImport(file, m[1]);
+    if (target && target !== ADMIN_CLIENT_MODULE && readFileSync(target, "utf8").includes("createAdminClient")) return true;
+  }
+  return false;
+}
+
 describe("auditoria das server actions com service role", () => {
   const found: string[] = [];
   // Outras formas de export (`export const f = async`, `export default`, `export { f }`)
-  // escapariam da varredura acima: nesses arquivos só vale `export async function`.
+  // escapariam da varredura: em TODO arquivo "use server" só vale `export async function`.
   const otherExports: string[] = [];
   for (const file of walk(SRC)) {
     const text = readFileSync(file, "utf8");
-    if (!/^["']use server["']/m.test(text) || !text.includes("createAdminClient")) continue;
+    if (!/^["']use server["']/m.test(text)) continue;
     const rel = path.relative(SRC, file).split(path.sep).join("/");
-    for (const m of text.matchAll(/export async function (\w+)/g)) found.push(`${rel}#${m[1]}`);
     for (const m of text.matchAll(/^export (?!async function|type |interface )(.+)$/gm)) {
       otherExports.push(`${rel}: export ${m[1]}`);
     }
+    if (!usesServiceRole(file, text)) continue;
+    for (const m of text.matchAll(/export async function (\w+)/g)) found.push(`${rel}#${m[1]}`);
   }
 
   it("toda action com service role está no manifesto", () => {
@@ -87,8 +120,19 @@ describe("auditoria das server actions com service role", () => {
     expect(Object.keys(ADMIN_ACTIONS).filter((k) => !found.includes(k))).toEqual([]);
   });
 
-  it("arquivos 'use server' com service role só exportam async function (ou tipos)", () => {
+  it("arquivos 'use server' só exportam async function (ou tipos)", () => {
     expect(otherExports).toEqual([]);
+  });
+
+  it("createAdminClient() como parâmetro padrão só nos helpers já conhecidos", () => {
+    // Parâmetro padrão esconde a service role de quem chama. Novo uso = revisar
+    // quem importa o helper (e, se for action, registrar no manifesto).
+    const KNOWN = new Set(["lib/expiry/sweep.ts"]);
+    const offenders = walk(SRC)
+      .filter((file) => /=\s*createAdminClient\(\)\s*[,)]/.test(readFileSync(file, "utf8")))
+      .map((file) => path.relative(SRC, file).split(path.sep).join("/"))
+      .filter((rel) => !KNOWN.has(rel));
+    expect(offenders).toEqual([]);
   });
 });
 

@@ -34,7 +34,7 @@ describe("listCustomers", () => {
     });
     vi.stubGlobal("fetch", listUsers);
     db.tables.subscriptions.push(
-      { user_id: "c2", status: "active", current_period_end: "2026-11-10T00:00:00Z", purge_after: null },
+      { user_id: "c2", status: "active", current_period_end: "2026-11-10T00:00:00Z", purge_after: null, stripe_customer_id: "cus_c2" },
       { user_id: "c1", status: "canceled", current_period_end: "2026-10-01T00:00:00Z", purge_after: "2026-11-01T00:00:00Z" }
     );
     db.tables.ig_accounts.push(
@@ -66,6 +66,7 @@ describe("listCustomers", () => {
       subscriptionStatus: "active",
       currentPeriodEnd: "2026-11-10T00:00:00Z",
       purgeAfter: null,
+      stripeCustomerId: "cus_c2",
       grant: null,
     });
     expect(customers[1]).toEqual(

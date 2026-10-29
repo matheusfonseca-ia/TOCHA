@@ -11,14 +11,25 @@ import type { AccessGrant } from "@/types/database";
 
 export const ACCESS_STATUSES = ["active", "trialing", "past_due"] as const;
 
+/** Tolerância depois do fim do período antes de desconfiar de um status "com acesso" velho. */
+const STALE_PERIOD_MS = 7 * 86_400_000;
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type QueryClient = { from: (table: any) => any };
 
+/**
+ * Dono normalizado: trim (`echo id | vercel env add` deixa quebra de linha no
+ * fim) e minúsculas (UUID copiado em maiúsculas de algum cliente de banco).
+ * O Supabase devolve UUIDs em minúsculas; o purge usa este mesmo valor para
+ * decidir quem nunca pode ser apagado.
+ */
+function ownerId(): string {
+  return process.env.FALOW_OWNER_USER_ID?.trim().toLowerCase() ?? "";
+}
+
 export function isOwner(userId: string | null | undefined): boolean {
-  // trim: `echo id | vercel env add` deixa quebra de linha no fim do valor, e o
-  // purge usa este mesmo valor para decidir quem nunca pode ser apagado.
-  const owner = process.env.FALOW_OWNER_USER_ID?.trim();
-  return Boolean(owner && userId && userId === owner);
+  const owner = ownerId();
+  return Boolean(owner && userId && userId.trim().toLowerCase() === owner);
 }
 
 export function isAccessStatus(status: string | null | undefined): boolean {
@@ -35,7 +46,7 @@ export function adminIds(): Set<string> {
   const config = JSON.stringify([process.env.FALOW_OWNER_USER_ID, process.env.FALOW_ADMIN_USER_IDS]);
   if (config === cachedAdminConfig) return new Set(cachedAdminIds);
   const ids = new Set<string>();
-  const owner = process.env.FALOW_OWNER_USER_ID?.trim();
+  const owner = ownerId();
   if (owner) ids.add(owner);
   for (const raw of (process.env.FALOW_ADMIN_USER_IDS ?? "").split(",")) {
     const id = raw.trim();
@@ -55,7 +66,7 @@ export function adminIds(): Set<string> {
 export function isAdmin(userId: string | null | undefined): boolean {
   if (!userId) return false;
   if (isOwner(userId)) return true;
-  return adminIds().has(userId.toLowerCase());
+  return adminIds().has(userId.trim().toLowerCase());
 }
 
 export async function accessGrantOf(
@@ -64,7 +75,9 @@ export async function accessGrantOf(
 ): Promise<{ grant: AccessGrant | null; error: boolean }> {
   const { data, error } = await client
     .from("access_grants")
-    .select("*")
+    // Colunas explícitas: o client do usuário não lê reason/granted_by
+    // (migration 0024 revoga o SELECT dessas colunas para authenticated).
+    .select("user_id, kind, expires_at, created_at")
     .eq("user_id", userId)
     .maybeSingle();
   if (error) {
@@ -94,22 +107,36 @@ export async function hasActiveAccess(
 ): Promise<boolean> {
   if (isAdmin(userId)) return true;
 
-  const { grant, error: grantError } = await accessGrantOf(client, userId);
+  // As duas leituras em paralelo (uma ida e volta a menos em toda navegação
+  // do middleware); a ordem da decisão continua a mesma.
+  const [{ grant, error: grantError }, subscription] = await Promise.all([
+    accessGrantOf(client, userId),
+    client.from("subscriptions").select("status, current_period_end").eq("user_id", userId).maybeSingle() as Promise<{
+      data: { status?: string; current_period_end?: string | null } | null;
+      error: { message: string } | null;
+    }>,
+  ]);
   if (grantError) return false;
   if (grant?.kind === "block") return false;
   if (isCourtesyValid(grant, now)) return true;
 
-  const { data, error } = await client
-    .from("subscriptions")
-    .select("status")
-    .eq("user_id", userId)
-    .maybeSingle();
+  const { data, error } = subscription;
   // Continua fail-closed, mas o log diz que foi falha de leitura, não "sem assinatura".
   if (error) {
     console.error(`[access] falha ao ler subscriptions do usuário ${userId}:`, error.message);
     return false;
   }
-  return isAccessStatus((data as { status?: string } | null)?.status);
+  if (!isAccessStatus(data?.status)) return false;
+  // Status com acesso mas período vencido há mais de 7 dias: o webhook da
+  // Stripe não chegou (ou se perdeu). Fecha e registra; sem data, segue o status.
+  const periodEnd = data?.current_period_end ? new Date(data.current_period_end).getTime() : NaN;
+  if (Number.isFinite(periodEnd) && periodEnd < now.getTime() - STALE_PERIOD_MS) {
+    console.error(
+      `[access] assinatura do usuário ${userId} com status ${data?.status} e período vencido em ${data?.current_period_end}: acesso negado`
+    );
+    return false;
+  }
+  return true;
 }
 
 export async function accountHasAccess(client: QueryClient, accountId: string): Promise<boolean> {

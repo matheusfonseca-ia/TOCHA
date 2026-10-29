@@ -1,6 +1,8 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
+import { SESSION_COOKIE_OPTIONS } from "./cookie-options";
+
 type CookieToSet = { name: string; value: string; options: CookieOptions };
 
 /** Client autenticado pelo cookie da sessão — usar em Server Components e Server Actions. */
@@ -11,6 +13,7 @@ export function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions: SESSION_COOKIE_OPTIONS,
       cookies: {
         getAll() {
           return cookieStore.getAll();
