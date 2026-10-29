@@ -6,6 +6,7 @@ import { encryptToken } from "@/lib/crypto";
 import { hasActiveAccess, isAdmin } from "@/lib/billing/access";
 import { connectBlockReason, MAX_ACCOUNTS_PER_USER } from "@/lib/meta/connect-guard";
 import { subscribeAccountToWebhooks } from "@/lib/meta/graph";
+import { tokenExpiresAtFrom } from "@/lib/meta/token";
 import {
   exchangeCodeForToken,
   getInstagramProfile,
@@ -137,9 +138,7 @@ export async function GET(request: NextRequest) {
           page_name: null,
           profile_picture_url: profile.profilePictureUrl,
           access_token_enc: encryptToken(longToken),
-          token_expires_at: expiresIn
-            ? new Date(Date.now() + expiresIn * 1000).toISOString()
-            : null,
+          token_expires_at: tokenExpiresAtFrom(expiresIn),
           status: "active",
           connected_at: new Date().toISOString(),
         },

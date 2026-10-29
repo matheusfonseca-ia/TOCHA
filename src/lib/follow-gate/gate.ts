@@ -25,7 +25,9 @@ export type FollowGateResult =
  * segue, manda a mensagem com "Seguir perfil" (link) e "Já segui" (postback)
  * no lugar do conteúdo. `again` = ela já recebeu o portão antes (tocou em
  * "Já segui" ou pediu de novo): confere com uma 2ª tentativa e responde com
- * o texto de "ainda não apareceu". `delayMs` = delay humanizado antes do
+ * o texto de "ainda não apareceu". `recheck` (padrão = `again`) = espera e
+ * confere 1x mais: só vale para quem acabou de agir ("Já segui"); repetir a
+ * palavra-chave confere uma vez só. `delayMs` = delay humanizado antes do
  * portão, para quem ainda não esperou por ele.
  *
  * Lança se o envio da mensagem falhar ou o token for inválido (quem chama
@@ -37,9 +39,13 @@ export async function holdUnlessFollowing(
   rule: Rule,
   senderId: string,
   token: string,
-  { again, delayMs = 0 }: { again: boolean; delayMs?: number }
+  {
+    again,
+    recheck = again,
+    delayMs = 0,
+  }: { again: boolean; recheck?: boolean; delayMs?: number }
 ): Promise<FollowGateResult> {
-  const follow = await checkFollow(token, senderId, { recheck: again });
+  const follow = await checkFollow(token, senderId, { recheck });
   if (follow.status === "follows") return { held: false };
   if (follow.status === "unknown") {
     console.warn(`[follow-gate] checagem falhou na regra ${rule.id}:`, follow.detail);
@@ -69,12 +75,29 @@ export async function holdUnlessFollowing(
   return { held: true };
 }
 
+// O @ da conta muda raramente: sincroniza com a Graph API no máximo 1x por
+// hora por conta (memória do isolate), não a cada portão enviado.
+const PROFILE_SYNC_TTL_MS = 60 * 60 * 1000;
+const syncedUsernames = new Map<string, { username: string; at: number }>();
+
+async function currentUsername(
+  admin: AdminClient,
+  account: IgAccount,
+  token: string
+): Promise<string> {
+  const cached = syncedUsernames.get(account.id);
+  if (cached && Date.now() - cached.at < PROFILE_SYNC_TTL_MS) return cached.username;
+  const { ig_username } = await syncAccountProfile(admin, account, token);
+  syncedUsernames.set(account.id, { username: ig_username, at: Date.now() });
+  return ig_username;
+}
+
 /**
  * Mensagem do portão: texto sorteado (ou o "ainda não", com `again`) + botão que abre
  * o perfil + "Já segui" com `confirmPayload`. Automação usa
  * `falow:follow_check:<rule>`; o nó Automação de um workflow usa um payload
- * de sequência, que retoma o próprio run. O @ do link vem do Instagram na
- * hora (a conta pode ter trocado de @ depois de conectada).
+ * de sequência, que retoma o próprio run. O @ do link vem do Instagram
+ * (a conta pode ter trocado de @ depois de conectada), com cache de 1h.
  */
 export async function sendFollowGateMessage(
   admin: AdminClient,
@@ -89,7 +112,7 @@ export async function sendFollowGateMessage(
   }: { again: boolean; confirmPayload: string; random?: () => number }
 ): Promise<void> {
   const copy = followGateCopy(rule);
-  const { ig_username } = await syncAccountProfile(admin, account, token);
+  const ig_username = await currentUsername(admin, account, token);
   // Sorteia entre o texto principal e as variações cadastradas (migration 0017).
   const text = followGateMessageText(rule, again, random);
   await sendTemplateButtonsMessage(token, senderId, text, [

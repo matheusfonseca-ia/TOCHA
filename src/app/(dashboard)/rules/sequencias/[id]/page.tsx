@@ -1,8 +1,6 @@
 import { notFound } from "next/navigation";
 
 import { SequenceEditor } from "@/components/sequences/sequence-editor";
-import { withSyncedProfiles } from "@/lib/meta/account-profile";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { listTagOptionsForEditor } from "@/modules/crm/server";
 import { stageOptionsFromRows } from "@/modules/crm/pipeline/services/pipeline.queries";
@@ -30,7 +28,7 @@ export default async function EditarSequenciaPage({
     supabase.from("sequences").select("*").eq("id", params.id).maybeSingle(),
     supabase
       .from("ig_accounts")
-      .select("id, ig_username, profile_picture_url, access_token_enc")
+      .select("id, ig_username, profile_picture_url")
       .eq("status", "active")
       .order("connected_at"),
     // Últimas execuções pro painel de execuções do editor (RLS idem)
@@ -42,7 +40,8 @@ export default async function EditarSequenciaPage({
       .limit(50),
     // Automações para o nó "Automação" e o gatilho do editor (RLS idem)
     supabase.from("rules").select("*").order("created_at"),
-    // Workflows para o nó "Ir para workflow" (RLS idem)
+    // Workflows para o nó "Ir para workflow" (RLS idem). `graph` também: o
+    // editor lê o gatilho de link de cada um pra sugerir um código inédito.
     supabase.from("sequences").select("id, account_id, name, graph").order("name"),
     // Últimas versões salvas pro painel de Histórico do editor (RLS idem)
     supabase
@@ -59,8 +58,9 @@ export default async function EditarSequenciaPage({
 
   if (!sequence) notFound();
 
-  // O @ pode ter mudado no Instagram: o link ig.me de referência usa o atual.
-  const accounts = await withSyncedProfiles(createAdminClient(), storedAccounts ?? []);
+  // @ salvo no banco: sem chamada à Graph API a cada abertura do editor
+  // (a sincronização do perfil fica na tela Contas). O token nem é lido aqui.
+  const accounts = storedAccounts ?? [];
 
   return (
     <SequenceEditor

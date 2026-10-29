@@ -17,7 +17,7 @@ import {
   triggerNode,
   waitReplyNode,
 } from "@/lib/sequences/__tests__/fixtures";
-import { randomizerHandle } from "@/types/sequence";
+import { randomizerHandle, type SequenceGraph } from "@/types/sequence";
 
 /**
  * Testes de integração do runtime das sequências: retomada de postback (v1 e
@@ -1065,5 +1065,162 @@ describe("startStageEnterSequence: workflow de entrada da etapa (Fase 6)", () =>
     expect(outcome).toBeNull();
     expect(sendTextMessageMock).not.toHaveBeenCalled();
     expect(fake.tables.sequence_runs).toHaveLength(0);
+  });
+});
+
+describe("runtime: falhas temporárias, tetos e retomadas (auditoria 29/10)", () => {
+  function seedFlow(nodes: SequenceGraph, sender = "lead-x") {
+    const account = makeAccount();
+    const sequence = makeSequence({ account_id: account.id, graph: nodes });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(sequence);
+    fake.tables.conversations.push(makeOpenConversation(account.id, sender));
+    return { account, sequence };
+  }
+
+  function seedRun(sequenceId: string, accountId: string, sender: string, overrides: Record<string, unknown>) {
+    const now = new Date().toISOString();
+    const run = row({
+      sequence_id: sequenceId,
+      account_id: accountId,
+      ig_sender_id: sender,
+      status: "waiting_delay",
+      current_node_id: null,
+      next_run_at: new Date(Date.now() - 1000).toISOString(),
+      steps_executed: 1,
+      last_error: null,
+      entry_rule_id: null,
+      variables: {},
+      started_at: now,
+      updated_at: now,
+      ...overrides,
+    });
+    fake.tables.sequence_runs.push(run);
+    return run;
+  }
+
+  it("erro temporário da Meta no meio do fluxo reagenda o bloco em vez de matar o run (A1-007)", async () => {
+    const { GraphApiError } = await import("@/lib/meta/graph");
+    const { account, sequence } = seedFlow({
+      nodes: [triggerNode({ keyword: "x" }), node("d", "delay", { amount: 1, unit: "hours" }), messageNode("a", "Depois")],
+      edges: [edge("trigger", "d"), edge("d", "a")],
+    });
+    const run = seedRun(sequence.id, account.id, "lead-x", { current_node_id: "d" });
+    sendTextMessageMock.mockRejectedValueOnce(new GraphApiError("limite", 613));
+
+    await processDueRuns(5);
+
+    const after = fake.tables.sequence_runs.find((r) => r.id === run.id)!;
+    expect(after.status).toBe("waiting_delay");
+    expect(after.current_node_id).toBe("a");
+    expect(Date.parse(after.next_run_at)).toBeGreaterThan(Date.now() + 30_000);
+    expect(after.variables.__retries).toEqual({ a: 1 });
+
+    // Na retomada (vencida), o bloco "a" é enviado e o run conclui.
+    after.next_run_at = new Date(Date.now() - 1000).toISOString();
+    await processDueRuns(5);
+    expect(sendTextMessageMock).toHaveBeenLastCalledWith(expect.any(String), "lead-x", "Depois");
+    expect(fake.tables.sequence_runs.find((r) => r.id === run.id)!.status).toBe("completed");
+  });
+
+  it("retomada de atraso pelo tick não faz a pausa humanizada antes da 1ª mensagem (A1-005)", async () => {
+    const { account, sequence } = seedFlow({
+      nodes: [triggerNode({ keyword: "x" }), node("d", "delay", { amount: 1, unit: "hours" }), messageNode("a", "Depois")],
+      edges: [edge("trigger", "d"), edge("d", "a")],
+    });
+    seedRun(sequence.id, account.id, "lead-x", { current_node_id: "d" });
+
+    expect(await processDueRuns(5)).toBe(1);
+    expect(sendTypingActionMock).not.toHaveBeenCalled();
+    expect(sendTextMessageMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("teto de passos da vida do run encerra como concluído, com nota (N-11)", async () => {
+    const { account, sequence } = seedFlow({
+      nodes: [triggerNode({ keyword: "x" }), messageNode("a", "Oi"), waitReplyNode("w")],
+      edges: [edge("trigger", "a"), edge("a", "w")],
+    });
+    const run = seedRun(sequence.id, account.id, "lead-x", {
+      status: "waiting_reply",
+      current_node_id: "w",
+      steps_executed: 1000,
+    });
+    // waitReply → (sem saída) não passa por nenhum bloco; força um passo:
+    sequence.graph.edges.push(edge("w", "a"));
+
+    const outcome = await handleSequenceReply(admin, account, "lead-x", undefined, "qualquer");
+
+    const after = fake.tables.sequence_runs.find((r) => r.id === run.id)!;
+    expect(after.status).toBe("completed");
+    expect(after.last_error).toContain("1000 passos");
+    expect(outcome?.status).toBe("replied");
+    expect(sendTextMessageMock).not.toHaveBeenCalled();
+  });
+
+  it("mensagem cujo template ficou vazio é pulada em vez de travar o fluxo (N-05)", async () => {
+    const { account } = seedFlow({
+      nodes: [triggerNode({ keyword: "x" }), messageNode("a", "{{email}}"), messageNode("b", "Fim")],
+      edges: [edge("trigger", "a"), edge("a", "b")],
+    });
+
+    const outcome = await maybeStartSequence(admin, account, "lead-x", { kind: "dm", text: "x" });
+
+    expect(outcome?.status).toBe("replied");
+    expect(sendTextMessageMock).toHaveBeenCalledTimes(1);
+    expect(sendTextMessageMock).toHaveBeenCalledWith(expect.any(String), "lead-x", "Fim");
+  });
+
+  it("Ir para workflow com destino que falha antes da 1ª mensagem marca o run de origem como erro (A1-036)", async () => {
+    const account = makeAccount();
+    const target = makeSequence({
+      account_id: account.id,
+      name: "Destino",
+      graph: {
+        nodes: [triggerNode({ keyword: "zzz" }), messageNode("t1", "Do destino")],
+        edges: [edge("trigger", "t1")],
+      },
+    });
+    const origin = makeSequence({
+      account_id: account.id,
+      graph: {
+        nodes: [triggerNode({ keyword: "x" }), node("g", "goToSequence", { sequenceId: target.id })],
+        edges: [edge("trigger", "g")],
+      },
+    });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.sequences.push(origin, target);
+    fake.tables.conversations.push(makeOpenConversation(account.id, "lead-x"));
+    sendTextMessageMock.mockRejectedValueOnce(new Error("Meta recusou"));
+
+    await maybeStartSequence(admin, account, "lead-x", { kind: "dm", text: "x" });
+
+    const originRun = fake.tables.sequence_runs.find((r) => r.sequence_id === origin.id)!;
+    expect(originRun.status).toBe("error");
+    expect(originRun.last_error).toContain("Meta recusou");
+    expect(fake.tables.sequence_runs.find((r) => r.sequence_id === target.id)).toBeUndefined();
+  });
+
+  it("tick encerra como window_expired o run esperando resposta há mais de 24h (N-02)", async () => {
+    const { account, sequence } = seedFlow({
+      nodes: [triggerNode({ keyword: "x" }), waitReplyNode("w"), messageNode("a")],
+      edges: [edge("trigger", "w"), edge("w", "a")],
+    });
+    const old = new Date(Date.now() - 25 * 3600 * 1000).toISOString();
+    const stale = seedRun(sequence.id, account.id, "lead-x", {
+      status: "waiting_reply",
+      current_node_id: "w",
+      next_run_at: null,
+      updated_at: old,
+    });
+    const fresh = seedRun(sequence.id, account.id, "lead-y", {
+      status: "waiting_reply",
+      current_node_id: "w",
+      next_run_at: null,
+    });
+
+    await processDueRuns(5);
+
+    expect(fake.tables.sequence_runs.find((r) => r.id === stale.id)!.status).toBe("window_expired");
+    expect(fake.tables.sequence_runs.find((r) => r.id === fresh.id)!.status).toBe("waiting_reply");
   });
 });

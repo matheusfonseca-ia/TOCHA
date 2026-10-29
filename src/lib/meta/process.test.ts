@@ -1563,3 +1563,130 @@ describe("processWebhookPayload: assinatura parada", () => {
     info.mockRestore();
   });
 });
+
+describe("processWebhookPayload — corrida, dedupe e respostas rápidas antigas", () => {
+  function dmEvent(account: IgAccount, senderId: string, mid: string, text: string, extra: Record<string, unknown> = {}) {
+    return {
+      sender: { id: senderId },
+      recipient: { id: account.ig_user_id },
+      timestamp: Date.now(),
+      message: { mid, text, is_echo: false, ...extra },
+    };
+  }
+  function payloadOf(account: IgAccount, events: ReturnType<typeof dmEvent>[]): MetaWebhookPayload {
+    return { object: "instagram", entry: [{ id: account.ig_user_id, messaging: events }] };
+  }
+  function seed() {
+    const account = makeAccount();
+    const rule = makeRule({ account_id: account.id, trigger_type: "dm", keyword: "preço", reply_text: "R$ 10" });
+    fake.tables.ig_accounts.push(account);
+    fake.tables.rules.push(rule);
+    return { account, rule };
+  }
+
+  it("duas DMs da mesma pessoa em entregas paralelas: a regra responde 1x (A0-010)", async () => {
+    const { account, rule } = seed();
+
+    await Promise.all([
+      processWebhookPayload(payloadOf(account, [dmEvent(account, "p-1", "m-a", "preço")])),
+      processWebhookPayload(payloadOf(account, [dmEvent(account, "p-1", "m-b", "preço")])),
+    ]);
+
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+    expect(fake.tables.rule_triggers.filter((t) => t.rule_id === rule.id)).toHaveLength(1);
+    const statuses = fake.tables.interactions.map((i) => i.status).sort();
+    expect(statuses).toEqual(["duplicate_skip", "replied"]);
+  });
+
+  it("envio que falhou libera a reserva: o próximo pedido responde", async () => {
+    const { account } = seed();
+    sendRuleReplyMock.mockRejectedValueOnce(new GraphApiError("inválido", 100));
+
+    await processWebhookPayload(payloadOf(account, [dmEvent(account, "p-2", "m-1", "preço")]));
+    expect(fake.tables.rule_triggers).toHaveLength(0);
+    expect(fake.tables.interactions[0].status).toBe("error");
+
+    await processWebhookPayload(payloadOf(account, [dmEvent(account, "p-2", "m-2", "preço")]));
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(2);
+    expect(fake.tables.rule_triggers).toHaveLength(1);
+  });
+
+  it("falha do banco antes de responder: o mid é liberado e o evento tenta de novo (A0-011)", async () => {
+    const { account } = seed();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    // 1ª leitura de rules falha (instabilidade); a 2ª funciona.
+    const realFrom = fake.client.from;
+    let failed = false;
+    setAdmin({
+      ...fake.client,
+      from: (table: Parameters<typeof realFrom>[0]) => {
+        const builder = realFrom(table);
+        if (table === "rules" && !failed) {
+          failed = true;
+          return Object.assign(builder, {
+            then: (resolve: (v: unknown) => unknown) => resolve({ data: null, error: { message: "timeout" } }),
+          });
+        }
+        return builder;
+      },
+    });
+
+    await processWebhookPayload(payloadOf(account, [dmEvent(account, "p-3", "m-1", "preço")]));
+
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+    expect(fake.tables.processed_events.map((e) => e.mid)).toEqual(["m-1"]);
+    expect(fake.tables.interactions.map((i) => i.status)).toEqual(["replied"]);
+    error.mockRestore();
+  });
+
+  it("toque antigo numa resposta rápida não cai nas regras de palavra-chave (N-03)", async () => {
+    const { account } = seed();
+    const staleRunId = "00000000-0000-4000-8000-000000000000";
+
+    await processWebhookPayload(
+      payloadOf(account, [
+        dmEvent(account, "p-4", "m-1", "preço", {
+          quick_reply: { payload: `falow:seq:${staleRunId}:qr1:qr-0` },
+        }),
+      ])
+    );
+
+    expect(sendRuleReplyMock).not.toHaveBeenCalled();
+    expect(fake.tables.interactions).toHaveLength(1);
+    expect(fake.tables.interactions[0].error_detail).toContain("resposta rápida");
+  });
+
+  it("run esperando resposta há mais de 24h não captura a mensagem (N-02)", async () => {
+    const { account } = seed();
+    const sequence = makeSequence({
+      account_id: account.id,
+      graph: {
+        nodes: [triggerNode({ keyword: "zzz" }), waitReplyNode("w1"), messageNode("m1", "Depois da espera")],
+        edges: [edge("trigger", "w1"), edge("w1", "m1")],
+      },
+    });
+    fake.tables.sequences.push(sequence);
+    const old = new Date(Date.now() - 25 * 3600 * 1000).toISOString();
+    fake.tables.sequence_runs.push(
+      row({
+        sequence_id: sequence.id,
+        account_id: account.id,
+        ig_sender_id: "p-5",
+        status: "waiting_reply",
+        current_node_id: "w1",
+        next_run_at: null,
+        steps_executed: 1,
+        last_error: null,
+        entry_rule_id: null,
+        variables: {},
+        started_at: old,
+        updated_at: old,
+      })
+    );
+
+    await processWebhookPayload(payloadOf(account, [dmEvent(account, "p-5", "m-1", "preço")]));
+
+    expect(sendTextMessageMock).not.toHaveBeenCalled();
+    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+  });
+});

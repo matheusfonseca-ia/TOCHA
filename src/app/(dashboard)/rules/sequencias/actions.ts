@@ -3,11 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { validateExpiry } from "@/lib/expiry/expiry";
-import {
-  EXPIRED_SEQUENCE_ACTIVATION_ERROR,
-  isStoredExpired,
-} from "@/lib/expiry/guard";
+import { isExpired, validateExpiry } from "@/lib/expiry/expiry";
+import { EXPIRED_SEQUENCE_ACTIVATION_ERROR } from "@/lib/expiry/guard";
 import { expiryColumns, expiryFields } from "@/lib/expiry/schema";
 import { keywordTerms } from "@/lib/rules/engine";
 import { cloneGraphWithFreshIds } from "@/lib/sequences/clone";
@@ -15,6 +12,7 @@ import {
   automationRuleIdsOf,
   entryRuleIdOf,
   findTriggerNode,
+  type GraphValidationContext,
   goToSequenceIdsOf,
   MAX_NODES,
   stageIdsOf,
@@ -183,6 +181,11 @@ const sequenceSchema = z.object({
   name: z.string().trim().min(1, "Dê um nome à sequência.").max(80),
   is_active: z.boolean(),
   graph: graphSchema,
+  /**
+   * `updated_at` do workflow quando o editor abriu: se mudou desde então
+   * (outra aba, outra pessoa), o save é recusado em vez de sobrescrever.
+   */
+  expected_updated_at: z.string().max(64).optional(),
   ...expiryFields,
 });
 
@@ -198,6 +201,67 @@ export interface SequenceActionResult {
    * só avisa.
    */
   warning?: string;
+  /** O workflow foi alterado em outro lugar desde que o editor abriu. */
+  conflict?: boolean;
+}
+
+const SEQUENCE_EDIT_CONFLICT_ERROR =
+  "Este workflow foi alterado em outra aba ou por outra pessoa depois que você abriu o editor. Recarregue a página para ver a versão atual antes de salvar.";
+const SEQUENCE_ACCOUNT_CHANGE_ERROR =
+  "A conta de um workflow já criado não pode ser trocada (há execuções em andamento ligadas a ela). Duplique o workflow para usar em outra conta.";
+
+/**
+ * Confere as referências do grafo (automações, workflows de destino, etapas)
+ * no banco e roda a validação completa. Usado no save e ao reativar: um
+ * workflow pausado pode ter ficado com referência apagada nesse meio tempo.
+ */
+async function validateGraphReferences(
+  supabase: ReturnType<typeof createClient>,
+  graph: SequenceGraph,
+  accountId: string,
+  selfSequenceId: string | undefined
+): Promise<string | null> {
+  const ruleIds = automationRuleIdsOf(graph);
+  const targetSequenceIds = goToSequenceIdsOf(graph);
+  const stageIds = stageIdsOf(graph);
+
+  // Independentes entre si: em paralelo (antes eram 3 idas em série).
+  const [{ data: ruleRefs }, { data: sequenceRefs }, { data: stageRefs }] = await Promise.all([
+    // Automações referenciadas pelo grafo: o validador precisa do tipo e da
+    // conta de cada uma (rule de comentário só vale como entrada, e nunca de
+    // outra conta). RLS limita a busca às rules do usuário.
+    ruleIds.length
+      ? supabase.from("rules").select("id, trigger_type, account_id").in("id", ruleIds)
+      : Promise.resolve({ data: [] as { id: string; trigger_type: string; account_id: string }[] }),
+    // Workflows referenciados por nós "Ir para workflow": id + conta, pra
+    // checar existência e que são da mesma conta.
+    targetSequenceIds.length
+      ? supabase.from("sequences").select("id, account_id").in("id", targetSequenceIds)
+      : Promise.resolve({ data: [] as { id: string; account_id: string }[] }),
+    // Etapas referenciadas ("Mover para etapa" e Condição "está na etapa"):
+    // id + conta do funil (via join), pra checar existência e posse.
+    stageIds.length
+      ? supabase.from("pipeline_stages").select("id, pipelines!inner(account_id)").in("id", stageIds)
+      : Promise.resolve({ data: [] as unknown[] }),
+  ]);
+  const stagesById = new Map(
+    ((stageRefs ?? []) as unknown as { id: string; pipelines: { account_id: string } | null }[]).map((s) => [
+      s.id,
+      { id: s.id, account_id: s.pipelines?.account_id ?? "" },
+    ])
+  );
+
+  return validateSequenceGraph(graph, {
+    accountId,
+    rulesById: new Map(
+      ((ruleRefs ?? []) as { id: string; trigger_type: string; account_id: string }[]).map((r) => [r.id, r])
+    ) as NonNullable<GraphValidationContext["rulesById"]>,
+    sequencesById: new Map(
+      ((sequenceRefs ?? []) as { id: string; account_id: string }[]).map((s) => [s.id, s])
+    ),
+    selfSequenceId,
+    stagesById,
+  });
 }
 
 type ConflictCandidate = { id: string; name: string; graph: SequenceGraph };
@@ -278,59 +342,36 @@ export async function saveSequence(
   const graph = input.graph as SequenceGraph;
   const supabase = createClient();
 
-  if (
-    input.id &&
-    input.is_active &&
-    input.expires_at === undefined &&
-    (await isStoredExpired(supabase, "sequences", input.id))
-  ) {
-    return { error: EXPIRED_SEQUENCE_ACTIVATION_ERROR };
+  // Workflow existente (RLS: só do usuário) + validação das referências, em paralelo.
+  const [existingResult, graphError] = await Promise.all([
+    input.id
+      ? supabase
+          .from("sequences")
+          .select("account_id, updated_at, expires_at")
+          .eq("id", input.id)
+          .maybeSingle<{ account_id: string; updated_at: string; expires_at: string | null }>()
+      : Promise.resolve({ data: null, error: null }),
+    validateGraphReferences(supabase, graph, input.account_id, input.id),
+  ]);
+  const existing = existingResult.data;
+
+  if (input.id) {
+    if (existingResult.error) {
+      return { error: "Não foi possível salvar a sequência. Tente novamente." };
+    }
+    if (!existing) return { error: "Workflow não encontrado." };
+    // Runs em andamento pertencem à conta original: trocar a conta faria o
+    // fluxo continuar com o token de outro @ (N-06).
+    if (existing.account_id !== input.account_id) {
+      return { error: SEQUENCE_ACCOUNT_CHANGE_ERROR };
+    }
+    if (input.expected_updated_at && existing.updated_at !== input.expected_updated_at) {
+      return { error: SEQUENCE_EDIT_CONFLICT_ERROR, conflict: true };
+    }
+    if (input.is_active && input.expires_at === undefined && isExpired(existing.expires_at)) {
+      return { error: EXPIRED_SEQUENCE_ACTIVATION_ERROR };
+    }
   }
-
-  // Automações referenciadas pelo grafo: o validador precisa do tipo e da
-  // conta de cada uma (rule de comentário só vale como entrada, e nunca de
-  // outra conta). RLS limita a busca às rules do usuário.
-  const ruleIds = automationRuleIdsOf(graph);
-  const { data: ruleRefs } = ruleIds.length
-    ? await supabase
-        .from("rules")
-        .select("id, trigger_type, account_id")
-        .in("id", ruleIds)
-    : { data: [] };
-
-  // Workflows referenciados por nós "Ir para workflow": id + conta, pra
-  // checar existência e que são da mesma conta.
-  const targetSequenceIds = goToSequenceIdsOf(graph);
-  const { data: sequenceRefs } = targetSequenceIds.length
-    ? await supabase
-        .from("sequences")
-        .select("id, account_id")
-        .in("id", targetSequenceIds)
-    : { data: [] };
-
-  // Etapas referenciadas ("Mover para etapa" e Condição "está na etapa"):
-  // id + conta do funil (via join), pra checar existência e posse.
-  const stageIds = stageIdsOf(graph);
-  const { data: stageRefs } = stageIds.length
-    ? await supabase
-        .from("pipeline_stages")
-        .select("id, pipelines!inner(account_id)")
-        .in("id", stageIds)
-    : { data: [] };
-  const stagesById = new Map(
-    ((stageRefs ?? []) as unknown as { id: string; pipelines: { account_id: string } | null }[]).map((s) => [
-      s.id,
-      { id: s.id, account_id: s.pipelines?.account_id ?? "" },
-    ])
-  );
-
-  const graphError = validateSequenceGraph(graph, {
-    accountId: input.account_id,
-    rulesById: new Map((ruleRefs ?? []).map((r) => [r.id, r])),
-    sequencesById: new Map((sequenceRefs ?? []).map((s) => [s.id, s])),
-    selfSequenceId: input.id,
-    stagesById,
-  });
   if (graphError) return { error: graphError };
 
   const row = {
@@ -343,15 +384,30 @@ export async function saveSequence(
     updated_at: new Date().toISOString(),
   };
 
-  // RLS garante que account_id / sequence pertencem ao usuário logado.
-  const { data, error } = input.id
-    ? await supabase
-        .from("sequences")
-        .update(row)
-        .eq("id", input.id)
-        .select("id")
-        .maybeSingle()
-    : await supabase.from("sequences").insert(row).select("id").maybeSingle();
+  // RLS garante que account_id / sequence pertencem ao usuário logado. No
+  // update, conta e updated_at entram no próprio WHERE: um save concorrente
+  // entre a leitura acima e esta escrita também é detectado.
+  let data: { id: string } | null = null;
+  let error: unknown = null;
+  if (input.id && existing) {
+    const result = await supabase
+      .from("sequences")
+      .update(row)
+      .eq("id", input.id)
+      .eq("account_id", existing.account_id)
+      .eq("updated_at", existing.updated_at)
+      .select("id")
+      .maybeSingle();
+    data = result.data;
+    error = result.error;
+    if (!error && !data) {
+      return { error: SEQUENCE_EDIT_CONFLICT_ERROR, conflict: true };
+    }
+  } else {
+    const result = await supabase.from("sequences").insert(row).select("id").maybeSingle();
+    data = result.data;
+    error = result.error;
+  }
 
   if (error || !data) {
     return { error: "Não foi possível salvar a sequência. Tente novamente." };
@@ -363,48 +419,75 @@ export async function saveSequence(
 
   const id = data.id as string;
 
-  // Snapshot pro histórico de versões do editor. Auxiliar (não é a fonte de
-  // verdade): erro aqui não falha o save principal, só fica sem essa versão
-  // no histórico. Poda pra manter só as 30 mais recentes por sequência.
-  const { error: versionError } = await supabase.from("sequence_versions").insert({
-    sequence_id: id,
-    account_id: input.account_id,
-    name: input.name,
-    graph,
-    is_active: input.is_active,
-  });
-  if (!versionError) {
-    const { data: staleVersions } = await supabase
-      .from("sequence_versions")
-      .select("id")
-      .eq("sequence_id", id)
-      .order("created_at", { ascending: false })
-      .range(30, 1000);
-    if (staleVersions && staleVersions.length > 0) {
-      await supabase
-        .from("sequence_versions")
-        .delete()
-        .in("id", staleVersions.map((v) => v.id));
-    }
-  }
-  const warning = input.is_active
-    ? ((await findConflictingSequenceName(supabase, {
-        id,
-        account_id: input.account_id,
-        graph,
-      })) ?? undefined)
-    : undefined;
+  // Snapshot pro histórico de versões do editor (com a poda das antigas) e
+  // checagem de conflito de gatilho, em paralelo. O histórico é auxiliar
+  // (não é a fonte de verdade): erro aqui não falha o save principal.
+  const [, warningText] = await Promise.all([
+    saveVersionSnapshot(supabase, id, input.account_id, input.name, graph, input.is_active),
+    input.is_active
+      ? findConflictingSequenceName(supabase, { id, account_id: input.account_id, graph })
+      : Promise.resolve(null),
+  ]);
+  const warning = warningText ?? undefined;
 
   return warning ? { id, warning } : { id };
 }
 
+/** Versão pro histórico do editor; poda pra manter só as 30 mais recentes por sequência. */
+async function saveVersionSnapshot(
+  supabase: ReturnType<typeof createClient>,
+  sequenceId: string,
+  accountId: string,
+  name: string,
+  graph: SequenceGraph,
+  isActive: boolean
+): Promise<void> {
+  const { error: versionError } = await supabase.from("sequence_versions").insert({
+    sequence_id: sequenceId,
+    account_id: accountId,
+    name,
+    graph,
+    is_active: isActive,
+  });
+  if (versionError) return;
+  const { data: staleVersions } = await supabase
+    .from("sequence_versions")
+    .select("id")
+    .eq("sequence_id", sequenceId)
+    .order("created_at", { ascending: false })
+    .range(30, 1000);
+  if (staleVersions && staleVersions.length > 0) {
+    await supabase
+      .from("sequence_versions")
+      .delete()
+      .in("id", staleVersions.map((v) => v.id));
+  }
+}
 export async function toggleSequence(
   id: string,
   isActive: boolean
 ): Promise<SequenceActionResult> {
   const supabase = createClient();
-  if (isActive && (await isStoredExpired(supabase, "sequences", id))) {
-    return { error: EXPIRED_SEQUENCE_ACTIVATION_ERROR };
+
+  // Reativar revalida o grafo como no save (N-10): enquanto pausado, uma
+  // automação, etapa ou workflow de destino pode ter sido apagado, e cada
+  // pessoa que entrasse daria erro.
+  let current: { account_id: string; graph: SequenceGraph } | null = null;
+  if (isActive) {
+    const { data: sequence } = await supabase
+      .from("sequences")
+      .select("account_id, graph, expires_at")
+      .eq("id", id)
+      .maybeSingle<{ account_id: string; graph: SequenceGraph; expires_at: string | null }>();
+    if (!sequence) return { error: "Workflow não encontrado." };
+    if (isExpired(sequence.expires_at)) {
+      return { error: EXPIRED_SEQUENCE_ACTIVATION_ERROR };
+    }
+    const graphError = await validateGraphReferences(supabase, sequence.graph, sequence.account_id, id);
+    if (graphError) {
+      return { error: `Corrija o workflow antes de ativar: ${graphError}` };
+    }
+    current = sequence;
   }
 
   const { error } = await supabase
@@ -416,20 +499,13 @@ export async function toggleSequence(
 
   revalidatePath("/rules/sequencias");
 
-  if (!isActive) return {};
-
-  const { data: sequence } = await supabase
-    .from("sequences")
-    .select("account_id, graph")
-    .eq("id", id)
-    .maybeSingle();
-  if (!sequence) return {};
+  if (!current) return {};
 
   const warning =
     (await findConflictingSequenceName(supabase, {
       id,
-      account_id: sequence.account_id,
-      graph: sequence.graph as SequenceGraph,
+      account_id: current.account_id,
+      graph: current.graph,
     })) ?? undefined;
 
   return warning ? { warning } : {};

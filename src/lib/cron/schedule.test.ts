@@ -43,6 +43,21 @@ describe("cronRequestFor", () => {
     expect(req!.url).toBe("https://staging.falow.app.br/sistema/api/cron/purge");
   });
 
+  it("acrescenta o /sistema quando NEXT_PUBLIC_APP_URL vem sem ele", () => {
+    expect(cronRequestFor("* * * * *", { NEXT_PUBLIC_APP_URL: "https://falow.app.br" })!.url).toBe(
+      "https://falow.app.br/sistema/api/cron/sequences"
+    );
+    expect(cronRequestFor("0 6 * * *", { NEXT_PUBLIC_APP_URL: "https://falow.app.br/" })!.url).toBe(
+      "https://falow.app.br/sistema/api/cron/purge"
+    );
+  });
+
+  it("NEXT_PUBLIC_APP_URL vazia cai no padrao", () => {
+    expect(cronRequestFor("* * * * *", { NEXT_PUBLIC_APP_URL: "  " })!.url).toBe(
+      "https://falow.app.br/sistema/api/cron/sequences"
+    );
+  });
+
   it("sem CRON_SECRET ainda monta a requisicao com 'Bearer ' (a rota responde 503 e o worker loga)", () => {
     const req = cronRequestFor("* * * * *", {});
     expect(req).not.toBeNull();

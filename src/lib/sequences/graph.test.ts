@@ -5,6 +5,7 @@ import {
   entryRuleIdOf,
   findCyclesWithoutWait,
   goToSequenceIdsOf,
+  longestDelayWithoutInteraction,
   refCodeOf,
   sourceHandlesOf,
   triggerSourceOf,
@@ -573,5 +574,25 @@ describe("refCodeOf", () => {
 
   it("grafo sem gatilho devolve nulo", () => {
     expect(refCodeOf({ nodes: [], edges: [] })).toBeNull();
+  });
+});
+
+describe("soma dos atrasos sem interação (A1-037)", () => {
+  it("dois atrasos de 20h seguidos passam da janela de 24h e o save recusa", () => {
+    const graph: SequenceGraph = {
+      nodes: [trigger(), msg("a"), delay("d1", 20, "hours"), msg("b"), delay("d2", 20, "hours"), msg("c")],
+      edges: [edge("t", "a"), edge("a", "d1"), edge("d1", "b"), edge("b", "d2"), edge("d2", "c")],
+    };
+    expect(longestDelayWithoutInteraction(graph)).toBe(40 * 3600);
+    expect(validateSequenceGraph(graph)).toMatch(/soma dos atrasos/);
+  });
+
+  it("uma espera de resposta no meio recomeça a conta", () => {
+    const graph: SequenceGraph = {
+      nodes: [trigger(), delay("d1", 20, "hours"), msg("b"), waitReply("w"), delay("d2", 20, "hours"), msg("c")],
+      edges: [edge("t", "d1"), edge("d1", "b"), edge("b", "w"), edge("w", "d2"), edge("d2", "c")],
+    };
+    expect(longestDelayWithoutInteraction(graph)).toBe(20 * 3600);
+    expect(validateSequenceGraph(graph)).toBeNull();
   });
 });

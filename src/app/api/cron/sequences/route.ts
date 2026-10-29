@@ -10,8 +10,8 @@ export const maxDuration = 60;
 /**
  * Tick das sequências: expira automações/workflows temporários vencidos e
  * retoma execuções paradas em nós de atraso cujo horário venceu. Chamado a
- * cada minuto pelo `scheduled()` do Worker (worker.ts), além do tick
- * oportunista que roda ao fim de cada webhook.
+ * cada minuto pelo `scheduled()` do Worker (worker.ts). O webhook não faz mais
+ * esse trabalho: ele só responde rápido e processa o evento em segundo plano.
  *
  * Autenticação só pelo header `Authorization: Bearer <CRON_SECRET>` (é o que
  * o `scheduled()` envia). Segredo na query string (`?secret=`) não vale mais:
@@ -30,6 +30,6 @@ export async function GET(request: NextRequest) {
 
   // Antes dos atrasos: workflow que acabou de expirar não retoma execuções.
   const expired = await expireAutomationsSafe();
-  const processed = await processDueRuns(10);
+  const processed = await processDueRuns(30);
   return NextResponse.json({ processed, expired });
 }

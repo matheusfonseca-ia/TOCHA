@@ -4,8 +4,6 @@ import { Instagram } from "lucide-react";
 import { EmptyState } from "@/components/empty-state";
 import { SequenceEditor } from "@/components/sequences/sequence-editor";
 import { Button } from "@/components/ui/button";
-import { withSyncedProfiles } from "@/lib/meta/account-profile";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import { listTagOptionsForEditor } from "@/modules/crm/server";
 import { stageOptionsFromRows } from "@/modules/crm/pipeline/services/pipeline.queries";
@@ -18,7 +16,7 @@ export default async function NovaSequenciaPage() {
     await Promise.all([
       supabase
         .from("ig_accounts")
-        .select("id, ig_username, profile_picture_url, access_token_enc")
+        .select("id, ig_username, profile_picture_url")
         .eq("status", "active")
         .order("connected_at"),
       // Automações para o nó "Automação" e o gatilho do editor (RLS limita ao usuário)
@@ -32,8 +30,9 @@ export default async function NovaSequenciaPage() {
       supabase.from("pipeline_stages").select("id, name, pipelines(name, account_id)").order("position"),
     ]);
 
-  // O @ pode ter mudado no Instagram: o link ig.me de referência usa o atual.
-  const accounts = await withSyncedProfiles(createAdminClient(), storedAccounts ?? []);
+  // @ salvo no banco: sem chamada à Graph API a cada abertura do editor
+  // (a sincronização do perfil fica na tela Contas). O token nem é lido aqui.
+  const accounts = storedAccounts ?? [];
 
   if (accounts.length === 0) {
     return (
