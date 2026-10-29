@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { ownedAccountId } from "@/lib/auth/ownership";
+import { activeUserId } from "@/lib/auth/require-access";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 import { INBOX_PATH } from "../../inbox/utils/href";
@@ -11,6 +12,7 @@ import { removeContactField, setContactField } from "../server/contact-fields-re
 /** Edição dos "Dados coletados" da ficha do lead. Mesmo padrão de posse + service role do resto do módulo. */
 
 async function assertOwnsAccount(accountId: string): Promise<{ error: string | null }> {
+  if (!(await activeUserId())) return { error: "Sua assinatura não está ativa. Acesse Minha assinatura para reativar." };
   return (await ownedAccountId(accountId)) ? { error: null } : { error: "Conta não encontrada." };
 }
 

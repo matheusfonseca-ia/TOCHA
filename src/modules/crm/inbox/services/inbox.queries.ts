@@ -40,37 +40,80 @@ function toInboxConversation(row: ConversationRow): InboxConversation {
   return { ...rest, unread_count: rest.unread_count ?? 0, account_username: ig_accounts?.ig_username ?? null };
 }
 
-/** Busca livre sem quebrar o filtro `or` do PostgREST (vírgula, parênteses, curinga). */
-function sanitizeSearch(q: string): string {
-  return q.replace(/[,()%*\\]/g, " ").trim().slice(0, 60);
+/**
+ * Termo da busca livre pronto para ir entre aspas no filtro `or` do
+ * PostgREST: tira o que quebra o filtro ou vira curinga (`%`, `*`, aspas,
+ * barra invertida, vírgula, parênteses) e escapa o `_` (curinga de um
+ * caractere no ILIKE), que continua buscável (`joao_silva`). Dentro das
+ * aspas o PostgREST lê `\\` como `\`, e o ILIKE lê `\_` como `_` literal.
+ */
+export function sanitizeSearch(q: string): string {
+  return q
+    .replace(/[,()%*\\"]/g, " ")
+    .trim()
+    .slice(0, 60)
+    .replace(/_/g, "\\\\_");
+}
+
+/** Filtro `or` da busca livre (valores entre aspas: `.` e `:` no termo não quebram). */
+export function searchFilter(q: string): string | null {
+  const term = sanitizeSearch(q);
+  if (!term) return null;
+  return `ig_sender_username.ilike."%${term}%",last_message_text.ilike."%${term}%"`;
+}
+
+// Ids por consulta no filtro por tag: milhares de ids num só `in()` estouram a URL.
+const SENDER_CHUNK = 150;
+
+/** Mesma ordem da consulta (mais recente primeiro, nulos no fim), para juntar os blocos. */
+function byRecent(a: InboxConversation, b: InboxConversation): number {
+  const key = (v: string | null) => (v ? Date.parse(v) : Number.NEGATIVE_INFINITY);
+  const diff = (x: number, y: number) => (x === y ? 0 : y > x ? 1 : -1);
+  return diff(key(a.last_message_at), key(b.last_message_at)) || diff(key(a.last_inbound_at), key(b.last_inbound_at));
 }
 
 export async function listConversations(
   supabase: UserClient,
   filters: InboxFilters
 ): Promise<{ conversations: InboxConversation[]; error: string | null }> {
-  let query = supabase
-    .from("conversations")
-    .select(CONVERSATION_COLUMNS)
-    .order("last_message_at", { ascending: false, nullsFirst: false })
-    .order("last_inbound_at", { ascending: false, nullsFirst: false })
-    .limit(LIST_LIMIT);
-  if (filters.accountId) query = query.eq("account_id", filters.accountId);
-  if (filters.status === "unread") query = query.gt("unread_count", 0);
-  else if (filters.status === "done") query = query.eq("status", "done");
-  else query = query.eq("status", "open");
-  const q = sanitizeSearch(filters.q);
-  if (q) query = query.or(`ig_sender_username.ilike.%${q}%,last_message_text.ilike.%${q}%`);
+  const build = () => {
+    let query = supabase
+      .from("conversations")
+      .select(CONVERSATION_COLUMNS)
+      .order("last_message_at", { ascending: false, nullsFirst: false })
+      .order("last_inbound_at", { ascending: false, nullsFirst: false })
+      .limit(LIST_LIMIT);
+    if (filters.accountId) query = query.eq("account_id", filters.accountId);
+    if (filters.status === "unread") query = query.gt("unread_count", 0);
+    else if (filters.status === "done") query = query.eq("status", "done");
+    else query = query.eq("status", "open");
+    const search = searchFilter(filters.q);
+    if (search) query = query.or(search);
+    return query;
+  };
+
+  let rows: ConversationRow[];
+  let failure: string | null = null;
   if (filters.tag) {
     const senderIds = await listSenderIdsWithTag(supabase, filters.accountId, filters.tag);
     // Sem ninguém com a tag: devolve lista vazia sem quebrar o `.in()` (array vazio dá erro no PostgREST).
     if (senderIds.length === 0) return { conversations: [], error: null };
-    query = query.in("ig_sender_id", senderIds);
+    // Em blocos (URL curta), cada um já ordenado e limitado; junta e corta de novo abaixo.
+    const chunks: string[][] = [];
+    for (let i = 0; i < senderIds.length; i += SENDER_CHUNK) chunks.push(senderIds.slice(i, i + SENDER_CHUNK));
+    const results = await Promise.all(chunks.map((ids) => build().in("ig_sender_id", ids)));
+    failure = results.find((r) => r.error)?.error?.message ?? null;
+    rows = results.flatMap((r) => (r.data ?? []) as unknown as ConversationRow[]);
+  } else {
+    const { data, error } = await build();
+    failure = error?.message ?? null;
+    rows = (data ?? []) as unknown as ConversationRow[];
   }
-
-  const { data, error } = await query;
-  if (error) return { conversations: [], error: error.message };
-  const conversations = ((data ?? []) as unknown as ConversationRow[]).map(toInboxConversation);
+  if (failure) {
+    console.error("[crm] falha ao listar conversas:", failure);
+    return { conversations: [], error: "Não foi possível carregar as conversas." };
+  }
+  const conversations = rows.map(toInboxConversation).sort(byRecent).slice(0, LIST_LIMIT);
 
   const tagsByLead = await attachTagsToConversations(supabase, conversations);
   for (const c of conversations) {
@@ -189,9 +232,21 @@ export async function getThread(supabase: UserClient, conversationId: string): P
   };
 }
 
-/** Total de não lidas do usuário (badge do menu). Sem a migration 0009, zero. */
+/** Conversas lidas para o badge: acima de 99 a sidebar só mostra "99+". */
+const UNREAD_SCAN = 100;
+
+/**
+ * Total de não lidas do usuário (badge do menu). Lê no máximo 100 conversas
+ * com não lidas: cada uma tem ao menos 1, então daí em diante o total já
+ * passou do teto que a sidebar mostra e somar o resto (até o corte de 1000
+ * linhas do PostgREST) seria só desperdício. Sem a migration 0009, zero.
+ */
 export async function getUnreadTotal(supabase: UserClient): Promise<number> {
-  const { data, error } = await supabase.from("conversations").select("unread_count").gt("unread_count", 0);
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("unread_count")
+    .gt("unread_count", 0)
+    .limit(UNREAD_SCAN);
   if (error) return 0;
   return ((data ?? []) as { unread_count: number }[]).reduce((sum, r) => sum + (r.unread_count ?? 0), 0);
 }

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { format, subDays } from "date-fns";
+import { addDays, format, startOfDay, subDays } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
   Instagram,
@@ -60,9 +60,28 @@ export default async function DashboardPage() {
 
   const now = new Date();
   const since30 = subDays(now, 30).toISOString();
-  const since14 = subDays(now, 14).toISOString();
+  // Série diária dos últimos 14 dias: contagem no banco por dia (índice
+  // account_id + created_at), em vez de baixar as interactions e somar aqui,
+  // o que o teto de 1000 linhas do PostgREST cortava em silêncio.
+  const days = Array.from({ length: 14 }, (_, i) => startOfDay(subDays(now, 13 - i)));
+  const dayCount = (day: Date, onlyReplied: boolean) => {
+    let query = supabase
+      .from("interactions")
+      .select("id", { count: "exact", head: true })
+      .in("account_id", accountIds)
+      .gte("created_at", day.toISOString())
+      .lt("created_at", addDays(day, 1).toISOString());
+    if (onlyReplied) query = query.eq("status", "replied");
+    return query.then(({ count }) => count ?? 0);
+  };
+  const seriesPromise = Promise.all(
+    days.map(async (day) => {
+      const [recebidas, respondidas] = await Promise.all([dayCount(day, false), dayCount(day, true)]);
+      return { label: format(day, "dd/MM"), recebidas, respondidas } satisfies ActivityPoint;
+    })
+  );
 
-  const [receivedRes, repliedRes, contactsRes, seriesRes, recentRes] =
+  const [receivedRes, repliedRes, contactsRes, chartData, recentRes] =
     await Promise.all([
       supabase
         .from("interactions")
@@ -79,12 +98,7 @@ export default async function DashboardPage() {
         .from("conversations")
         .select("*", { count: "exact", head: true })
         .in("account_id", accountIds),
-      supabase
-        .from("interactions")
-        .select("created_at, status")
-        .in("account_id", accountIds)
-        .gte("created_at", since14)
-        .limit(5000),
+      seriesPromise,
       supabase
         .from("interactions")
         .select("*")
@@ -97,31 +111,6 @@ export default async function DashboardPage() {
   const replied = repliedRes.count ?? 0;
   const contacts = contactsRes.count ?? 0;
   const matchRate = received > 0 ? Math.round((replied / received) * 100) : 0;
-
-  // Série diária dos últimos 14 dias
-  const series = (seriesRes.data ?? []) as Pick<
-    Interaction,
-    "created_at" | "status"
-  >[];
-  const byDay = new Map<string, { recebidas: number; respondidas: number }>();
-  const chartData: ActivityPoint[] = [];
-  for (let i = 13; i >= 0; i--) {
-    const day = subDays(now, i);
-    const key = format(day, "yyyy-MM-dd");
-    const point = { recebidas: 0, respondidas: 0 };
-    byDay.set(key, point);
-    chartData.push({ label: format(day, "dd/MM"), ...point });
-  }
-  series.forEach((row) => {
-    const key = format(new Date(row.created_at), "yyyy-MM-dd");
-    const idx = chartData.findIndex(
-      (_, i) => format(subDays(now, 13 - i), "yyyy-MM-dd") === key
-    );
-    if (idx >= 0) {
-      chartData[idx].recebidas += 1;
-      if (row.status === "replied") chartData[idx].respondidas += 1;
-    }
-  });
 
   const recent = (recentRes.data ?? []) as Interaction[];
 

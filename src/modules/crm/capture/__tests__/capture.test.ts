@@ -6,6 +6,7 @@ import { sendTextMessage, sendTypingAction } from "@/lib/meta/graph";
 import type { IgAccount } from "@/types/database";
 
 import { captureMessagingEvent } from "../server/capture-event";
+import { clearCaptureAccessCache } from "../server/record";
 import { observeOutbound } from "../server/observe-outbound";
 
 /**
@@ -77,6 +78,7 @@ beforeEach(() => {
   account = makeAccount({ status: "active" });
   fake.tables.ig_accounts.push(account);
   nextMid = 0;
+  clearCaptureAccessCache();
   mockSendApi();
 });
 
@@ -135,6 +137,39 @@ describe("mensagens do webhook", () => {
     await captureMessagingEvent("outra-conta", inbound({ mid: "m1", text: "oi" }));
     expect(fake.tables.messages).toHaveLength(0);
     expect(fake.tables.conversations).toHaveLength(0);
+  });
+
+  it("dono sem acesso (sem assinatura, cancelado ou bloqueado): nada gravado, sem funil e sem Graph API", async () => {
+    const other = makeAccount({ id: "acc-sem-acesso", user_id: "user-2", ig_user_id: "17841400000000099", status: "active" });
+    fake.tables.ig_accounts.push(other);
+    fake.tables.subscriptions.push({ user_id: "user-2", status: "canceled" });
+
+    await captureMessagingEvent(other.ig_user_id, {
+      sender: { id: LEAD },
+      recipient: { id: other.ig_user_id },
+      timestamp: Date.now(),
+      message: { mid: "m-x", text: "oi" },
+    });
+
+    expect(fake.tables.messages).toHaveLength(0);
+    expect(fake.tables.conversations).toHaveLength(0);
+    expect(fake.tables.leads).toHaveLength(0);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("dono com assinatura ativa continua sendo capturado", async () => {
+    const other = makeAccount({ id: "acc-pago", user_id: "user-3", ig_user_id: "17841400000000098", status: "active" });
+    fake.tables.ig_accounts.push(other);
+    fake.tables.subscriptions.push({ user_id: "user-3", status: "active" });
+
+    await captureMessagingEvent(other.ig_user_id, {
+      sender: { id: LEAD },
+      recipient: { id: other.ig_user_id },
+      timestamp: Date.now(),
+      message: { mid: "m-y", text: "oi" },
+    });
+
+    expect(fake.tables.messages).toHaveLength(1);
   });
 
   it("falha no banco nunca lança", async () => {

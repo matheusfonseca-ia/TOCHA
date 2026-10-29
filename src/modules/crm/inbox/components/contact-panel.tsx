@@ -24,6 +24,7 @@ import type { InboxThread } from "../../shared/types/conversation";
 import { RUN_STATUS_LABEL, leadName } from "../utils/labels";
 import { fullDateTime } from "../utils/time";
 import { LeadAvatar } from "./lead-avatar";
+import { instagramProfileUrl } from "../../shared/utils/safe-url";
 
 /**
  * Ficha do lead: coluna fixa em telas largas (xl), painel sobreposto abaixo
@@ -86,7 +87,7 @@ function PanelBody({ thread }: { thread: InboxThread }) {
         </LeadProfileDialog>
         {c.ig_sender_username && (
           <a
-            href={`https://www.instagram.com/${c.ig_sender_username}/`}
+            href={instagramProfileUrl(c.ig_sender_username) ?? undefined}
             target="_blank"
             rel="noopener noreferrer"
             className="mt-1 inline-flex items-center gap-1 text-[12px] text-muted-foreground hover:text-foreground"

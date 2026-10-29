@@ -43,26 +43,27 @@ export default async function SequenciasPage() {
   const sequences = (sequencesRes.data ?? []) as SequenceWithAccount[];
   const folders = await listFolders();
 
+  // Total e "no fluxo agora" contados no banco por workflow (índice único
+  // começa por sequence_id), sem baixar os runs: o teto de 1000 linhas do
+  // PostgREST cortava os números em silêncio.
   const stats: Record<string, SequenceStats> = {};
-  if (sequences.length > 0) {
-    const { data: runs } = await supabase
+  const runCount = (sequenceId: string, statuses?: string[]) => {
+    let query = supabase
       .from("sequence_runs")
-      .select("sequence_id, status")
-      .in("sequence_id", sequences.map((s) => s.id));
-
-    for (const run of runs ?? []) {
-      const id = run.sequence_id as string;
-      stats[id] ??= { total: 0, inFlow: 0 };
-      stats[id].total++;
-      if (
-        ["running", "waiting_reply", "waiting_postback", "waiting_delay"].includes(
-          run.status as string
-        )
-      ) {
-        stats[id].inFlow++;
-      }
-    }
-  }
+      .select("id", { count: "exact", head: true })
+      .eq("sequence_id", sequenceId);
+    if (statuses) query = query.in("status", statuses);
+    return query.then(({ count }) => count ?? 0);
+  };
+  await Promise.all(
+    sequences.map(async (sequence) => {
+      const [total, inFlow] = await Promise.all([
+        runCount(sequence.id),
+        runCount(sequence.id, ["running", "waiting_reply", "waiting_postback", "waiting_delay"]),
+      ]);
+      if (total > 0) stats[sequence.id] = { total, inFlow };
+    })
+  );
 
   return (
     <SequencesManager

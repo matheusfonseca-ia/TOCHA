@@ -1,6 +1,6 @@
 import type { createAdminClient } from "@/lib/supabase/admin";
 
-import { positionBetween, toNumber } from "../utils/fractional-index";
+import { MIN_GAP, positionBetween, reindexPositions, toNumber } from "../utils/fractional-index";
 import type { Lead, LeadMoveSource, PipelineStage, StageType } from "../types";
 
 /**
@@ -20,6 +20,7 @@ import type { Lead, LeadMoveSource, PipelineStage, StageType } from "../types";
 type AdminClient = ReturnType<typeof createAdminClient>;
 
 const PG_UNIQUE_VIOLATION = "23505";
+const REINDEX_PAGE = 1000;
 
 export interface MoveLeadInput {
   accountId: string;
@@ -74,7 +75,7 @@ export async function currentLeadOf(
   return data;
 }
 
-async function endOfColumnPosition(admin: AdminClient, pipelineId: string, stageId: string): Promise<number> {
+export async function endOfColumnPosition(admin: AdminClient, pipelineId: string, stageId: string): Promise<number> {
   const { data } = await admin
     .from("leads")
     .select("position")
@@ -84,6 +85,51 @@ async function endOfColumnPosition(admin: AdminClient, pipelineId: string, stage
     .limit(1)
     .maybeSingle<{ position: number }>();
   return positionBetween(data ? toNumber(data.position) : null, null);
+}
+
+/**
+ * O board calcula a posição como a média das vizinhas: arrastar sempre para
+ * a mesma fresta divide o intervalo ao meio até o double não distinguir mais
+ * (posições iguais quebram a ordem e o cursor do "Carregar mais"). Quando a
+ * posição gravada colou numa vizinha, reespaça a coluna inteira.
+ */
+export async function reindexColumnIfCrowded(
+  admin: AdminClient,
+  stageId: string,
+  leadId: string,
+  position: number
+): Promise<void> {
+  const neighbor = (op: "lte" | "gte") =>
+    admin
+      .from("leads")
+      .select("position")
+      .eq("stage_id", stageId)
+      .neq("id", leadId)
+      [op]("position", position)
+      .order("position", { ascending: op === "gte" })
+      .limit(1)
+      .maybeSingle<{ position: number }>();
+  const [{ data: before }, { data: after }] = await Promise.all([neighbor("lte"), neighbor("gte")]);
+  const crowded =
+    (before && position - toNumber(before.position) < MIN_GAP) || (after && toNumber(after.position) - position < MIN_GAP);
+  if (!crowded) return;
+
+  // Em páginas: o PostgREST corta cada consulta em 1000 linhas.
+  const column: { id: string; position: number }[] = [];
+  for (let from = 0; ; from += REINDEX_PAGE) {
+    const { data } = await admin
+      .from("leads")
+      .select("id, position")
+      .eq("stage_id", stageId)
+      .order("position", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + REINDEX_PAGE - 1);
+    const page = (data ?? []) as { id: string; position: number }[];
+    column.push(...page);
+    if (page.length < REINDEX_PAGE) break;
+  }
+  const positions = reindexPositions(column.length);
+  await Promise.all(column.map((lead, i) => admin.from("leads").update({ position: positions[i] }).eq("id", lead.id)));
 }
 
 /**
@@ -179,6 +225,7 @@ export async function moveLead(admin: AdminClient, input: MoveLeadInput): Promis
         .eq("id", lead.id)
         .select("*")
         .maybeSingle<Lead>();
+      await reindexColumnIfCrowded(admin, stage.id, lead.id, input.position);
       return { lead: updated ?? lead, changed: false, targetStage: stage };
     }
     return { lead, changed: false, targetStage: stage };
@@ -198,6 +245,7 @@ export async function moveLead(admin: AdminClient, input: MoveLeadInput): Promis
     .select("*")
     .maybeSingle<Lead>();
   if (!updated) throw new Error(`lead não movido: ${error?.message ?? "sem linha"}`);
+  if (input.position != null) await reindexColumnIfCrowded(admin, stage.id, lead.id, input.position);
 
   await admin.from("lead_stage_events").insert({
     lead_id: lead.id,

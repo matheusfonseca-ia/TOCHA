@@ -53,7 +53,7 @@ export function PipelineBoard({
   pipelines: PipelineOption[];
   sequences: { id: string; name: string }[];
 }) {
-  usePipelineRealtime();
+  usePipelineRealtime(board.pipeline.id);
   const [openLeadId, setOpenLeadId] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState<string | null>(null);
   const [pages, setPages] = useState(() => pagesOf(board));
@@ -99,10 +99,25 @@ export function PipelineBoard({
 
   async function handleBringExisting() {
     setEnrolling(true);
-    const res = await bringExistingConversationsAction(board.pipeline.id);
+    // Em lotes: cada chamada cobre uma página de conversas e devolve o cursor da próxima.
+    let enrolled = 0;
+    let cursor: string | null = null;
+    let error: string | undefined;
+    do {
+      const res: Awaited<ReturnType<typeof bringExistingConversationsAction>> = await bringExistingConversationsAction(
+        board.pipeline.id,
+        cursor
+      );
+      if (res.error) {
+        error = res.error;
+        break;
+      }
+      enrolled += res.enrolled ?? 0;
+      cursor = res.nextCursor ?? null;
+    } while (cursor);
     setEnrolling(false);
-    if (res.error) toast.error(res.error);
-    else toast.success(res.enrolled ? `${res.enrolled} conversas trazidas para o funil.` : "Nenhuma conversa nova para trazer.");
+    if (error) toast.error(enrolled ? `${enrolled} conversas trazidas, mas o resto falhou: ${error}` : error);
+    else toast.success(enrolled ? `${enrolled} conversas trazidas para o funil.` : "Nenhuma conversa nova para trazer.");
   }
 
   return (

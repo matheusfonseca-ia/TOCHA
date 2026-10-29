@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { activeUserId } from "@/lib/auth/require-access";
 import { AccountNotActiveError } from "@/lib/meta/token";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -9,6 +10,10 @@ import type { IgAccount } from "@/types/database";
 
 import { backfillLeadProfiles } from "../../lead-profile/server/refresh-profile";
 import { importHistoryBatch } from "../server/import-history";
+
+// Perfis buscados por passo final: o resto fica para os próximos eventos
+// (cada um é 1 chamada à Graph API com o mesmo token que o bot usa).
+const BACKFILL_PER_STEP = 30;
 
 export interface ImportHistoryStepResult {
   error?: string;
@@ -30,6 +35,9 @@ export async function importHistoryStep(
   cursor: string | null
 ): Promise<ImportHistoryStepResult> {
   const empty = { nextCursor: null, done: true, conversationsProcessed: 0, messagesImported: 0 };
+  if (!(await activeUserId())) {
+    return { ...empty, error: "Sua assinatura não está ativa. Acesse Minha assinatura para reativar." };
+  }
 
   const supabase = createClient();
   const { data: owned } = await supabase
@@ -52,7 +60,7 @@ export async function importHistoryStep(
     if (result.done) {
       // Conversas novas (criadas agora pela importação) ainda não têm foto
       // nem perfil: preenche antes de mandar o usuário para o Inbox.
-      await backfillLeadProfiles(admin, accountId, 200);
+      await backfillLeadProfiles(admin, accountId, BACKFILL_PER_STEP);
       revalidatePath("/crm/conversas");
     }
     return {
@@ -62,6 +70,10 @@ export async function importHistoryStep(
       messagesImported: result.messagesImported,
     };
   } catch (err) {
+    // Mensagem crua (Graph API/Postgres) só no log do servidor.
+    if (!(err instanceof AccountNotActiveError)) {
+      console.error("[crm] falha ao importar histórico:", err instanceof Error ? err.message : err);
+    }
     return {
       ...empty,
       done: false,
@@ -69,9 +81,7 @@ export async function importHistoryStep(
       error:
         err instanceof AccountNotActiveError
           ? "Conta desconectada. Reconecte o Instagram para importar o histórico."
-          : err instanceof Error
-            ? err.message
-            : "Falha ao importar histórico.",
+          : "Falha ao importar o histórico. Tente de novo em alguns minutos.",
     };
   }
 }

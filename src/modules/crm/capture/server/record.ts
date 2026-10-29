@@ -1,3 +1,4 @@
+import { hasActiveAccess } from "@/lib/billing/access";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { IgAccount } from "@/types/database";
 
@@ -19,6 +20,31 @@ const PG_UNIQUE_VIOLATION = "23505";
 // Sinal órfão (a mensagem nunca chegou) não fica para sempre na fila.
 const PENDING_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Acesso do dono lembrado por pouco tempo: um lote do webhook traz vários
+// eventos da mesma conta e cada um passaria de novo por access_grants e
+// subscriptions. Bloqueio/cancelamento passa a valer em até 1 minuto.
+const ACCESS_TTL_MS = 60 * 1000;
+const accessCache = new Map<string, { ok: boolean; until: number }>();
+
+async function ownerHasAccess(admin: AdminClient, userId: string): Promise<boolean> {
+  const cached = accessCache.get(userId);
+  if (cached && cached.until > Date.now()) return cached.ok;
+  const ok = await hasActiveAccess(admin, userId);
+  accessCache.set(userId, { ok, until: Date.now() + ACCESS_TTL_MS });
+  return ok;
+}
+
+/** Só para testes: esquece os acessos lembrados. */
+export function clearCaptureAccessCache(): void {
+  accessCache.clear();
+}
+
+/**
+ * Conta ativa **de um dono com acesso** (assinatura em dia, cortesia ou
+ * admin), a mesma regra do bot (`findServedAccount`). Cliente bloqueado,
+ * cancelado ou com cortesia vencida não tem mensagens gravadas, não entra no
+ * funil e não tem o token usado na Graph API.
+ */
 export async function findAccount(admin: AdminClient, igUserId: string): Promise<IgAccount | null> {
   if (!igUserId) return null;
   const { data } = await admin
@@ -27,7 +53,8 @@ export async function findAccount(admin: AdminClient, igUserId: string): Promise
     .eq("ig_user_id", igUserId)
     .eq("status", "active")
     .maybeSingle<IgAccount>();
-  return data ?? null;
+  if (!data) return null;
+  return (await ownerHasAccess(admin, data.user_id)) ? data : null;
 }
 
 export async function findAccountId(admin: AdminClient, igUserId: string): Promise<string | null> {
@@ -59,19 +86,40 @@ export async function leadNeedsProfile(admin: AdminClient, accountId: string, le
  * Conversa da pessoa, criada se ainda não existe. Criada aqui ela nasce sem
  * `last_inbound_at` (janela fechada): quem abre a janela é o webhook de uma
  * mensagem recebida (`touchConversation`), nunca um envio.
+ *
+ * Lê primeiro e só insere se faltar (`ON CONFLICT DO NOTHING`): o upsert com
+ * DO UPDATE regravava a linha a cada mensagem e cada regravação virava um
+ * evento de Realtime (refresh do Inbox de quem está com ele aberto).
  */
 export async function ensureConversation(
   admin: AdminClient,
   accountId: string,
   leadId: string
 ): Promise<string> {
+  const find = () =>
+    admin
+      .from("conversations")
+      .select("id")
+      .eq("account_id", accountId)
+      .eq("ig_sender_id", leadId)
+      .maybeSingle<{ id: string }>();
+
+  const existing = await find();
+  if (existing.data) return existing.data.id;
+
   const { data, error } = await admin
     .from("conversations")
-    .upsert({ account_id: accountId, ig_sender_id: leadId }, { onConflict: "account_id,ig_sender_id" })
+    .upsert(
+      { account_id: accountId, ig_sender_id: leadId },
+      { onConflict: "account_id,ig_sender_id", ignoreDuplicates: true }
+    )
     .select("id")
-    .single<{ id: string }>();
-  if (error || !data) throw new Error(`conversa não criada: ${error?.message ?? "sem linha"}`);
-  return data.id;
+    .maybeSingle<{ id: string }>();
+  if (data) return data.id;
+  // Corrida: outra entrega criou a conversa entre a leitura e o insert.
+  const raced = await find();
+  if (raced.data) return raced.data.id;
+  throw new Error(`conversa não criada: ${error?.message ?? "sem linha"}`);
 }
 
 function toRow(
@@ -102,28 +150,54 @@ function toRow(
  * Mensagem vinda do webhook (do lead ou eco). Grava uma vez só: reentrega do
  * webhook, ou eco de algo que o Falow já gravou no envio, bate no unique
  * (account_id, mid) e é ignorada, preservando a origem gravada no envio.
+ * Devolve o id da conversa, para quem chama não resolver de novo.
  */
 export async function recordIncoming(
   admin: AdminClient,
   accountId: string,
   draft: MessageDraft,
   source: MessageSource
-): Promise<void> {
+): Promise<string> {
   const conversationId = await ensureConversation(admin, accountId, draft.leadId);
   const { error } = await admin
     .from("messages")
     .insert(toRow(accountId, conversationId, draft, source, null));
   if (error) {
-    if (error.code === PG_UNIQUE_VIOLATION) return;
+    if (error.code === PG_UNIQUE_VIOLATION) return conversationId;
     throw new Error(`mensagem não gravada: ${error.message}`);
   }
   if (draft.mid) await applyPendingSignals(admin, accountId, draft.mid);
 
   // Mensagem nova do lead reabre a conversa (item 10, Fase 7): quem estava
-  // "Concluída" volta para a lista de abertas sozinho.
-  if (draft.direction === "inbound") {
-    await admin.from("conversations").update({ status: "open" }).eq("id", conversationId);
+  // "Concluída" volta para a lista de abertas sozinho. Mensagem antiga
+  // trazida pela importação de histórico não é "nova": não reabre.
+  if (draft.direction === "inbound" && source !== "import") {
+    await admin.from("conversations").update({ status: "open" }).eq("id", conversationId).neq("status", "open");
   }
+  return conversationId;
+}
+
+/**
+ * Mensagens antigas de uma conversa (importação de histórico): a conversa é
+ * resolvida uma vez e as mensagens vão num insert só, ignorando as que já
+ * existem pelo unique (account_id, mid). Não reabre a conversa nem aplica
+ * sinais pendentes (sinal só existe para mensagem que chegou pelo webhook).
+ */
+export async function recordImportedMessages(
+  admin: AdminClient,
+  accountId: string,
+  leadId: string,
+  drafts: readonly MessageDraft[]
+): Promise<void> {
+  if (drafts.length === 0) return;
+  const conversationId = await ensureConversation(admin, accountId, leadId);
+  const { error } = await admin
+    .from("messages")
+    .upsert(
+      drafts.map((draft) => toRow(accountId, conversationId, draft, "import", null)),
+      { onConflict: "account_id,mid", ignoreDuplicates: true }
+    );
+  if (error) throw new Error(`histórico não gravado: ${error.message}`);
 }
 
 /**

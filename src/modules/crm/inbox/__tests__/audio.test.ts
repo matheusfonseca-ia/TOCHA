@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyUpload } from "../utils/attachment-types";
+import { classifyUpload, contentMatchesType, isOwnUploadUrl } from "../utils/attachment-types";
 import { VOICE_SAMPLE_RATE, concatChunks, downsample, encodeWav } from "../utils/wav";
 
 const MB = 1024 * 1024;
@@ -63,5 +63,39 @@ describe("gravação em WAV", () => {
     expect(view.getInt16(44 + 2, true)).toBe(32767); // 1
     expect(view.getInt16(44 + 4, true)).toBe(-32768); // -1
     expect(view.getInt16(44 + 6, true)).toBe(32767); // 2 limitado a 1
+  });
+});
+
+describe("contentMatchesType (magic bytes do upload)", () => {
+  const bytes = (...b: (number | string)[]) =>
+    new Uint8Array(b.flatMap((x) => (typeof x === "string" ? Array.from(x, (c) => c.charCodeAt(0)) : [x])));
+
+  it("aceita os formatos reais", () => {
+    expect(contentMatchesType("image/png", bytes(0x89, "PNG", 0x0d, 0x0a, 0x1a, 0x0a))).toBe(true);
+    expect(contentMatchesType("image/jpeg", bytes(0xff, 0xd8, 0xff, 0xe0))).toBe(true);
+    expect(contentMatchesType("application/pdf", bytes("%PDF-1.7"))).toBe(true);
+    expect(contentMatchesType("audio/wav", bytes("RIFF", 0, 0, 0, 0, "WAVEfmt "))).toBe(true);
+    expect(contentMatchesType("audio/mp4", bytes(0, 0, 0, 0x20, "ftypM4A "))).toBe(true);
+  });
+
+  it("recusa conteúdo que não bate com o tipo declarado", () => {
+    expect(contentMatchesType("image/png", bytes("<html>"))).toBe(false);
+    expect(contentMatchesType("application/pdf", bytes(0xff, 0xd8, 0xff))).toBe(false);
+    expect(contentMatchesType("audio/mp4", bytes("RIFF", 0, 0, 0, 0, "WAVE"))).toBe(false);
+    expect(contentMatchesType("text/html", bytes("<html>"))).toBe(false);
+  });
+});
+
+describe("isOwnUploadUrl", () => {
+  const base = "https://proj.supabase.co";
+  const ok = `${base}/storage/v1/object/public/crm-uploads/acc-1/0b6f1c1e-1d2f-4a3b-9c8d-123456789abc-a.pdf`;
+
+  it("só aceita o bucket crm-uploads na pasta da conta", () => {
+    expect(isOwnUploadUrl(ok, base, "acc-1")).toBe(true);
+    expect(isOwnUploadUrl(ok, base, "acc-2")).toBe(false);
+    expect(isOwnUploadUrl(ok.replace(base, "https://evil.example"), base, "acc-1")).toBe(false);
+    expect(isOwnUploadUrl(`${ok}?x=1`, base, "acc-1")).toBe(false);
+    expect(isOwnUploadUrl("javascript:alert(1)", base, "acc-1")).toBe(false);
+    expect(isOwnUploadUrl(`${base}/storage/v1/object/public/crm-uploads/acc-1/sub/x.pdf`, base, "acc-1")).toBe(false);
   });
 });

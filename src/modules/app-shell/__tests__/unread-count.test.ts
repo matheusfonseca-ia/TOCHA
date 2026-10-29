@@ -23,6 +23,8 @@ describe("unreadLabel", () => {
   it("usa singular e plural certos", () => {
     expect(unreadLabel(1)).toBe("1 não lida");
     expect(unreadLabel(3)).toBe("3 não lidas");
-    expect(unreadLabel(150)).toBe("150 não lidas");
+    expect(unreadLabel(99)).toBe("99 não lidas");
+    // acima do teto o servidor só garante o piso
+    expect(unreadLabel(150)).toBe("mais de 99 não lidas");
   });
 });

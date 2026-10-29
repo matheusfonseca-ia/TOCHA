@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { createFakeAdmin, type FakeSupabase } from "@/lib/sequences/__tests__/fake-supabase";
 import { makeAccount, makeOpenConversation, row } from "@/lib/sequences/__tests__/fixtures";
@@ -6,7 +6,7 @@ import type { createAdminClient } from "@/lib/supabase/admin";
 import type { IgAccount } from "@/types/database";
 
 import { ensureDefaultPipeline, firstOpenStage } from "../ensure-default-pipeline";
-import { enrollExistingConversations, enrollLeadFromCapture } from "../enroll-lead";
+import { ENROLL_PAGE, enrollExistingConversations, enrollLeadFromCapture } from "../enroll-lead";
 import { closingFields, moveLead } from "../move-lead";
 
 /**
@@ -241,11 +241,30 @@ describe("enrollExistingConversations: botão 'Trazer conversas existentes'", ()
       igSenderId: "lead-9",
     });
 
-    const enrolled = await enrollExistingConversations(admin, account.id);
+    const result = await enrollExistingConversations(admin, account.id);
 
-    expect(enrolled).toBe(1);
+    expect(result).toEqual({ enrolled: 1, nextCursor: null });
     expect(fake.tables.leads).toHaveLength(2);
     expect(fake.tables.leads.some((l) => l.conversation_id === pending.id)).toBe(true);
+    // Lead criado em lote também ganha o histórico de entrada.
+    const created = fake.tables.leads.find((l) => l.conversation_id === pending.id)!;
+    expect(fake.tables.lead_stage_events.some((e) => e.lead_id === created.id && e.from_stage_id === null)).toBe(true);
+  });
+
+  it("pagina pelas conversas: devolve o cursor quando a página veio cheia", async () => {
+    for (let i = 0; i < ENROLL_PAGE + 3; i++) {
+      fake.tables.conversations.push(makeOpenConversation(account.id, `lead-p${String(i).padStart(4, "0")}`));
+    }
+
+    const first = await enrollExistingConversations(admin, account.id);
+    expect(first.enrolled).toBe(ENROLL_PAGE);
+    expect(first.nextCursor).not.toBeNull();
+
+    const second = await enrollExistingConversations(admin, account.id, first.nextCursor);
+    expect(second).toEqual({ enrolled: 3, nextCursor: null });
+    expect(fake.tables.leads).toHaveLength(ENROLL_PAGE + 3);
+    // Posições distintas e crescentes no fim da coluna.
+    expect(new Set(fake.tables.leads.map((l) => l.position)).size).toBe(ENROLL_PAGE + 3);
   });
 });
 
@@ -282,7 +301,7 @@ describe("lead ganho/perdido continua sendo o lead da conversa", () => {
 
   it("'Trazer conversas existentes' pula conversa com lead fechado", async () => {
     await wonLead("lead-21");
-    expect(await enrollExistingConversations(admin, account.id)).toBe(0);
+    expect((await enrollExistingConversations(admin, account.id)).enrolled).toBe(0);
     expect(fake.tables.leads).toHaveLength(1);
   });
 
@@ -312,6 +331,54 @@ describe("lead ganho/perdido continua sendo o lead da conversa", () => {
     await expect(
       moveLead(admin, { accountId: account.id, toStageId: foreign.id, source: "manual", leadId })
     ).rejects.toThrow(/outro funil/);
+  });
+});
+
+describe("moveLead: reindexa a coluna quando as posições colam", () => {
+  it("posição colada na vizinha reespaça a coluna inteira, mantendo a ordem", async () => {
+    // O fake não tem `range` (com colunas pequenas só a 1ª página é lida) e
+    // guarda só o último `order`; aqui vale o 1º (posição), como no Postgres.
+    type Builder = { limit: (n: number) => Builder; order: (c: string, o?: object) => Builder; __ordered?: boolean };
+    const proto = Object.getPrototypeOf(fake.from("leads")) as Builder & { range?: unknown };
+    const originalOrder = proto.order;
+    proto.range = function (this: Builder, from: number, to: number) {
+      return this.limit(to - from + 1);
+    };
+    proto.order = function (this: Builder, column: string, opts?: object) {
+      if (this.__ordered) return this;
+      this.__ordered = true;
+      return originalOrder.call(this, column, opts);
+    };
+    onTestFinished(() => {
+      proto.order = originalOrder;
+      delete proto.range;
+    });
+
+    const pipeline = await ensureDefaultPipeline(admin, account.id);
+    const stage = (await firstOpenStage(admin, pipeline.id))!;
+    const ids: string[] = [];
+    for (const sender of ["lead-a", "lead-b", "lead-c"]) {
+      const conversation = makeOpenConversation(account.id, sender);
+      fake.tables.conversations.push(conversation);
+      const created = await moveLead(admin, {
+        accountId: account.id,
+        toStageId: stage.id,
+        source: "system",
+        conversationId: conversation.id,
+        igSenderId: sender,
+      });
+      ids.push(created.lead.id);
+    }
+    const a = fake.tables.leads.find((l) => l.id === ids[0])!;
+    const b = fake.tables.leads.find((l) => l.id === ids[1])!;
+    b.position = a.position + 1e-9;
+
+    // Arrasta o C para entre A e B: a média fica a menos de MIN_GAP delas.
+    await moveLead(admin, { accountId: account.id, toStageId: stage.id, source: "manual", leadId: ids[2], position: a.position + 5e-10 });
+
+    const ordered = [...fake.tables.leads].sort((x, y) => x.position - y.position);
+    expect(ordered.map((l) => l.id)).toEqual([ids[0], ids[2], ids[1]]);
+    expect(ordered.map((l) => l.position)).toEqual([65536, 131072, 196608]);
   });
 });
 

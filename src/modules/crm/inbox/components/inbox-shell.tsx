@@ -40,9 +40,12 @@ export function InboxShell({
   thread: InboxThread | null;
   tagOptions: CrmTag[];
 }) {
-  useInboxRealtime();
   const [panelOpen, setPanelOpen] = useState(false);
   const selectedId = thread?.conversation.id ?? null;
+  useInboxRealtime({
+    accountIds: filters.accountId ? [filters.accountId] : accounts.map((a) => a.id),
+    conversationId: selectedId,
+  });
   const unread = thread?.conversation.unread_count ?? 0;
 
   useEffect(() => setPanelOpen(false), [selectedId]);

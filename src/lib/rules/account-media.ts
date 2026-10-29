@@ -9,6 +9,23 @@ export interface AccountWithMedia {
   media: MediaRef[];
 }
 
+// Mídia lembrada por alguns minutos (por isolate do Worker): abrir e fechar
+// o builder de comentário não gasta de novo a cota da Graph API do token,
+// a mesma que o bot usa para responder. A chave inclui o fim do token
+// cifrado: reconectar a conta (token novo) nunca reaproveita a lista antiga.
+const MEDIA_TTL_MS = 5 * 60 * 1000;
+const MEDIA_CACHE_MAX = 200;
+const mediaCache = new Map<string, { media: MediaRef[]; until: number }>();
+
+function cacheKey(account: { id: string; access_token_enc: string }): string {
+  return `${account.id}:${account.access_token_enc.slice(-24)}`;
+}
+
+/** Só para testes. */
+export function clearRecentMediaCache(): void {
+  mediaCache.clear();
+}
+
 /**
  * Mídia recente de cada conta, para o seletor de publicação/Reel das
  * automações de comentário. Roda só no servidor: o token nunca vai ao
@@ -38,6 +55,16 @@ export async function withRecentMedia(
           media,
         };
       }
+      const key = cacheKey(account);
+      const cached = mediaCache.get(key);
+      if (cached && cached.until > Date.now()) {
+        return {
+          id: account.id,
+          ig_username: account.ig_username,
+          profile_picture_url: account.profile_picture_url,
+          media: cached.media,
+        };
+      }
       try {
         const items = await listRecentMedia(decryptToken(account.access_token_enc));
         media = items.map((item) => ({
@@ -48,6 +75,9 @@ export async function withRecentMedia(
           permalink: item.permalink,
           caption: item.caption,
         }));
+        // Só o sucesso fica guardado: falha tenta de novo no próximo render.
+        if (mediaCache.size >= MEDIA_CACHE_MAX) mediaCache.delete(mediaCache.keys().next().value as string);
+        mediaCache.set(key, { media, until: Date.now() + MEDIA_TTL_MS });
       } catch (err) {
         console.warn(
           `[rules] falha ao buscar mídia de @${account.ig_username}:`,
