@@ -8,7 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { RulesManager, type RuleWithAccount } from "@/modules/automations";
 
 export default async function RulesPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const [accountsRes, rulesRes] = await Promise.all([
     supabase
@@ -41,22 +41,22 @@ export default async function RulesPage() {
     );
   }
 
+  // "Executada N vezes": uma contagem no banco por regra (índice em
+  // matched_rule_id), em vez de baixar as interactions e somar aqui, o que
+  // o teto de 1000 linhas do PostgREST cortava em silêncio.
   const accountIds = accounts.map((a) => a.id);
-  const executionsRes =
-    rules.length > 0
-      ? await supabase
-          .from("interactions")
-          .select("matched_rule_id")
-          .in("account_id", accountIds)
-          .eq("status", "replied")
-          .not("matched_rule_id", "is", null)
-      : { data: [] };
-
-  const executionCounts = new Map<string, number>();
-  for (const row of executionsRes.data ?? []) {
-    const ruleId = row.matched_rule_id as string;
-    executionCounts.set(ruleId, (executionCounts.get(ruleId) ?? 0) + 1);
-  }
+  const counts = await Promise.all(
+    rules.map(async (rule) => {
+      const { count } = await supabase
+        .from("interactions")
+        .select("id", { count: "exact", head: true })
+        .in("account_id", accountIds)
+        .eq("matched_rule_id", rule.id)
+        .eq("status", "replied");
+      return [rule.id, count ?? 0] as const;
+    })
+  );
+  const executionCounts = new Map(counts.filter(([, count]) => count > 0));
 
   return (
     <RulesManager

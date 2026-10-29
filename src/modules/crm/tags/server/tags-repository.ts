@@ -15,10 +15,16 @@ import type { CrmTag, TagColor } from "../types";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
+/**
+ * Erro do banco vira texto fixo para a tela; o texto cru (nomes de tabela,
+ * constraint, policy) e a dica da migration ficam só no log do servidor.
+ */
 function missingTableHint(message: string): string {
-  return /crm_tags/.test(message) && /does not exist|schema cache|relation/i.test(message)
-    ? `${message} (aplique a migration 0012_crm_tags.sql)`
-    : message;
+  const hint = /crm_tags/.test(message) && /does not exist|schema cache|relation/i.test(message)
+    ? " (aplique a migration 0012_crm_tags.sql)"
+    : "";
+  console.error(`[crm] erro no catálogo de tags: ${message}${hint}`);
+  return "Não foi possível salvar as tags. Tente de novo.";
 }
 
 export async function listTagCatalog(admin: AdminClient, accountId: string): Promise<CrmTag[]> {

@@ -37,6 +37,7 @@ import type { MessageAttachment, MessageRow } from "../../shared/types/message";
 import { hideMessageForMe } from "../services/message-actions";
 import { SOURCE_LABEL, kindLabel, messagePreview } from "../utils/labels";
 import { fullDateTime, messageTime } from "../utils/time";
+import { safeHttpsUrl } from "../../shared/utils/safe-url";
 
 export interface QuotedMessage {
   text: string;
@@ -309,7 +310,8 @@ function Media({
   compact?: boolean;
 }) {
   const [failed, setFailed] = useState(false);
-  const url = attachment?.url;
+  // Só https: URL com outro esquema (javascript:, data:) nunca vira src.
+  const url = safeHttpsUrl(attachment?.url);
 
   if (!url || failed) {
     return (
@@ -348,7 +350,9 @@ function Media({
 }
 
 function LinkOut({ attachment, label }: { attachment: MessageAttachment | undefined; label: string }) {
-  if (!attachment?.url) {
+  // Só https: `href="javascript:..."` rodaria script com a sessão do atendente.
+  const url = safeHttpsUrl(attachment?.url);
+  if (!url) {
     return (
       <p className="flex items-center gap-1.5 text-muted-foreground">
         <FileText className="h-3.5 w-3.5 shrink-0" />
@@ -358,7 +362,7 @@ function LinkOut({ attachment, label }: { attachment: MessageAttachment | undefi
   }
   return (
     <a
-      href={attachment.url}
+      href={url}
       target="_blank"
       rel="noopener noreferrer"
       className="flex items-center gap-1.5 font-medium underline-offset-2 hover:underline"

@@ -41,12 +41,25 @@ async function currentGrant(admin: QueryClient, userId: string): Promise<{ grant
   return { grant: (data as AccessGrant | null) ?? null, error: error ? error.message : null };
 }
 
-/** Volta access_grants do usuário ao estado anterior (linha antiga ou nenhuma). */
-async function restore(admin: QueryClient, userId: string, previous: AccessGrant | null): Promise<boolean> {
+/**
+ * Volta access_grants do usuário ao estado anterior, mas só se a linha ainda
+ * for a que esta ação escreveu (`written` = kind gravado; nulo = a ação apagou
+ * a linha). Assim a reversão não desfaz o que outro admin gravou no meio.
+ */
+async function restore(
+  admin: QueryClient,
+  userId: string,
+  previous: AccessGrant | null,
+  written: AccessGrant["kind"] | null
+): Promise<boolean> {
   try {
-    const { error } = previous
-      ? await admin.from("access_grants").upsert(previous, { onConflict: "user_id" })
-      : await admin.from("access_grants").delete().eq("user_id", userId);
+    const { error } =
+      written === null
+        ? // A ação apagou: recoloca a linha antiga (se alguém gravou outra no meio, o insert falha e nada é sobrescrito).
+          await admin.from("access_grants").insert(previous)
+        : previous
+          ? await admin.from("access_grants").update(previous).eq("user_id", userId).eq("kind", written)
+          : await admin.from("access_grants").delete().eq("user_id", userId).eq("kind", written);
     if (!error) return true;
     console.error(`[admin] falha ao reverter access_grants de ${userId}:`, error.message);
   } catch (err) {
@@ -55,11 +68,16 @@ async function restore(admin: QueryClient, userId: string, previous: AccessGrant
   return false;
 }
 
+export const CONCURRENT_CHANGE_ERROR = "Outro admin alterou este cliente agora há pouco. Recarregue a página e tente de novo.";
+
+type ChangeResult = { error: { message: string; code?: string } | null; conflict?: boolean };
+
 async function writeWithAudit(
   admin: QueryClient,
   targetUserId: string,
-  change: () => Promise<{ error: { message: string } | null }>,
+  change: (previous: AccessGrant | null) => Promise<ChangeResult>,
   audit: { adminId: string; action: AdminAuditAction; details?: Record<string, unknown> },
+  written: AccessGrant["kind"] | null,
   guard?: (previous: AccessGrant | null) => string | null
 ): Promise<GrantResult> {
   if (isAdmin(targetUserId)) return { ok: false, error: ADMIN_TARGET_ERROR };
@@ -69,12 +87,13 @@ async function writeWithAudit(
   const guardError = guard?.(previous);
   if (guardError) return { ok: false, error: guardError };
 
-  const { error } = await change();
+  const { error, conflict } = await change(previous);
+  if (conflict) return { ok: false, error: CONCURRENT_CHANGE_ERROR };
   if (error) return { ok: false, error: "Não foi possível salvar. Tente de novo." };
 
   const audited = await recordAudit(admin, { ...audit, targetUserId });
   if (!audited) {
-    const restored = await restore(admin, targetUserId, previous);
+    const restored = await restore(admin, targetUserId, previous, written);
     if (!restored) return { ok: false, error: "O registro da ação e a reversão falharam. A alteração pode continuar aplicada; confira o cliente antes de tentar novamente." };
     return { ok: false, error: "Não foi possível registrar a ação; nada foi alterado." };
   }
@@ -98,21 +117,34 @@ export async function grantCourtesy(
   if (reasonError) return { ok: false, error: reasonError };
   if (isAdmin(input.targetUserId)) return { ok: false, error: ADMIN_TARGET_ERROR };
 
+  const row = {
+    user_id: input.targetUserId,
+    kind: "courtesy" as const,
+    expires_at: expiresAtIso,
+    reason: input.reason.trim(),
+    granted_by: input.adminId,
+  };
   return writeWithAudit(
     admin,
     input.targetUserId,
-    () =>
-      admin.from("access_grants").upsert(
-        {
-          user_id: input.targetUserId,
-          kind: "courtesy",
-          expires_at: expiresAtIso,
-          reason: input.reason.trim(),
-          granted_by: input.adminId,
-        },
-        { onConflict: "user_id" }
-      ),
+    // Escrita condicional ao estado lido: sem linha → insert (a PK em user_id
+    // recusa se outro admin gravou no meio); com cortesia → update só se a
+    // linha ainda for cortesia. Um bloqueio aplicado no meio nunca é sobrescrito.
+    async (previous) => {
+      if (!previous) {
+        const { error } = await admin.from("access_grants").insert(row);
+        return { error, conflict: error?.code === "23505" };
+      }
+      const { data, error } = await admin
+        .from("access_grants")
+        .update(row)
+        .eq("user_id", input.targetUserId)
+        .eq("kind", "courtesy")
+        .select("user_id");
+      return { error, conflict: !error && !(data as unknown[] | null)?.length };
+    },
     { adminId: input.adminId, action: "courtesy_grant", details: { expires_at: expiresAtIso, reason: input.reason.trim() } },
+    "courtesy",
     (previous) => (previous?.kind === "block" ? "Cliente bloqueado: desbloqueie antes de dar cortesia." : null)
   );
 }
@@ -125,7 +157,8 @@ export async function revokeCourtesy(admin: QueryClient, input: { adminId: strin
     admin,
     input.targetUserId,
     () => admin.from("access_grants").delete().eq("user_id", input.targetUserId).eq("kind", "courtesy"),
-    { adminId: input.adminId, action: "courtesy_revoke" }
+    { adminId: input.adminId, action: "courtesy_revoke" },
+    null
   );
 }
 
@@ -141,7 +174,8 @@ export async function blockUser(admin: QueryClient, input: { adminId: string; ta
         { user_id: input.targetUserId, kind: "block", expires_at: null, reason: input.reason.trim(), granted_by: input.adminId },
         { onConflict: "user_id" }
       ),
-    { adminId: input.adminId, action: "block", details: { reason: input.reason.trim() } }
+    { adminId: input.adminId, action: "block", details: { reason: input.reason.trim() } },
+    "block"
   );
 }
 
@@ -153,6 +187,7 @@ export async function unblockUser(admin: QueryClient, input: { adminId: string; 
     admin,
     input.targetUserId,
     () => admin.from("access_grants").delete().eq("user_id", input.targetUserId).eq("kind", "block"),
-    { adminId: input.adminId, action: "unblock" }
+    { adminId: input.adminId, action: "unblock" },
+    null
   );
 }

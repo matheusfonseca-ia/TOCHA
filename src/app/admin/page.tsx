@@ -1,7 +1,7 @@
 import { PageHeader } from "@/components/layout/page-header";
 import { Card } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { requireAdmin } from "@/lib/admin/require-admin";
+import { requireAdminPage } from "@/lib/admin/require-admin";
 import { formatPurgeDate } from "@/lib/billing/format";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { AdminAuditAction, AdminAuditEntry } from "@/types/database";
@@ -35,14 +35,14 @@ function describeDetails(details: Record<string, unknown>): string {
   if (details.mode === "invite") parts.push("convite");
   if (details.mode === "recovery") parts.push("recuperação de senha");
   if (typeof details.email === "string") parts.push(details.email);
-  if (details.status === "requested") parts.push("solicitação registrada; conclusão pendente");
+  if (details.status === "requested") parts.push("solicitação registrada");
   if (details.invited === true) parts.push("conta nova");
   if (details.invited === false) parts.push("conta existente");
   return parts.join(" · ") || "-";
 }
 
 export default async function AdminAuditPage() {
-  await requireAdmin();
+  await requireAdminPage();
   const admin = createAdminClient();
 
   const { data, error } = await admin
@@ -69,7 +69,12 @@ export default async function AdminAuditPage() {
     return emails.get(id)!;
   };
   const rows = await Promise.all(
-    entries.map(async (e) => ({ ...e, adminEmail: await emailOf(e.admin_id), targetEmail: await emailOf(e.target_user_id) }))
+    entries.map(async (e) => ({
+      ...e,
+      adminEmail: await emailOf(e.admin_id),
+      // Convite já grava o e-mail: dispensa uma ida à Admin API do Auth.
+      targetEmail: typeof e.details?.email === "string" ? e.details.email : await emailOf(e.target_user_id),
+    }))
   );
 
   return (

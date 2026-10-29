@@ -11,8 +11,9 @@ import type { Rule } from "@/types/database";
  * Editar uma automação na mesma tela da criação. A conta fica fixa (trocar
  * de conta invalidaria as publicações escolhidas), então só ela é carregada.
  */
-export default async function EditarAutomacaoPage({ params }: { params: { id: string } }) {
-  const supabase = createClient();
+export default async function EditarAutomacaoPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const supabase = await createClient();
 
   // RLS: só encontra a automação se ela for do usuário logado.
   const { data: rule } = await supabase

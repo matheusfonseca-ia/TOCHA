@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { purgeExpiredUsers } from "@/lib/billing/purge";
+import { secretEquals } from "@/lib/crypto";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export const dynamic = "force-dynamic";
@@ -10,8 +11,12 @@ const BUCKET = "crm-uploads";
 /** Chamado 1x/dia pelo `scheduled()` do Worker (worker.ts). Autenticação só por header (sem segredo na URL). */
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET;
-  if (!secret) return NextResponse.json({ error: "CRON_SECRET não configurado" }, { status: 503 });
-  if (request.headers.get("authorization") !== `Bearer ${secret}`) {
+  // Sem segredo configurado responde igual a segredo errado (não revela a configuração).
+  if (!secret) {
+    console.error("[cron] CRON_SECRET não configurado: /api/cron/purge recusado");
+    return new NextResponse("Forbidden", { status: 403 });
+  }
+  if (!secretEquals(request.headers.get("authorization"), `Bearer ${secret}`)) {
     return new NextResponse("Forbidden", { status: 403 });
   }
 
@@ -46,5 +51,16 @@ export async function GET(request: NextRequest) {
     },
   });
 
-  return NextResponse.json(result);
+  // Limpa os registros de dedupe antigos (processed_events, stripe_events).
+  // Falha aqui não invalida o purge: só registra e segue.
+  let pruned: unknown = null;
+  try {
+    const { data, error } = await admin.rpc("falow_prune_old_events", { p_days: 14 });
+    if (error) console.error("[cron] falha ao limpar eventos antigos:", error.message);
+    else pruned = data;
+  } catch (err) {
+    console.error("[cron] falha ao limpar eventos antigos:", err instanceof Error ? err.message : err);
+  }
+
+  return NextResponse.json({ ...result, pruned });
 }

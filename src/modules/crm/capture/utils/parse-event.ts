@@ -4,6 +4,7 @@ import type {
   MessageKind,
   MessageSignal,
 } from "../../shared/types/message";
+import { safeHttpsUrl } from "../../shared/utils/safe-url";
 
 /**
  * Traduz um evento `messaging[]` do webhook do Instagram no que o CRM grava.
@@ -123,7 +124,8 @@ export function parseMessagingEvent(
 
   const attachments: MessageAttachment[] = (message.attachments ?? []).map((a) => ({
     type: a.type ?? "unknown",
-    url: a.payload?.url ?? null,
+    // Só https é gravado: a URL vira href/src no Inbox.
+    url: safeHttpsUrl(a.payload?.url),
   }));
   const story = message.reply_to?.story;
   const text = message.text ?? null;
@@ -136,7 +138,7 @@ export function parseMessagingEvent(
   else return null; // ex.: abertura por link ig.me sem mensagem
 
   const meta: Record<string, unknown> = {};
-  if (story) meta.story = { id: story.id ?? null, url: story.url ?? null };
+  if (story) meta.story = { id: story.id ?? null, url: safeHttpsUrl(story.url) };
   if (message.quick_reply?.payload) meta.quickReplyPayload = message.quick_reply.payload;
 
   return {

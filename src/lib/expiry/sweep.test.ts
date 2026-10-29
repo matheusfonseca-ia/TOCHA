@@ -143,8 +143,8 @@ describe("matching ignora vencidas antes do sweep", () => {
 
     expect(sendRuleReplyMock).not.toHaveBeenCalled();
     expect(fake.tables.interactions[0].status).toBe("no_match");
-    // O tick ao fim do webhook aplicou o sweep.
-    expect(fake.tables.rules[0].is_active).toBe(false);
+    // O sweep fica só no cron: o webhook ignora a vencida sem escrever nela.
+    expect(fake.tables.rules[0].is_active).toBe(true);
   });
 
   it("DM: rule com expiração futura responde normalmente", async () => {
@@ -308,8 +308,8 @@ describe("workflow vencido no meio do fluxo (antes do sweep)", () => {
     await processWebhookPayload(dmPayload(account.ig_user_id, "qualquer coisa"));
 
     expect(sendTextMessageMock).not.toHaveBeenCalled();
-    // O sweep do fim do webhook pausou o workflow.
-    expect(fake.tables.sequences[0].is_active).toBe(false);
+    // O sweep fica só no cron (a cada minuto): o webhook não pausa nada.
+    expect(fake.tables.sequences[0].is_active).toBe(true);
   });
 
   it("toque em botão de um workflow vencido encerra o run sem enviar", async () => {

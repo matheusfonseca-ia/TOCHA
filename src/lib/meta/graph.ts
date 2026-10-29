@@ -15,10 +15,87 @@ export class GraphApiError extends Error {
   constructor(
     message: string,
     public readonly code?: number,
-    public readonly subcode?: number
+    public readonly subcode?: number,
+    /** Status HTTP da resposta (ausente quando o erro nem chegou a ter resposta). */
+    public readonly status?: number
   ) {
     super(message);
     this.name = "GraphApiError";
+  }
+}
+
+/** A requisição nem teve resposta (rede caiu ou estourou o timeout). */
+export class GraphNetworkError extends GraphApiError {
+  constructor(
+    message: string,
+    public readonly timedOut: boolean
+  ) {
+    super(message);
+    this.name = "GraphNetworkError";
+  }
+}
+
+/** fetch que rejeitou (rede/timeout) vira GraphNetworkError; o resto passa intacto. */
+function asNetworkError(err: unknown): unknown {
+  if (!(err instanceof Error)) return err;
+  const timedOut = err.name === "TimeoutError" || err.name === "AbortError";
+  if (timedOut || err instanceof TypeError) {
+    return new GraphNetworkError(
+      timedOut ? "Graph API não respondeu a tempo" : `Falha de rede na Graph API: ${err.message}`,
+      timedOut
+    );
+  }
+  return err;
+}
+
+// Códigos da Meta para falha temporária: 1/2 (erro desconhecido/serviço
+// indisponível), 4/17/32/613 (limite de chamadas), 341 (limite temporário).
+const TRANSIENT_GRAPH_CODES: ReadonlySet<number> = new Set([1, 2, 4, 17, 32, 341, 613]);
+const REQUEST_TIMEOUT_MS = 15_000;
+// Até 2 novas tentativas, com espera curta: o envio roda dentro do orçamento
+// de tempo da invocação, então só vale repetir falhas rápidas.
+const RETRY_BACKOFF_MS = [500, 1_500] as const;
+// Teto de tempo (desde a 1ª tentativa) para ainda repetir.
+const RETRY_WINDOW_MS = 6_000;
+
+/**
+ * Falha que pode passar sozinha (limite de taxa, 5xx, rede, timeout). Erros
+ * de validação (4xx com código da Meta como 100, 190, 551) são definitivos e
+ * nunca são repetidos.
+ */
+export function isTransientGraphError(err: unknown): boolean {
+  if (err instanceof GraphNetworkError) return true;
+  if (err instanceof GraphApiError) {
+    if (err.code !== undefined && TRANSIENT_GRAPH_CODES.has(err.code)) return true;
+    if (err.status === 429 || (err.status !== undefined && err.status >= 500)) return true;
+    return false;
+  }
+  return false;
+}
+
+/**
+ * Executa a chamada repetindo falhas temporárias com backoff curto. POST que
+ * estourou o timeout não é repetido: a Meta pode ter recebido a mensagem e a
+ * pessoa a receberia em dobro (quem chama decide, ex.: o runtime reagenda).
+ */
+async function withGraphRetry<T>(
+  method: "GET" | "POST",
+  call: () => Promise<T>
+): Promise<T> {
+  const startedAt = Date.now();
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await call();
+    } catch (err) {
+      const backoff = RETRY_BACKOFF_MS[attempt];
+      const retryable =
+        backoff !== undefined &&
+        isTransientGraphError(err) &&
+        !(method === "POST" && err instanceof GraphNetworkError && err.timedOut) &&
+        Date.now() - startedAt + backoff < RETRY_WINDOW_MS;
+      if (!retryable) throw err;
+      await new Promise((resolve) => setTimeout(resolve, backoff + Math.floor(Math.random() * 250)));
+    }
   }
 }
 
@@ -33,7 +110,8 @@ async function parseGraphResponse(
     throw new GraphApiError(
       json.error?.message ?? `Graph API respondeu ${res.status}`,
       json.error?.code,
-      json.error?.error_subcode
+      json.error?.error_subcode,
+      res.status
     );
   }
   return json;
@@ -44,16 +122,20 @@ async function graphPost(
   accessToken: string,
   body: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
-  const res = await fetch(
-    `${BASE}/${path}?access_token=${encodeURIComponent(accessToken)}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(15_000),
-    }
-  );
-  return parseGraphResponse(res);
+  return withGraphRetry("POST", async () => {
+    const res = await fetch(
+      `${BASE}/${path}?access_token=${encodeURIComponent(accessToken)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      }
+    ).catch((err: unknown) => {
+      throw asNetworkError(err);
+    });
+    return parseGraphResponse(res);
+  });
 }
 
 async function graphGet(
@@ -62,10 +144,14 @@ async function graphGet(
   params: Record<string, string> = {}
 ): Promise<Record<string, unknown>> {
   const qs = new URLSearchParams({ ...params, access_token: accessToken });
-  const res = await fetch(`${BASE}/${path}?${qs}`, {
-    signal: AbortSignal.timeout(15_000),
+  return withGraphRetry("GET", async () => {
+    const res = await fetch(`${BASE}/${path}?${qs}`, {
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    }).catch((err: unknown) => {
+      throw asNetworkError(err);
+    });
+    return parseGraphResponse(res);
   });
-  return parseGraphResponse(res);
 }
 
 type Recipient = { id: string } | { comment_id: string };
@@ -80,6 +166,27 @@ export interface SentMessage {
 type SendObserver = (sent: SentMessage) => Promise<void>;
 
 const sendObserver = new AsyncLocalStorage<SendObserver>();
+
+/** Contador de mensagens enviadas (ver `countSends`). */
+export interface SendTally {
+  sent: number;
+}
+
+const sendTally = new AsyncLocalStorage<SendTally>();
+
+/**
+ * Roda `fn` contando em `tally` as mensagens que saíram de verdade dentro
+ * dela (inclusive nas chamadas aninhadas). Independe de `observeSends`: o
+ * webhook usa para saber se um evento que falhou já falou com a pessoa.
+ */
+export function countSends<T>(tally: SendTally, fn: () => Promise<T>): Promise<T> {
+  return sendTally.run(tally, fn);
+}
+
+function tallySend(): void {
+  const tally = sendTally.getStore();
+  if (tally) tally.sent++;
+}
 
 /**
  * Roda `fn` avisando `observer` a cada mensagem enviada com sucesso dentro
@@ -107,6 +214,7 @@ async function sendMessage(
   const body: Record<string, unknown> = { recipient, message };
   if (opts?.replyToMid) body.reply_to = { mid: opts.replyToMid };
   const response = await graphPost("me/messages", igToken, body);
+  tallySend();
   const observer = sendObserver.getStore();
   if (observer) await observer({ body, response }).catch(() => {});
   return response;
@@ -265,10 +373,12 @@ export function sendPrivateReplyWithButton(
 }
 
 /** Resposta pública, publicada como reply visível embaixo do comentário do usuário. */
-export function replyToComment(igToken: string, commentId: string, text: string) {
-  return graphPost(`${commentId}/replies`, igToken, {
+export async function replyToComment(igToken: string, commentId: string, text: string) {
+  const response = await graphPost(`${commentId}/replies`, igToken, {
     message: text.slice(0, 2200),
   });
+  tallySend();
+  return response;
 }
 
 export interface QuickReplyOption {

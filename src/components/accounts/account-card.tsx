@@ -39,7 +39,13 @@ export function AccountCard({ account, index = 0 }: AccountCardProps) {
   const badge = STATUS_BADGE[account.status];
 
   function handleDisconnect() {
-    if (!window.confirm(`Desconectar @${account.ig_username}?`)) return;
+    if (
+      !window.confirm(
+        `Desconectar @${account.ig_username}? As automações param e o Falow apaga o acesso guardado. ` +
+          "Para tirar a permissão de vez, remova o app em Instagram → Configurações → Apps e sites."
+      )
+    )
+      return;
     startTransition(async () => {
       const result = await disconnectAccount(account.id);
       if (result.error) toast.error(result.error);

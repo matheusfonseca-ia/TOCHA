@@ -9,7 +9,7 @@ import type { SequenceRun } from "@/types/sequence";
  * que só aparecem execuções de contas do usuário logado.
  */
 export async function getSequenceRuns(sequenceId: string): Promise<SequenceRun[]> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase
     .from("sequence_runs")
     .select("*")

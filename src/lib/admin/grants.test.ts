@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createFakeAdmin, type FakeSupabase } from "@/lib/sequences/__tests__/fake-supabase";
-import { ADMIN_TARGET_ERROR, blockUser, grantCourtesy, revokeCourtesy, unblockUser } from "@/lib/admin/grants";
+import { ADMIN_TARGET_ERROR, blockUser, CONCURRENT_CHANGE_ERROR, grantCourtesy, revokeCourtesy, unblockUser } from "@/lib/admin/grants";
 
 const NOW = new Date("2026-10-16T12:00:00Z");
 const in30 = new Date("2026-11-15T12:00:00Z");
@@ -86,17 +86,17 @@ describe("grants", () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     if (existing) await grantCourtesy(admin(), { adminId: "user-1", targetUserId: "c1", expiresAt: in30, reason: "x", now: NOW });
     const real = db.client;
-    let writes = 0;
+    // A reversão (update/delete condicionados a .eq(...).eq(...)) falha.
+    const failingChain = () => {
+      const chain = { eq: () => chain, then: (ok: (v: unknown) => unknown) => Promise.resolve({ error: { message: "restore down" } }).then(ok) };
+      return chain;
+    };
     const failing = {
       from: (t: string) => {
         if (t === "admin_audit_log") return { insert: async () => ({ error: { message: "audit down" } }) };
         const q = real.from(t as never);
-        const upsert = q.upsert.bind(q);
-        q.upsert = (...args: Parameters<typeof q.upsert>) => {
-          if (++writes > 1) return Promise.resolve({ error: { message: "restore down" } }) as never;
-          return upsert(...args);
-        };
-        q.delete = () => ({ eq: async () => ({ error: { message: "restore down" } }) }) as never;
+        q.update = (() => failingChain()) as never;
+        q.delete = (() => failingChain()) as never;
         return q;
       },
     };
@@ -104,5 +104,37 @@ describe("grants", () => {
     expect(result).toEqual({ ok: false, error: expect.stringContaining("A alteração pode continuar aplicada") });
     expect(db.tables.access_grants[0].kind).toBe("block");
     expect(log).toHaveBeenCalledWith(expect.stringContaining("falha ao reverter"), "restore down");
+  });
+
+  it("bloqueio aplicado por outro admin entre a leitura e a escrita vence a cortesia", async () => {
+    await grantCourtesy(admin(), { adminId: "user-1", targetUserId: "c1", expiresAt: in30, reason: "x", now: NOW });
+    const real = db.client;
+    let reads = 0;
+    // Depois da leitura do estado atual, outro admin bloqueia o cliente.
+    const racing = {
+      from: (t: string) => {
+        const q = real.from(t as never);
+        if (t === "access_grants") {
+          const maybeSingle = q.maybeSingle.bind(q);
+          q.maybeSingle = (async () => {
+            const res = await maybeSingle();
+            if (++reads === 1) db.tables.access_grants[0].kind = "block";
+            return res;
+          }) as never;
+        }
+        return q;
+      },
+    };
+    const r = await grantCourtesy(racing as never, { adminId: "user-1", targetUserId: "c1", expiresAt: in30, reason: "y", now: NOW });
+    expect(r).toEqual({ ok: false, error: CONCURRENT_CHANGE_ERROR });
+    expect(db.tables.access_grants).toEqual([expect.objectContaining({ user_id: "c1", kind: "block" })]);
+    expect(db.tables.admin_audit_log.map((e) => e.action)).toEqual(["courtesy_grant"]);
+  });
+
+  it("renovar cortesia existente atualiza a linha", async () => {
+    await grantCourtesy(admin(), { adminId: "user-1", targetUserId: "c1", expiresAt: in30, reason: "x", now: NOW });
+    const r = await grantCourtesy(admin(), { adminId: "user-1", targetUserId: "c1", expiresAt: null, reason: "renovada", now: NOW });
+    expect(r).toEqual({ ok: true });
+    expect(db.tables.access_grants).toEqual([expect.objectContaining({ kind: "courtesy", expires_at: null, reason: "renovada" })]);
   });
 });

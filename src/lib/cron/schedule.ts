@@ -8,8 +8,19 @@ export const CRON_ROUTES: Record<string, string> = {
   "0 6 * * *": "/api/cron/purge",
 };
 
-// Inclui o /sistema (basePath do app); a raiz do dominio e a landing.
-const DEFAULT_APP_URL = "https://falow.app.br/sistema";
+// basePath do app (next.config): a raiz do dominio e a landing.
+const BASE_PATH = "/sistema";
+const DEFAULT_APP_URL = `https://falow.app.br${BASE_PATH}`;
+
+/**
+ * Base do app sempre terminando no basePath: NEXT_PUBLIC_APP_URL configurada
+ * sem o /sistema (como ja esteve documentado) faria o cron cair na landing e
+ * responder 404 calado.
+ */
+export function appBaseUrl(raw: string | undefined): string {
+  const base = (raw?.trim() || DEFAULT_APP_URL).replace(/\/+$/, "");
+  return base.endsWith(BASE_PATH) ? base : `${base}${BASE_PATH}`;
+}
 
 /**
  * Monta a requisicao autenticada do cron, ou null se a expressao for desconhecida.
@@ -23,7 +34,7 @@ export function cronRequestFor(
   const path = CRON_ROUTES[cron];
   if (!path) return null;
   // Concatena em vez de new URL(path, base): com path absoluto o URL descartaria o /sistema.
-  const base = (env.NEXT_PUBLIC_APP_URL ?? DEFAULT_APP_URL).replace(/\/+$/, "");
+  const base = appBaseUrl(env.NEXT_PUBLIC_APP_URL);
   return new Request(`${base}${path}`, {
     headers: { authorization: `Bearer ${env.CRON_SECRET ?? ""}` },
   });

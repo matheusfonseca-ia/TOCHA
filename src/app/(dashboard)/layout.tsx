@@ -12,7 +12,7 @@ import { getUnreadTotal } from "@/modules/crm/server";
 export default async function DashboardLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const supabase = createClient();
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -36,7 +36,7 @@ export default async function DashboardLayout({
   // Conteúdo fluido até 1600px: em monitor grande ocupa a tela em vez de
   // sobrar faixa vazia dos lados, sem esticar sem fim em ultrawide.
   return (
-    <AppShellProvider initialCollapsed={getSidebarCollapsed()}>
+    <AppShellProvider initialCollapsed={await getSidebarCollapsed()}>
       <Sidebar userEmail={user.email ?? ""} crmUnread={crmUnread} showBilling={!admin} showAdmin={admin} />
       <main className="min-h-screen md:pl-[var(--sidebar-w)]">
         <div className="mx-auto w-full max-w-[1600px] p-4 pb-12 sm:p-6 lg:p-8 2xl:px-10">

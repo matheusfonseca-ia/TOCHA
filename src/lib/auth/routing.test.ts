@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isAdminPath, routeFor } from "@/lib/auth/routing";
+import { accessMatters, isAdminPath, routeFor } from "@/lib/auth/routing";
 
 const anon = { loggedIn: false, hasAccess: false };
 const lapsed = { loggedIn: true, hasAccess: false };
@@ -39,5 +39,20 @@ describe("isAdminPath", () => {
   it("não confunde prefixos parecidos", () => {
     expect(isAdminPath("/administrativo")).toBe(false);
     expect(isAdminPath("/dashboard")).toBe(false);
+  });
+});
+
+describe("accessMatters", () => {
+  it("só rotas cujo destino muda com o acesso", () => {
+    expect(accessMatters("/dashboard")).toBe(true);
+    expect(accessMatters("/login")).toBe(true);
+    expect(accessMatters("/assinatura")).toBe(false);
+    expect(accessMatters("/definir-senha")).toBe(false);
+  });
+  it("routeFor não depende de hasAccess quando accessMatters é falso", () => {
+    for (const p of ["/assinatura", "/", "/definir-senha"]) {
+      expect(accessMatters(p)).toBe(false);
+      expect(routeFor(p, lapsed)).toBe(routeFor(p, paying));
+    }
   });
 });

@@ -99,3 +99,11 @@ describe("presetsForField", () => {
     expect(presetsForField([], "publicReply")).toEqual([]);
   });
 });
+
+describe("normalizePreset: escopo em runtime", () => {
+  it("recusa escopo fora do catálogo (inclusive chaves do protótipo)", () => {
+    for (const scope of ["qualquer", "__proto__", "constructor"]) {
+      expect(normalizePreset({ scope: scope as never, text: "oi" })).toEqual({ error: "Tipo de campo inválido." });
+    }
+  });
+});

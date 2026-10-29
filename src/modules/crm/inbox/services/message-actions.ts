@@ -1,5 +1,6 @@
 "use server";
 
+import { activeUserId } from "@/lib/auth/require-access";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 
@@ -9,7 +10,9 @@ import { createClient } from "@/lib/supabase/server";
  * um envio ou apagar de verdade (confirmado na Fase 0).
  */
 export async function hideMessageForMe(messageId: string): Promise<void> {
-  const { data } = await createClient()
+  if (!(await activeUserId())) return;
+  const supabase = await createClient();
+  const { data } = await supabase
     .from("messages")
     .select("id")
     .eq("id", messageId)

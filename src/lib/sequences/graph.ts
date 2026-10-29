@@ -582,6 +582,63 @@ function validateAutomationNodes(
   return null;
 }
 
+/** Nós em que a pessoa interage (e a janela de 24h da Meta recomeça). */
+function isInteractionNode(node: SequenceGraphNode): boolean {
+  switch (node.type) {
+    case "waitReply":
+    case "quickReplies":
+    case "collectInput":
+      return true;
+    case "buttons":
+      return (node.data as ButtonsNodeData).buttons.some((b) => b.kind === "branch");
+    default:
+      return false;
+  }
+}
+
+// Teto de visitas na busca de caminhos: grafo patológico não trava o save.
+const DELAY_PATH_VISIT_LIMIT = 20_000;
+
+/**
+ * Maior soma de atrasos (em segundos) num caminho sem nenhuma interação da
+ * pessoa no meio: do gatilho ou de cada nó de interação até a próxima
+ * interação (ou o fim). A janela de 24h da Meta conta da última mensagem da
+ * pessoa, então dois "Atraso 20h" seguidos nunca entregam a 2ª parte.
+ * Ciclos são cortados no próprio caminho (o laço em si é validado à parte).
+ */
+export function longestDelayWithoutInteraction(graph: SequenceGraph): number {
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const out = new Map<string, string[]>();
+  for (const edge of graph.edges) {
+    const list = out.get(edge.source) ?? [];
+    list.push(edge.target);
+    out.set(edge.source, list);
+  }
+
+  let visits = 0;
+  let longest = 0;
+  const onPath = new Set<string>();
+
+  const walk = (id: string, acc: number): void => {
+    if (++visits > DELAY_PATH_VISIT_LIMIT) return;
+    const node = byId.get(id);
+    if (!node || onPath.has(id)) return;
+    if (isInteractionNode(node)) return;
+    const total =
+      acc + (node.type === "delay" ? delayToSeconds(node.data as DelayNodeData) : 0);
+    longest = Math.max(longest, total);
+    onPath.add(id);
+    for (const next of out.get(id) ?? []) walk(next, total);
+    onPath.delete(id);
+  };
+
+  const starts = graph.nodes.filter((n) => n.type === "trigger" || isInteractionNode(n));
+  for (const start of starts) {
+    for (const next of out.get(start.id) ?? []) walk(next, 0);
+  }
+  return longest;
+}
+
 /**
  * Valida o grafo inteiro. Retorna a primeira mensagem de erro (pt-BR) ou
  * null se estiver tudo certo. Usada no editor (toast) e no servidor (action).
@@ -660,6 +717,11 @@ export function validateSequenceGraph(
 
   const stageError = validateStageRefs(graph, ctx);
   if (stageError) return stageError;
+
+  // Cada atraso cabe na janela, mas a soma no mesmo trecho pode não caber.
+  if (longestDelayWithoutInteraction(graph) > DELAY_MAX_SECONDS) {
+    return "A soma dos atrasos entre duas respostas da pessoa passa de 23 horas: a Meta só deixa enviar até 24h depois da última mensagem dela. Encurte os atrasos ou inclua uma espera de resposta no caminho.";
+  }
 
   // Ciclo com espera (resposta, botão, atraso) é permitido; sem espera ele
   // dispararia mensagens em laço. O editor destaca os nós com

@@ -3,7 +3,7 @@ import { getFreshToken } from "@/lib/meta/token";
 import type { createAdminClient } from "@/lib/supabase/admin";
 import type { IgAccount } from "@/types/database";
 
-import { recordIncoming } from "../../capture/server/record";
+import { recordImportedMessages } from "../../capture/server/record";
 import { findLeadParticipant, mapImportedMessage } from "../utils/map-message";
 
 /**
@@ -65,14 +65,14 @@ export async function importHistoryBatch(
     if (!leadId) continue;
 
     const rawMessages = await getConversationMessages(token, conv.id);
-    let latestInboundAt: string | null = null;
+    const drafts = rawMessages.map((raw) => mapImportedMessage(raw, account.ig_user_id, leadId));
+    // Dedupe pelo mid (unique account_id+mid): reentrega ou 2ª importação
+    // não duplica. Um insert por conversa, não um por mensagem.
+    await recordImportedMessages(admin, account.id, leadId, drafts);
+    messagesImported += drafts.length;
 
-    for (const raw of rawMessages) {
-      const draft = mapImportedMessage(raw, account.ig_user_id, leadId);
-      // Dedupe pelo mid (unique account_id+mid): reentrega ou 2ª importação
-      // não duplica, `recordIncoming` já ignora a violação em silêncio.
-      await recordIncoming(admin, account.id, draft, "import");
-      messagesImported++;
+    let latestInboundAt: string | null = null;
+    for (const draft of drafts) {
       if (draft.direction === "inbound" && (!latestInboundAt || draft.createdAt > latestInboundAt)) {
         latestInboundAt = draft.createdAt;
       }

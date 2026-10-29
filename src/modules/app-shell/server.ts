@@ -6,6 +6,6 @@ import { cookies } from "next/headers";
 
 import { isCollapsedCookie, SIDEBAR_COOKIE } from "./utils/sidebar-state";
 
-export function getSidebarCollapsed(): boolean {
-  return isCollapsedCookie(cookies().get(SIDEBAR_COOKIE)?.value);
+export async function getSidebarCollapsed(): Promise<boolean> {
+  return isCollapsedCookie((await cookies()).get(SIDEBAR_COOKIE)?.value);
 }

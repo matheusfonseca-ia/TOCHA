@@ -1,6 +1,6 @@
 import type { createClient } from "@/lib/supabase/server";
 import type { InboxConversation } from "../../shared/types/conversation";
-import { findContactsWithTag } from "../server/tagged-contacts";
+import { findSenderIdsWithTag } from "../server/tagged-contacts";
 import type { CrmTag } from "../types";
 import { normalizeTag } from "../utils/normalize-tag";
 import { findTagWorkflowUsage, type TagWorkflowUsage } from "../utils/tag-usage";
@@ -10,7 +10,7 @@ import { findTagWorkflowUsage, type TagWorkflowUsage } from "../utils/tag-usage"
  * usuário (RLS garante que ele só vê as próprias contas). Só servidor.
  */
 
-type UserClient = ReturnType<typeof createClient>;
+type UserClient = Awaited<ReturnType<typeof createClient>>;
 
 export async function listTagCatalog(supabase: UserClient, accountId: string): Promise<CrmTag[]> {
   const { data, error } = await supabase
@@ -63,15 +63,20 @@ export async function listTagOptionsForEditor(
  * IDs de remetente (ig_sender_id) dos contatos com a tag, para filtrar a
  * lista do Inbox. Sem diferenciar maiúscula/acento, como o catálogo ("VIP"
  * acha quem foi marcado "vip" por um workflow), e em todas as contas quando
- * `accountId` vem vazio.
+ * `accountId` vem vazio. Usa o índice GIN de `contacts.tags` com as grafias
+ * conhecidas da tag (ver `findSenderIdsWithTag`).
  */
 export async function listSenderIdsWithTag(
   supabase: UserClient,
   accountId: string,
   tagName: string
 ): Promise<string[]> {
-  const contacts = await findContactsWithTag(supabase, accountId, tagName);
-  return contacts.map((c) => c.ig_sender_id);
+  let catalog = supabase.from("crm_tags").select("name");
+  if (accountId) catalog = catalog.eq("account_id", accountId);
+  const { data } = await catalog;
+  const catalogNames = ((data ?? []) as { name: string }[]).map((t) => t.name);
+  const contacts = await findSenderIdsWithTag(supabase, accountId, tagName, catalogNames);
+  return Array.from(new Set(contacts.map((c) => c.ig_sender_id)));
 }
 
 /**
@@ -90,7 +95,12 @@ export async function attachTagsToConversations(
   const accountIds = Array.from(new Set(conversations.map((c) => c.account_id)));
 
   const [contactsRes, tagsRes] = await Promise.all([
-    supabase.from("contacts").select("account_id, ig_sender_id, tags").in("ig_sender_id", senderIds),
+    // account_id junto: usa o índice único (account_id, ig_sender_id).
+    supabase
+      .from("contacts")
+      .select("account_id, ig_sender_id, tags")
+      .in("account_id", accountIds)
+      .in("ig_sender_id", senderIds),
     supabase.from("crm_tags").select("account_id, name, color").in("account_id", accountIds),
   ]);
 

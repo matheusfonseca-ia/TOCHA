@@ -9,7 +9,7 @@ import type { SequenceVersion } from "@/types/sequence";
  * garante que só aparecem versões de contas do usuário logado.
  */
 export async function getSequenceVersions(sequenceId: string): Promise<SequenceVersion[]> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data } = await supabase
     .from("sequence_versions")
     .select("id, sequence_id, name, graph, is_active, created_at")

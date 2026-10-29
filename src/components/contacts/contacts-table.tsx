@@ -18,64 +18,42 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { contactFieldKeys, contactsToCsv } from "@/lib/contacts/csv";
+import { withBasePath } from "@/lib/app-url";
+import { contactFieldKeys } from "@/lib/contacts/csv";
+import { contactSearchText, matchesTerms, searchTerms } from "@/lib/contacts/search";
 import type { Contact } from "@/types/database";
 
 export type ContactRow = Contact & { ig_accounts: { ig_username: string } | null };
 
-function normalize(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/[̀-ͯ]/g, "")
-    .toLowerCase();
-}
-
-/** Texto em que a busca procura: @, id, conta, valores dos campos e tags. */
-function searchableText(c: ContactRow): string {
-  return normalize(
-    [
-      c.ig_username ?? "",
-      c.ig_sender_id,
-      c.ig_accounts?.ig_username ?? "",
-      ...Object.values(c.fields ?? {}).map(String),
-      ...(c.tags ?? []),
-    ].join(" ")
-  );
-}
-
-function downloadCsv(contacts: ContactRow[]) {
-  const csv = contactsToCsv(
-    contacts.map((c) => ({ ...c, account_username: c.ig_accounts?.ig_username ?? null }))
-  );
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `contatos-falow-${format(new Date(), "yyyy-MM-dd")}.csv`;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
+/**
+ * Tabela de uma página de contatos. A busca filtra a página carregada; o CSV
+ * sai do servidor (`/contatos/exportar`) com todos os contatos da conta que
+ * combinam com a busca, não só os desta página.
+ */
 export function ContactsTable({
   contacts,
   showAccount,
+  accountId = "",
+  total,
 }: {
   contacts: ContactRow[];
   showAccount: boolean;
+  /** Conta filtrada na página (vazio = todas), repassada ao export. */
+  accountId?: string;
+  /** Total de contatos (todas as páginas), quando conhecido. */
+  total?: number;
 }) {
   const [query, setQuery] = useState("");
 
   const indexed = useMemo(
-    () => contacts.map((c) => ({ contact: c, text: searchableText(c) })),
+    () => contacts.map((c) => ({ contact: c, text: contactSearchText(c) })),
     [contacts]
   );
   const filtered = useMemo(() => {
-    const terms = normalize(query).split(/\s+/).filter(Boolean);
+    const terms = searchTerms(query);
     if (terms.length === 0) return contacts;
     return indexed
-      .filter(({ text }) => terms.every((t) => text.includes(t)))
+      .filter(({ text }) => matchesTerms(text, terms))
       .map(({ contact }) => contact);
   }, [indexed, contacts, query]);
 
@@ -97,18 +75,14 @@ export function ContactsTable({
         </div>
         <span className="text-xs text-muted-foreground">
           {filtered.length === contacts.length
-            ? `${contacts.length} ${contacts.length === 1 ? "contato" : "contatos"}`
-            : `${filtered.length} de ${contacts.length}`}
+            ? `${total ?? contacts.length} ${(total ?? contacts.length) === 1 ? "contato" : "contatos"}`
+            : `${filtered.length} de ${contacts.length} nesta página`}
         </span>
-        <Button
-          variant="outline"
-          size="sm"
-          className="ml-auto"
-          onClick={() => downloadCsv(filtered)}
-          disabled={filtered.length === 0}
-        >
-          <Download className="h-3.5 w-3.5" />
-          Exportar CSV
+        <Button variant="outline" size="sm" className="ml-auto" asChild>
+          <a href={withBasePath(`/contatos/exportar?${new URLSearchParams({ conta: accountId, q: query }).toString()}`)} download>
+            <Download className="h-3.5 w-3.5" />
+            Exportar CSV
+          </a>
         </Button>
       </div>
 

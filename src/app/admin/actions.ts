@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
 import { resendAccessEmail } from "@/lib/admin/access-email";
+import { ADMIN_EMAIL_QUOTA_ERROR, withinEmailQuota } from "@/lib/admin/email-quota";
 import { ADMIN_TARGET_ERROR, blockUser, grantCourtesy, revokeCourtesy, unblockUser, type GrantResult } from "@/lib/admin/grants";
 import { AdminRequiredError, requireAdmin } from "@/lib/admin/require-admin";
 import { findUserIdByEmail, inviteUser } from "@/lib/auth/invite";
@@ -15,9 +16,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
  * auditoria (admin-actions.audit.test.ts) falha se uma delas não começar.
  */
 
-const uuid = z.string().uuid("Cliente inválido.");
+const uuid = z.guid("Cliente inválido.");
 const reason = z.string().trim().min(1, "Informe o motivo.").max(200, "Motivo de até 200 caracteres.");
-const date = z.coerce.date({ errorMap: () => ({ message: "Data inválida." }) });
+const date = z.coerce.date({ error: "Data inválida." });
 // O convite cria a conta antes da cortesia: confere a validade antes, para não
 // convidar alguém e depois recusar a cortesia (grantCourtesy confere de novo).
 const MAX_FUTURE_MS = 5 * 366 * 86_400_000;
@@ -46,7 +47,7 @@ async function guarded(run: (adminId: string) => Promise<GrantResult>): Promise<
 export async function grantCourtesyAction(formData: FormData): Promise<GrantResult> {
   return guarded(async (adminId) => {
     const parsed = z.object({ userId: uuid, expiresAt: optionalDate, reason }).safeParse(Object.fromEntries(formData));
-    if (!parsed.success) return { ok: false, error: parsed.error.errors[0].message };
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
     return grantCourtesy(createAdminClient(), { adminId, targetUserId: parsed.data.userId, expiresAt: parsed.data.expiresAt, reason: parsed.data.reason });
   });
 }
@@ -54,7 +55,7 @@ export async function grantCourtesyAction(formData: FormData): Promise<GrantResu
 export async function revokeCourtesyAction(userId: string): Promise<GrantResult> {
   return guarded(async (adminId) => {
     const parsed = uuid.safeParse(userId);
-    if (!parsed.success) return { ok: false, error: parsed.error.errors[0].message };
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
     return revokeCourtesy(createAdminClient(), { adminId, targetUserId: parsed.data });
   });
 }
@@ -62,7 +63,7 @@ export async function revokeCourtesyAction(userId: string): Promise<GrantResult>
 export async function blockUserAction(formData: FormData): Promise<GrantResult> {
   return guarded(async (adminId) => {
     const parsed = z.object({ userId: uuid, reason }).safeParse(Object.fromEntries(formData));
-    if (!parsed.success) return { ok: false, error: parsed.error.errors[0].message };
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
     return blockUser(createAdminClient(), { adminId, targetUserId: parsed.data.userId, reason: parsed.data.reason });
   });
 }
@@ -70,7 +71,7 @@ export async function blockUserAction(formData: FormData): Promise<GrantResult> 
 export async function unblockUserAction(userId: string): Promise<GrantResult> {
   return guarded(async (adminId) => {
     const parsed = uuid.safeParse(userId);
-    if (!parsed.success) return { ok: false, error: parsed.error.errors[0].message };
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
     return unblockUser(createAdminClient(), { adminId, targetUserId: parsed.data });
   });
 }
@@ -78,8 +79,10 @@ export async function unblockUserAction(userId: string): Promise<GrantResult> {
 export async function resendAccessAction(userId: string): Promise<GrantResult> {
   return guarded(async (adminId) => {
     const parsed = uuid.safeParse(userId);
-    if (!parsed.success) return { ok: false, error: parsed.error.errors[0].message };
-    return resendAccessEmail(createAdminClient(), { adminId, targetUserId: parsed.data });
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
+    const admin = createAdminClient();
+    if (!(await withinEmailQuota(admin, adminId))) return { ok: false, error: ADMIN_EMAIL_QUOTA_ERROR };
+    return resendAccessEmail(admin, { adminId, targetUserId: parsed.data });
   });
 }
 
@@ -88,9 +91,10 @@ export async function inviteWithCourtesyAction(formData: FormData): Promise<Gran
     const parsed = z
       .object({ email: z.string().trim().toLowerCase().email("E-mail inválido."), expiresAt: optionalFutureDate, reason })
       .safeParse(Object.fromEntries(formData));
-    if (!parsed.success) return { ok: false, error: parsed.error.errors[0].message };
+    if (!parsed.success) return { ok: false, error: parsed.error.issues[0].message };
     const { email, expiresAt } = parsed.data;
     const admin = createAdminClient();
+    if (!(await withinEmailQuota(admin, adminId))) return { ok: false, error: ADMIN_EMAIL_QUOTA_ERROR };
 
     // Reaproveita a conta se o e-mail já existe; senão convida (mesmo e-mail da compra).
     let targetUserId: string;
@@ -120,11 +124,14 @@ export async function inviteWithCourtesyAction(formData: FormData): Promise<Gran
       return { ok: false, error: "Não foi possível convidar este e-mail. Tente de novo." };
     }
 
-    // Completa o registro antes da cortesia, que pode ser recusada ou falhar.
-    const { error: auditError } = await admin.from("admin_audit_log").update({
+    // Conclusão numa linha nova (o registro só recebe INSERT, nunca UPDATE),
+    // antes da cortesia, que pode ser recusada ou falhar.
+    const { error: auditError } = await admin.from("admin_audit_log").insert({
+      admin_id: adminId,
+      action: "courtesy_invite",
       target_user_id: targetUserId,
-      details: { email, invited, status: invited ? "created" : "existing" },
-    }).eq("id", auditId!);
+      details: { email, invited, status: invited ? "created" : "existing", request_id: auditId },
+    });
     if (auditError) {
       console.error("[admin] falha ao completar auditoria do convite:", auditError.message);
       return { ok: false, error: invited

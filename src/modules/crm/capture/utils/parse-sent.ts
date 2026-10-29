@@ -1,4 +1,5 @@
 import type { MessageDraft } from "../../shared/types/message";
+import { safeHttpsUrl } from "../../shared/utils/safe-url";
 
 /**
  * Traduz o corpo de um envio pela Send API (o mesmo que `graph.ts` manda) e a
@@ -83,7 +84,7 @@ export function parseSentMessage(
       ...base,
       kind: type === "image" || type === "video" || type === "audio" ? type : "file",
       text: null,
-      attachments: [{ type, url: attachment.payload?.url ?? null }],
+      attachments: [{ type, url: safeHttpsUrl(attachment.payload?.url) }],
       meta: null,
     };
   }

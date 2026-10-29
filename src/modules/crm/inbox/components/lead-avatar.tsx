@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 
 import { cn } from "@/lib/utils";
 
-import { refreshLeadPhoto } from "../../lead-profile/services/lead-profile.actions";
+import { queueLeadPhotoRefresh } from "../../lead-profile/utils/photo-refresh-queue";
+import { safeHttpsUrl } from "../../shared/utils/safe-url";
 import { leadInitials } from "../utils/labels";
 
 /**
@@ -49,10 +50,11 @@ export function LeadAvatar({
   // Foto nova (ex.: depois de um refresh ao vivo) merece uma nova chance.
   useEffect(() => setFailed(false), [photoUrl]);
 
-  if (photoUrl && !failed) {
+  const src = safeHttpsUrl(photoUrl);
+  if (src && !failed) {
     return (
       <img
-        src={photoUrl}
+        src={src}
         alt=""
         aria-hidden
         referrerPolicy="no-referrer"
@@ -61,7 +63,7 @@ export function LeadAvatar({
         className={cn("h-10 w-10 shrink-0 rounded-full object-cover", className)}
         onError={() => {
           setFailed(true);
-          if (conversationId) void refreshLeadPhoto(conversationId).catch(() => {});
+          if (conversationId) queueLeadPhotoRefresh(conversationId);
         }}
       />
     );

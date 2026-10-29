@@ -26,9 +26,10 @@ const requiredColumns = {
   leads: ["id", "pipeline_id", "conversation_id", "stage_id", "position", "closed_at"],
   lead_stage_events: ["id", "lead_id", "to_stage_id", "source"],
   subscriptions: ["user_id", "stripe_customer_id", "stripe_subscription_id", "status", "current_period_end", "canceled_at", "purge_after"],
-  stripe_events: ["id"],
+  stripe_events: ["id", "received_at"],
   access_grants: ["user_id", "kind", "expires_at", "reason", "granted_by"],
   admin_audit_log: ["id", "admin_id", "action", "target_user_id", "details"],
+  processed_events: ["mid", "created_at"],
 };
 
 const checks = await Promise.all(
@@ -58,7 +59,48 @@ const failures = checks.filter(Boolean);
 if (failures.length) {
   console.error("[schema] O banco não acompanha o código deste commit:");
   for (const failure of failures) console.error(`  ${failure}`);
-  console.error("[schema] Aplique as migrations de supabase/migrations (até a 0021; a 0022 só depois do deploy) neste projeto antes do deploy.");
+  console.error("[schema] Aplique as migrations de supabase/migrations (até a 0023; a 0022 e a 0024 só depois do deploy) neste projeto antes do deploy.");
+  process.exit(1);
+}
+
+// RLS e privilégios (migration 0024, função falow_rls_report): falha o build se
+// alguma tabela de public estiver sem RLS, se ig_accounts/user_ai_settings (ou
+// as tabelas só de leitura) tiverem policy/privilégio de escrita para o
+// usuário, se access_grants expuser reason/granted_by ou se o registro de
+// auditoria tiver perdido o trigger de somente inserção. Sem a 0024 aplicada
+// (ela vai depois do deploy) a função não existe: só avisa, não bloqueia.
+const rlsFailures = await (async () => {
+  const url = new URL("/rest/v1/rpc/falow_rls_report", baseUrl);
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        apikey: serviceKey,
+        Authorization: `Bearer ${serviceKey}`,
+        "Content-Type": "application/json",
+      },
+      body: "{}",
+      signal: AbortSignal.timeout(10000),
+    });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) {
+      if (response.status === 404 || body?.code === "PGRST202" || body?.code === "42883") {
+        console.warn("[schema] AVISO: falow_rls_report não existe (migration 0024 ainda não aplicada). RLS não conferido neste build; aplique a 0024 logo após o deploy.");
+        return [];
+      }
+      return [`falow_rls_report: ${body?.message ?? `HTTP ${response.status}`}`];
+    }
+    if (!Array.isArray(body)) return ["falow_rls_report: resposta inesperada"];
+    return body.map((row) => `${row.kind} em ${row.table_name}${row.detail ? `: ${row.detail}` : ""}`);
+  } catch (error) {
+    return [`falow_rls_report: ${error instanceof Error ? error.message : String(error)}`];
+  }
+})();
+
+if (rlsFailures.length) {
+  console.error("[schema] RLS/privilégios do banco inseguros (ver migrations 0022 e 0024):");
+  for (const failure of rlsFailures) console.error(`  ${failure}`);
+  console.error("[schema] Corrija no Supabase (rode de novo a 0024) antes do deploy.");
   process.exit(1);
 }
 

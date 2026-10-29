@@ -4,7 +4,6 @@ import { enrollLeadFromCapture } from "@/modules/crm/pipeline/server/enroll-lead
 import { refreshLeadProfile } from "../../lead-profile/server/refresh-profile";
 import { parseMessagingEvent, type IncomingMessagingEvent } from "../utils/parse-event";
 import {
-  ensureConversation,
   findAccount,
   leadNeedsProfile,
   markSeen,
@@ -37,7 +36,7 @@ export async function captureMessagingEvent(
     switch (action.type) {
       case "message": {
         const { message } = action;
-        await recordIncoming(admin, account.id, message, action.echo ? "instagram_app" : "contact");
+        const conversationId = await recordIncoming(admin, account.id, message, action.echo ? "instagram_app" : "contact");
         // O @ e a foto do lead aparecem no Inbox. Buscados uma vez, na 1ª
         // mensagem dele: é quando a Meta garante o consentimento para ler o
         // perfil. Só uma vez: `ig_profile_fetched_at` fica gravado até na falha.
@@ -48,7 +47,6 @@ export async function captureMessagingEvent(
         // (nunca eco). `moveLead` é idempotente: reentrega do webhook ou
         // corrida com "Trazer conversas existentes" só bate no 23505.
         if (message.direction === "inbound") {
-          const conversationId = await ensureConversation(admin, account.id, message.leadId);
           await enrollLeadFromCapture(admin, account.id, conversationId, message.leadId);
         }
         return;

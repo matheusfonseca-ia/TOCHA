@@ -1,8 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 
-import type { AiFieldKind } from "@/lib/ai/fields";
+import { isAiFieldKind, type AiFieldKind } from "@/lib/ai/fields";
+import { activeUserId } from "@/lib/auth/require-access";
 import { isMissingTable } from "@/lib/db/missing";
 import { normalizePreset, type MessagePreset } from "@/lib/presets/presets";
 import { createClient } from "@/lib/supabase/server";
@@ -15,9 +17,12 @@ import { createClient } from "@/lib/supabase/server";
 
 const PRESETS_MIGRATION_ERROR =
   "Para salvar textos, aplique a migration 0014_message_presets.sql no Supabase.";
+const NO_ACCESS_ERROR = "Sua assinatura não está ativa. Acesse Minha assinatura para reativar.";
+const NOT_FOUND_ERROR = "Texto não encontrado. Atualize a página e tente de novo.";
+const uuid = z.guid();
 
 export async function listPresets(): Promise<MessagePreset[]> {
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("message_presets")
     .select("id, account_id, scope, label, text, created_at")
@@ -36,10 +41,15 @@ export async function savePreset(input: {
   text: string;
   label?: string | null;
 }): Promise<PresetActionResult> {
+  if (!(await activeUserId())) return { error: NO_ACCESS_ERROR };
+  // Escopo e conta conferidos em runtime: a action pode ser chamada direto.
+  if (!uuid.safeParse(input.accountId).success || !isAiFieldKind(input.scope) || typeof input.text !== "string") {
+    return { error: "Texto inválido. Atualize a página e tente de novo." };
+  }
   const normalized = normalizePreset(input);
   if ("error" in normalized) return normalized;
 
-  const supabase = createClient();
+  const supabase = await createClient();
   const { data, error } = await supabase
     .from("message_presets")
     .insert({ account_id: input.accountId, ...normalized.preset })
@@ -58,10 +68,18 @@ export async function savePreset(input: {
 }
 
 export async function deletePreset(id: string): Promise<{ error?: string }> {
-  const supabase = createClient();
-  const { error } = await supabase.from("message_presets").delete().eq("id", id);
+  if (!(await activeUserId())) return { error: NO_ACCESS_ERROR };
+  if (!uuid.safeParse(id).success) return { error: NOT_FOUND_ERROR };
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("message_presets")
+    .delete()
+    .eq("id", id)
+    .select("id")
+    .maybeSingle();
 
   if (error) return { error: "Não foi possível apagar o texto." };
+  if (!data) return { error: NOT_FOUND_ERROR };
 
   revalidatePath("/rules");
   return {};

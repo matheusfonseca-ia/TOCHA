@@ -125,6 +125,19 @@ describe("importHistoryBatch", () => {
     );
   });
 
+  it("mensagem antiga importada não reabre conversa concluída", async () => {
+    fake.tables.conversations.push({ id: "c1", account_id: account.id, ig_sender_id: LEAD, status: "done", last_inbound_at: null });
+    mockConversationsApi({
+      "conv-1": [{ id: "m-old", created_time: "2026-08-01T10:00:00+0000", from: { id: LEAD }, message: "antiga" }],
+    });
+
+    await importHistoryBatch(fake.client as never, account, null);
+
+    expect(fake.tables.messages).toHaveLength(1);
+    expect(fake.tables.conversations).toHaveLength(1);
+    expect(fake.tables.conversations[0].status).toBe("done");
+  });
+
   it("conversa sem participante identificável além da conta é ignorada", async () => {
     vi.stubGlobal(
       "fetch",

@@ -57,6 +57,10 @@ const { getClient, setClient } = vi.hoisted(() => {
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: () => getClient() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("@/lib/auth/require-access", () => ({
+  activeUserId: async () => "user-1",
+  requireActiveUser: async () => ({ userId: "user-1" }),
+}));
 
 import { duplicateRule, saveRule, type RuleInput } from "@/app/(dashboard)/rules/actions";
 

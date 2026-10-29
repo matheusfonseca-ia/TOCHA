@@ -22,6 +22,8 @@ export function InviteCourtesyForm() {
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
+    // Convite manda e-mail em nome do Falow e cria conta: confirma antes, como no bloqueio.
+    if (!window.confirm(`Convidar ${email.trim()} com cortesia? Se a conta não existir, ela é criada e recebe o e-mail de convite.`)) return;
     const fd = new FormData();
     fd.set("email", email);
     fd.set("expiresAt", expiresAtFrom(preset, customDate));

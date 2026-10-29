@@ -6,6 +6,7 @@ import type {
   MessageDraft,
   MessageKind,
 } from "../../shared/types/message";
+import { safeHttpsUrl } from "../../shared/utils/safe-url";
 
 /**
  * Traduz uma mensagem da Conversations API (histórico anterior ao CRM) no
@@ -23,7 +24,8 @@ function attachmentKind(a: IgConversationAttachment): MessageKind {
 }
 
 function attachmentUrl(a: IgConversationAttachment): string | null {
-  return a.image_data?.url ?? a.video_data?.url ?? a.file_url ?? null;
+  // Só https é gravado: a URL vira href/src no Inbox.
+  return safeHttpsUrl(a.image_data?.url ?? a.video_data?.url ?? a.file_url);
 }
 
 /** O participante da conversa que não é a conta (o lead). */

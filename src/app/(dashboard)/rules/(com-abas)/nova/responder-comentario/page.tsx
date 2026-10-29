@@ -8,7 +8,7 @@ import { withRecentMedia } from "@/lib/rules/account-media";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function NovaAutomacaoResponderComentarioPage() {
-  const supabase = createClient();
+  const supabase = await createClient();
 
   const { data: accounts } = await supabase
     .from("ig_accounts")

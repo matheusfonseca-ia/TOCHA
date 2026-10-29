@@ -54,7 +54,7 @@ export interface QueryResult<T = Row> {
   error: FakeError | null;
 }
 
-type FilterOp = "eq" | "neq" | "in" | "lt" | "lte" | "gt" | "gte" | "is" | "contains";
+type FilterOp = "eq" | "neq" | "in" | "lt" | "lte" | "gt" | "gte" | "is" | "contains" | "or";
 
 interface Filter {
   column: string;
@@ -202,8 +202,27 @@ function resolveValue(row: Row, column: string, table: TableName, db: FakeSupaba
   return row[column];
 }
 
+/**
+ * `.or("col.op.valor,col.op.valor")` do PostgREST, só com operadores simples
+ * (eq, neq, lt, lte, gt, gte, is) e valores sem vírgula.
+ */
+function parseOrFilters(expr: string): Filter[] {
+  return expr.split(",").map((part) => {
+    const first = part.indexOf(".");
+    const second = part.indexOf(".", first + 1);
+    const column = part.slice(0, first);
+    const op = part.slice(first + 1, second) as FilterOp;
+    const raw = part.slice(second + 1);
+    const value = op === "is" ? (raw === "null" ? null : raw === "true" ? true : raw === "false" ? false : raw) : raw;
+    return { column, op, value };
+  });
+}
+
 function matchesFilters(row: Row, filters: Filter[], table: TableName, db: FakeSupabase): boolean {
   return filters.every((f) => {
+    if (f.op === "or") {
+      return (f.value as Filter[]).some((clause) => matchesFilters(row, [clause], table, db));
+    }
     const val = resolveValue(row, f.column, table, db);
     switch (f.op) {
       case "eq":
@@ -299,6 +318,10 @@ class FakeQueryBuilder implements PromiseLike<QueryResult> {
   }
   is(column: string, value: any): this {
     this.filters.push({ column, op: "is", value });
+    return this;
+  }
+  or(expr: string): this {
+    this.filters.push({ column: "", op: "or", value: parseOrFilters(expr) });
     return this;
   }
   contains(column: string, value: any[]): this {

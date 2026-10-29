@@ -16,12 +16,11 @@ export const dynamic = "force-dynamic";
  * funil padrão é garantido aqui (idempotente) antes de montar o board:
  * cobre tanto quem nunca visitou a tela quanto uma conta nova.
  */
-export default async function FunilPage({
-  searchParams,
-}: {
-  searchParams: { funil?: string; conta?: string };
+export default async function FunilPage(props: {
+  searchParams: Promise<{ funil?: string; conta?: string }>;
 }) {
-  const supabase = createClient();
+  const searchParams = await props.searchParams;
+  const supabase = await createClient();
 
   const { data: accountsData } = await supabase.from("ig_accounts").select("id, ig_username").order("connected_at");
   const accounts = accountsData ?? [];

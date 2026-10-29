@@ -8,6 +8,12 @@
  * em ~60 dias — renovado automaticamente em process.ts.
  */
 
+import { withBasePath } from "@/lib/app-url";
+
+/** Cookie do state do OAuth (`state:user_id`): só as rotas /api/auth/meta leem. */
+export const META_OAUTH_COOKIE = "meta_oauth_state";
+export const META_OAUTH_COOKIE_PATH = withBasePath("/api/auth/meta");
+
 const VERSION = process.env.META_GRAPH_VERSION ?? "v25.0";
 const GRAPH = `https://graph.instagram.com/${VERSION}`;
 
@@ -145,4 +151,16 @@ export async function getInstagramProfile(
     username: json.username,
     profilePictureUrl: json.profile_picture_url ?? null,
   };
+}
+
+/**
+ * Desfaz a inscrição do app nos webhooks da conta (`DELETE me/subscribed_apps`),
+ * o inverso de `subscribeAccountToWebhooks`. Usada ao desconectar, antes de
+ * apagar o token: sem isso a Meta segue entregando todo evento do @ ao webhook.
+ * O token em si não tem endpoint de revogação no Login do Instagram; a remoção
+ * definitiva é o cliente tirar o app em Configurações → Apps e sites.
+ */
+export async function unsubscribeAccountFromWebhooks(token: string): Promise<void> {
+  const params = new URLSearchParams({ access_token: token });
+  await igFetch<{ success?: boolean }>(`${GRAPH}/me/subscribed_apps?${params}`, { method: "DELETE" });
 }

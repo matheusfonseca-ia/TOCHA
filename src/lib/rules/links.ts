@@ -27,3 +27,21 @@ export function normalizeUrl(rawUrl: string): string {
   const trimmed = rawUrl.trim();
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
+
+/** Tamanho máximo de uma URL de botão/imagem gravada na automação. */
+export const URL_MAX = 2000;
+
+/**
+ * URL que a Meta aceita num botão web_url ou numa imagem: só http(s), com
+ * tamanho limitado. `z.string().url()` aceitaria javascript:, data:, ftp:...
+ * Mesma regra do workflow (sequences/graph.ts).
+ */
+export function isHttpUrl(value: string | null | undefined): boolean {
+  if (!value || value.length > URL_MAX) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}

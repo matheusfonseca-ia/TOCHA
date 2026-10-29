@@ -49,7 +49,8 @@ npm run deploy:cloudflare # build do OpenNext + wrangler deploy
 - **Secrets** ficam no Worker (`wrangler secret put NOME`), nunca no repositório. As variáveis estão na tabela abaixo.
 - **Crons** vêm do [wrangler.toml](wrangler.toml), executados pelo `scheduled()` de [worker.ts](worker.ts): a cada minuto retoma as Sequências (`/api/cron/sequences`) e às 06:00 UTC roda a exclusão (`/api/cron/purge`). Ambos exigem `CRON_SECRET`.
 - Plano **Workers Paid** da Cloudflare (os limites do gratuito não comportam o app).
-- Webhooks: `https://falow.app.br/api/webhooks/meta` (Meta) e `https://falow.app.br/api/webhooks/stripe` (Stripe).
+- O app mora em `https://falow.app.br/sistema` (o Worker só atende `/sistema` e `/sistema/*`; a raiz é a landing). Toda URL do app leva o `/sistema`.
+- Webhooks: `https://falow.app.br/sistema/api/webhooks/meta` (Meta) e `https://falow.app.br/sistema/api/webhooks/stripe` (Stripe). Sem o `/sistema` a entrega cai na landing (404) e a Meta/Stripe desativam o endpoint.
 - Configuração da Stripe, do app Meta, do e-mail (Resend como SMTP do Supabase Auth, remetente `nao-responda@falow.app.br`) e checagens do primeiro deploy: [docs/operacao-saas.md](docs/operacao-saas.md).
 
 ### Rodando localmente
@@ -59,10 +60,10 @@ git clone <url-do-repositorio> falow
 cd falow
 cp .env.example .env.local   # preencha os valores
 npm install
-npm run dev                  # http://localhost:3000
+npm run dev                  # http://localhost:3000/sistema
 ```
 
-Para o Meta e a Stripe alcançarem seu computador em desenvolvimento, abra um túnel (`ngrok http 3000`) e use a URL gerada em `NEXT_PUBLIC_APP_URL`, no OAuth Redirect URI e nos webhooks. Testes: `npm test` (nenhum fala com a rede; Stripe e Supabase são sempre mockados) e `npm run typecheck`.
+Para o Meta e a Stripe alcançarem seu computador em desenvolvimento, abra um túnel (`ngrok http 3000`) e use a URL gerada **com `/sistema`** em `NEXT_PUBLIC_APP_URL`, no OAuth Redirect URI e nos webhooks. Testes: `npm test` (nenhum fala com a rede; Stripe e Supabase são sempre mockados) e `npm run typecheck`.
 
 ## Variáveis de ambiente
 
@@ -76,14 +77,15 @@ Para o Meta e a Stripe alcançarem seu computador em desenvolvimento, abra um t�
 | `META_APP_SECRET` | Segredo geral do app (assina os webhooks) ⚠️ segredo | App Meta → Settings → Basic |
 | `META_VERIFY_TOKEN` | Senha do webhook (você inventa) | O mesmo valor nos dois lados |
 | `META_GRAPH_VERSION` | Versão da Graph API | `v25.0` |
-| `NEXT_PUBLIC_APP_URL` | URL pública do serviço | `https://falow.app.br` em produção; URL do ngrok em dev |
+| `NEXT_PUBLIC_APP_URL` | URL pública do app, **com o `/sistema`** e sem barra no fim (convites, redirects da Stripe e do OAuth, crons) | `https://falow.app.br/sistema` em produção; `http://localhost:3000/sistema` ou URL do ngrok + `/sistema` em dev |
 | `TOKEN_ENCRYPTION_KEY` | Criptografa tokens no banco | `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` |
 | `CRON_SECRET` | Senha dos crons (`/api/cron/sequences` e `/api/cron/purge`) ⚠️ segredo | Você inventa; o `scheduled()` do Worker envia como `Authorization: Bearer` |
 | `STRIPE_SECRET_KEY` | Chave secreta da API da Stripe ⚠️ segredo | Stripe → Developers → API keys |
-| `STRIPE_WEBHOOK_SECRET` | Segredo de assinatura do webhook da Stripe ⚠️ segredo | Stripe → Developers → Webhooks → endpoint `/api/webhooks/stripe` → Signing secret |
+| `STRIPE_WEBHOOK_SECRET` | Segredo de assinatura do webhook da Stripe ⚠️ segredo | Stripe → Developers → Webhooks → endpoint `https://falow.app.br/sistema/api/webhooks/stripe` → Signing secret |
 | `STRIPE_PRICE_ID` | Preço mensal do plano único | Stripe → Products → Falow → preço → API ID (`price_...`) |
 | `FALOW_OWNER_USER_ID` | UUID do usuário dono (sem assinatura, sem limite de @, com a chave de IA da instalação, nunca apagado) | Supabase → Authentication → Users |
 | `FALOW_ADMIN_USER_IDS` | UUIDs de admins além do dono, separados por vírgula (opcional). Dão acesso ao painel `/admin` | Supabase → Authentication → Users |
+| `FALOW_ADMIN_REQUIRE_MFA` | `true` exige MFA (AAL2) para entrar no `/admin` (opcional; padrão desligado) | Você define |
 | `NEXT_PUBLIC_CONTACT_EMAIL` | E-mail de contato das páginas públicas (opcional) | Veja "Páginas públicas" abaixo |
 | `OPENROUTER_API_KEY` | Chave padrão do botão de IA, **só para o dono e os admins** (opcional; cada usuário pode cadastrar a sua em Contas) ⚠️ segredo | [openrouter.ai/keys](https://openrouter.ai/keys) |
 | `OPENROUTER_MODEL` | Modelo usado por esse botão com a OpenRouter (opcional; também vale para a chave própria da OpenRouter sem modelo escolhido) | Padrão: `anthropic/claude-sonnet-4.5` |
@@ -131,7 +133,7 @@ DM chega → Meta dispara webhook → /api/webhooks/meta
 | Sem regra → não responde | Log `no_match`, nenhuma chamada à API |
 | Delay humanizado | 2–5s, configurável por regra |
 
-**Stack:** Next.js 14 (App Router) · TypeScript · Tailwind + shadcn/ui · Supabase (Auth + Postgres com RLS) · API do Instagram com Login do Instagram (graph.instagram.com) · React Flow (canvas das Sequências). Pagamentos com Stripe (Checkout + portal do cliente). Hospedagem em Cloudflare Workers via OpenNext. Tokens são criptografados no banco (AES-256-GCM) e renovados automaticamente antes de expirar.
+**Stack:** Next.js 16 (App Router, React 19) · TypeScript · Tailwind + shadcn/ui · Supabase (Auth + Postgres com RLS) · API do Instagram com Login do Instagram (graph.instagram.com) · React Flow (canvas das Sequências). Pagamentos com Stripe (Checkout + portal do cliente). Hospedagem em Cloudflare Workers via OpenNext. Tokens são criptografados no banco (AES-256-GCM) e renovados automaticamente antes de expirar.
 
 ## Sequências (fluxos no canvas)
 
@@ -180,6 +182,6 @@ docs/                   # operação do SaaS, App Review da Meta e guia antigo (
 ## Problemas comuns
 
 - **Webhook da Meta não verifica** → `META_VERIFY_TOKEN` diferente entre o Worker e o painel Meta, ou URL do webhook ainda apontando para outro domínio;
-- **Conta não conecta** → Instagram não é Profissional (Comercial/Criador), o redirect do OAuth no app Meta não é o de `falow.app.br`, ou o login já tem uma conta ativa (limite de 1 @ por assinatura);
+- **Conta não conecta** → Instagram não é Profissional (Comercial/Criador), o redirect do OAuth no app Meta não é `https://falow.app.br/sistema/api/auth/meta/callback`, ou o login já tem uma conta ativa (limite de 1 @ por assinatura);
 - **DM não gera log** → campo `messages` não assinado no webhook, "Permitir acesso a mensagens" desativado no Instagram (Configurações → Mensagens → Ferramentas conectadas), ou a assinatura do cliente está sem acesso (a conta fica calada de propósito);
 - **Cliente pagou e não recebeu o convite** → confira o endpoint de webhook na Stripe (eventos entregues) e o SMTP do Supabase Auth. O passo a passo está em [docs/operacao-saas.md](docs/operacao-saas.md).

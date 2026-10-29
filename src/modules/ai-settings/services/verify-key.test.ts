@@ -75,3 +75,16 @@ describe("verifyAiKey na OpenAI", () => {
     expect(auth).toBe("Bearer sk-abc");
   });
 });
+
+describe("verifyAiKey com o provedor errado selecionado", () => {
+  const never = (async () => {
+    throw new Error("não devia chamar o provedor");
+  }) as unknown as typeof fetch;
+
+  it("chave da OpenRouter com OpenAI selecionada não é enviada", async () => {
+    expect(await verifyAiKey("openai", "sk-or-v1-abc", never)).toEqual({ ok: false, reason: "wrong_provider", provider: "openrouter" });
+  });
+  it("chave da OpenAI com OpenRouter selecionada não é enviada", async () => {
+    expect(await verifyAiKey("openrouter", "sk-proj-abc", never)).toEqual({ ok: false, reason: "wrong_provider", provider: "openai" });
+  });
+});

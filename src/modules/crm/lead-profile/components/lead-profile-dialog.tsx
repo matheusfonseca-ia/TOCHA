@@ -14,7 +14,8 @@ import { Button } from "@/components/ui/button";
 import type { InboxConversation } from "../../shared/types/conversation";
 import { leadInitials, leadName } from "../../inbox/utils/labels";
 import { fullDateTime } from "../../inbox/utils/time";
-import { refreshLeadPhoto } from "../services/lead-profile.actions";
+import { queueLeadPhotoRefresh } from "../utils/photo-refresh-queue";
+import { instagramProfileUrl, safeHttpsUrl } from "../../shared/utils/safe-url";
 
 /**
  * Diálogo de perfil do lead: aberto ao clicar na foto ou no nome, no
@@ -86,7 +87,7 @@ export function LeadProfileDialog({
           {c.ig_sender_username && (
             <Button asChild className="mt-5 w-full">
               <a
-                href={`https://www.instagram.com/${c.ig_sender_username}/`}
+                href={instagramProfileUrl(c.ig_sender_username) ?? undefined}
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -115,11 +116,12 @@ function BigAvatar({
 }) {
   const [failed, setFailed] = useState(false);
 
-  if (photoUrl && !failed) {
+  const src = safeHttpsUrl(photoUrl);
+  if (src && !failed) {
     return (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        src={photoUrl}
+        src={src}
         alt=""
         aria-hidden
         referrerPolicy="no-referrer"
@@ -128,7 +130,7 @@ function BigAvatar({
         className="h-20 w-20 rounded-full object-cover"
         onError={() => {
           setFailed(true);
-          void refreshLeadPhoto(conversationId).catch(() => {});
+          queueLeadPhotoRefresh(conversationId);
         }}
       />
     );

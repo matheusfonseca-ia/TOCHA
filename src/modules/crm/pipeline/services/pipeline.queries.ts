@@ -20,7 +20,7 @@ import type {
  * vê os próprios funis/leads). Só servidor: Server Components e Server Actions.
  */
 
-type UserClient = ReturnType<typeof createClient>;
+type UserClient = Awaited<ReturnType<typeof createClient>>;
 
 const CARDS_PER_COLUMN = 50;
 
@@ -91,6 +91,31 @@ function toCard(row: LeadRow): BoardLeadCard {
 const LEAD_COLUMNS =
   "id, stage_id, value, position, entered_stage_at, conversation_id, ig_sender_id, closed_at, conversations(id, ig_sender_id, ig_sender_username, last_message_text, last_message_kind, unread_count)";
 
+const VALUE_PAGE = 1000;
+
+/**
+ * Soma de `value` da etapa, só dos leads com valor (a maioria não tem), em
+ * páginas de 1000. Uma RPC `sum(value) group by stage_id` faria isto numa
+ * consulta só.
+ */
+async function sumStageValues(supabase: UserClient, pipelineId: string, stageId: string): Promise<number> {
+  let sum = 0;
+  for (let from = 0; ; from += VALUE_PAGE) {
+    const { data, error } = await supabase
+      .from("leads")
+      .select("value")
+      .eq("pipeline_id", pipelineId)
+      .eq("stage_id", stageId)
+      .not("value", "is", null)
+      .order("id")
+      .range(from, from + VALUE_PAGE - 1);
+    if (error) return sum;
+    const rows = (data ?? []) as { value: number | string | null }[];
+    for (const row of rows) sum += toNumber(row.value);
+    if (rows.length < VALUE_PAGE) return sum;
+  }
+}
+
 /**
  * Board completo de um funil: etapas ordenadas, até 50 cards por coluna
  * (pela posição) e contagem/soma de valor de TODOS os leads da coluna (não
@@ -108,29 +133,29 @@ export async function getBoard(supabase: UserClient, pipelineId: string): Promis
     .order("position");
   const stages = ((stageRows ?? []) as PipelineStage[]).map((s) => ({ ...s, position: toNumber(s.position) }));
 
-  // Estatística (contagem/soma) sobre TODOS os leads da coluna, sem cap de 50.
-  const { data: statRows } = await supabase.from("leads").select("stage_id, value").eq("pipeline_id", pipelineId);
-  const stats = new Map<string, { count: number; sum: number }>();
-  for (const row of (statRows ?? []) as { stage_id: string; value: number | null }[]) {
-    const current = stats.get(row.stage_id) ?? { count: 0, sum: 0 };
-    current.count += 1;
-    current.sum += toNumber(row.value);
-    stats.set(row.stage_id, current);
-  }
-
+  // Estatística (contagem/soma) sobre TODOS os leads da coluna, sem cap de 50
+  // nem o teto de 1000 linhas do PostgREST: contagem pelo banco (head) e soma
+  // só dos leads com valor, em páginas. Tudo por etapa, em paralelo.
   const columns: BoardColumn[] = await Promise.all(
     stages.map(async (stage) => {
-      const { data: leadRows } = await supabase
-        .from("leads")
-        .select(LEAD_COLUMNS)
-        .eq("pipeline_id", pipelineId)
-        .eq("stage_id", stage.id)
-        .order("position", { ascending: true })
-        .limit(CARDS_PER_COLUMN + 1);
+      const [{ data: leadRows }, { count }, valueSum] = await Promise.all([
+        supabase
+          .from("leads")
+          .select(LEAD_COLUMNS)
+          .eq("pipeline_id", pipelineId)
+          .eq("stage_id", stage.id)
+          .order("position", { ascending: true })
+          .limit(CARDS_PER_COLUMN + 1),
+        supabase
+          .from("leads")
+          .select("id", { count: "exact", head: true })
+          .eq("pipeline_id", pipelineId)
+          .eq("stage_id", stage.id),
+        sumStageValues(supabase, pipelineId, stage.id),
+      ]);
       const rows = (leadRows ?? []) as unknown as LeadRow[];
       const cards = rows.slice(0, CARDS_PER_COLUMN).map(toCard);
-      const stat = stats.get(stage.id) ?? { count: 0, sum: 0 };
-      return { ...stage, cards, count: stat.count, valueSum: stat.sum, hasMore: rows.length > CARDS_PER_COLUMN };
+      return { ...stage, cards, count: count ?? rows.length, valueSum, hasMore: rows.length > CARDS_PER_COLUMN };
     })
   );
 

@@ -5,7 +5,7 @@ import { makeAccount } from "@/lib/sequences/__tests__/fixtures";
 const { listRecentMedia } = vi.hoisted(() => ({ listRecentMedia: vi.fn() }));
 vi.mock("@/lib/meta/graph", () => ({ listRecentMedia }));
 
-import { withRecentMedia } from "./account-media";
+import { clearRecentMediaCache, withRecentMedia } from "./account-media";
 
 const item = {
   id: "m1",
@@ -19,6 +19,24 @@ describe("withRecentMedia", () => {
   beforeEach(() => {
     listRecentMedia.mockReset();
     listRecentMedia.mockResolvedValue([item]);
+    clearRecentMediaCache();
+  });
+
+  it("reaproveita a mídia por alguns minutos em vez de chamar a Graph API a cada render", async () => {
+    const account = makeAccount({ id: "cache", status: "active" });
+    await withRecentMedia([account]);
+    const again = await withRecentMedia([account]);
+
+    expect(listRecentMedia).toHaveBeenCalledTimes(1);
+    expect(again[0].media).toHaveLength(1);
+  });
+
+  it("falha na Graph API não fica guardada", async () => {
+    const account = makeAccount({ id: "falha", status: "active" });
+    listRecentMedia.mockRejectedValueOnce(new Error("rate limit"));
+    expect((await withRecentMedia([account]))[0].media).toEqual([]);
+    expect((await withRecentMedia([account]))[0].media).toHaveLength(1);
+    expect(listRecentMedia).toHaveBeenCalledTimes(2);
   });
 
   it("conta ativa: descriptografa o token e devolve a mídia", async () => {

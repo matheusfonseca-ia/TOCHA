@@ -10,7 +10,7 @@ const h = vi.hoisted(() => ({
     resetPasswordForEmail: ReturnType<typeof import("vitest").vi.fn>;
   },
   rpc: null as unknown as ReturnType<typeof import("vitest").vi.fn>,
-  createAdminClient: null as unknown as ReturnType<typeof import("vitest").vi.fn>,
+  createAdminClient: null as unknown as import("vitest").Mock<(...args: unknown[]) => unknown>,
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
@@ -170,9 +170,16 @@ describe("actions com admin", () => {
     expect(h.rpc).toHaveBeenCalledWith("falow_user_id_by_email", { p_email: "ana@cliente.com" });
     expect(h.auth.admin.inviteUserByEmail).not.toHaveBeenCalled();
     expect(h.db.tables.access_grants).toEqual([expect.objectContaining({ user_id: C1, kind: "courtesy" })]);
-    expect(h.db.tables.admin_audit_log.map((e) => e.action)).toEqual(["courtesy_invite", "courtesy_grant"]);
+    expect(h.db.tables.admin_audit_log.map((e) => e.action)).toEqual(["courtesy_invite", "courtesy_invite", "courtesy_grant"]);
+    // Registro só cresce: o pedido fica como foi gravado e a conclusão vem numa linha nova.
     expect(h.db.tables.admin_audit_log[0]).toEqual(
-      expect.objectContaining({ target_user_id: C1, details: { email: "ana@cliente.com", invited: false, status: "existing" } })
+      expect.objectContaining({ target_user_id: C1, details: { email: "ana@cliente.com", status: "requested" } })
+    );
+    expect(h.db.tables.admin_audit_log[1]).toEqual(
+      expect.objectContaining({
+        target_user_id: C1,
+        details: { email: "ana@cliente.com", invited: false, status: "existing", request_id: h.db.tables.admin_audit_log[0].id },
+      })
     );
   });
 
@@ -181,8 +188,8 @@ describe("actions com admin", () => {
     expect(r).toEqual({ ok: true });
     expect(h.auth.admin.inviteUserByEmail).toHaveBeenCalledWith("novo@cliente.com", { redirectTo: "https://falow.app.br/sistema/definir-senha" });
     expect(h.db.tables.access_grants).toEqual([expect.objectContaining({ user_id: NEW_USER, kind: "courtesy" })]);
-    expect(h.db.tables.admin_audit_log[0]).toEqual(
-      expect.objectContaining({ action: "courtesy_invite", target_user_id: NEW_USER, details: { email: "novo@cliente.com", invited: true, status: "created" } })
+    expect(h.db.tables.admin_audit_log[1]).toEqual(
+      expect.objectContaining({ action: "courtesy_invite", target_user_id: NEW_USER, details: expect.objectContaining({ email: "novo@cliente.com", invited: true, status: "created" }) })
     );
   });
 
@@ -211,13 +218,18 @@ describe("actions com admin", () => {
     });
     const r = await inviteWithCourtesyAction(form({ email: "novo@cliente.com", expiresAt: in30(), reason: "parceiro" }));
     expect(r).toEqual({ ok: false, error: expect.stringContaining("Convite enviado, mas a cortesia falhou") });
-    expect(h.db.tables.admin_audit_log).toEqual([expect.objectContaining({ action: "courtesy_invite", target_user_id: NEW_USER, details: { email: "novo@cliente.com", invited: true, status: "created" } })]);
+    expect(h.db.tables.admin_audit_log).toEqual([
+      expect.objectContaining({ action: "courtesy_invite", details: { email: "novo@cliente.com", status: "requested" } }),
+      expect.objectContaining({ action: "courtesy_invite", target_user_id: NEW_USER, details: expect.objectContaining({ email: "novo@cliente.com", invited: true, status: "created" }) }),
+    ]);
   });
 
   it("não cria conta nem envia convite se o registro inicial falha", async () => {
     const originalFrom = h.db.from.bind(h.db);
     vi.spyOn(h.db, "from").mockImplementation((table) => table === "admin_audit_log"
-      ? { insert: () => ({ select: () => ({ single: async () => ({ data: null, error: { message: "boom" } }) }) }) } as never
+      ? Object.assign(originalFrom(table), {
+          insert: () => ({ select: () => ({ single: async () => ({ data: null, error: { message: "boom" } }) }) }),
+        }) as never
       : originalFrom(table));
     const r = await inviteWithCourtesyAction(form({ email: "novo@cliente.com", expiresAt: in30(), reason: "parceiro" }));
     expect(r).toEqual({ ok: false, error: expect.stringContaining("nenhuma conta foi criada") });
@@ -231,5 +243,33 @@ describe("actions com admin", () => {
       return { data: { user: { id: NEW_USER } }, error: null };
     });
     expect(await inviteWithCourtesyAction(form({ email: "novo@cliente.com", expiresAt: in30(), reason: "parceiro" }))).toEqual({ ok: true });
+  });
+
+  it("limite de e-mails por admin por hora: convite e reenvio recusados acima do teto", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    for (let i = 0; i < 20; i++) {
+      h.db.tables.admin_audit_log.push({
+        id: i + 1000,
+        admin_id: "user-1",
+        action: i % 2 ? "invite_resend" : "courtesy_invite",
+        target_user_id: null,
+        details: i % 2 ? { mode: "invite" } : { email: `x${i}@y.com`, status: "requested" },
+        created_at: new Date().toISOString(),
+      });
+    }
+    const r = await inviteWithCourtesyAction(form({ email: "novo@cliente.com", expiresAt: in30(), reason: "x" }));
+    expect(r).toEqual({ ok: false, error: expect.stringContaining("Limite") });
+    expect(await resendAccessAction(C1)).toEqual({ ok: false, error: expect.stringContaining("Limite") });
+    expect(h.auth.admin.inviteUserByEmail).not.toHaveBeenCalled();
+  });
+
+  it("linhas antigas e de conclusão não contam para o limite", async () => {
+    const old = new Date(Date.now() - 2 * 3_600_000).toISOString();
+    for (let i = 0; i < 25; i++) {
+      h.db.tables.admin_audit_log.push({ id: i + 2000, admin_id: "user-1", action: "invite_resend", target_user_id: null, details: {}, created_at: old });
+      h.db.tables.admin_audit_log.push({ id: i + 3000, admin_id: "user-1", action: "courtesy_invite", target_user_id: null, details: { status: "created" }, created_at: new Date().toISOString() });
+    }
+    const r = await inviteWithCourtesyAction(form({ email: "novo@cliente.com", expiresAt: in30(), reason: "x" }));
+    expect(r).toEqual({ ok: true });
   });
 });

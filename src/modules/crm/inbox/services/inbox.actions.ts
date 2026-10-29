@@ -1,5 +1,6 @@
 "use server";
 
+import { activeUserId } from "@/lib/auth/require-access";
 import { sendMarkSeen } from "@/lib/meta/graph";
 import { getFreshToken } from "@/lib/meta/token";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -13,7 +14,8 @@ import type { IgAccount } from "@/types/database";
  * (best effort, confirmado na Fase 0: `sender_action: mark_seen`).
  */
 export async function markConversationRead(conversationId: string): Promise<void> {
-  const supabase = createClient();
+  if (!(await activeUserId())) return;
+  const supabase = await createClient();
   const { data } = await supabase
     .from("conversations")
     .select("id, unread_count, account_id, ig_sender_id")

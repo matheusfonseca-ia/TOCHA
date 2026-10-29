@@ -24,9 +24,12 @@ import type {
 type AdminClient = ReturnType<typeof createAdminClient>;
 
 const INTERNAL_PREFIX = "__";
+// Retrato do contato mais novo que isto é reaproveitado na gravação.
+const CONTACT_FRESH_MS = 1000;
 
 export class FlowData {
   private contact: ContactSnapshot | null = null;
+  private contactLoadedAt = 0;
   private conversationUsername: string | null | undefined;
   private stageIds: string[] | null = null;
   private readonly variables: RunVariables;
@@ -42,12 +45,13 @@ export class FlowData {
   }
 
   private async getContact(): Promise<ContactSnapshot> {
-    this.contact ??= await loadContact(
-      this.admin,
-      this.accountId,
-      this.run.ig_sender_id
-    );
-    return this.contact;
+    if (!this.contact) await this.reloadContact();
+    return this.contact!;
+  }
+
+  private async reloadContact(): Promise<void> {
+    this.contact = await loadContact(this.admin, this.accountId, this.run.ig_sender_id);
+    this.contactLoadedAt = Date.now();
   }
 
   private async getUsername(): Promise<string | null> {
@@ -119,11 +123,25 @@ export class FlowData {
     });
   }
 
+  /**
+   * Ficha relida do banco logo antes de gravar: o retrato carregado no começo
+   * da execução pode ter dezenas de segundos (pausas, Graph API) e gravar a
+   * partir dele apagaria o que o painel ou outro fluxo mudou nesse meio
+   * tempo. Ainda é ler-e-gravar (sem trava no banco), mas a janela de
+   * corrida cai para uma ida ao banco.
+   */
+  private async freshContact(): Promise<ContactSnapshot> {
+    if (!this.contact || Date.now() - this.contactLoadedAt > CONTACT_FRESH_MS) {
+      await this.reloadContact();
+    }
+    return this.contact!;
+  }
+
   /** Grava o campo no contato e nas variáveis do run. */
   async setField(key: string, rawValue: string): Promise<void> {
     const value = rawValue.slice(0, STORED_FIELD_VALUE_MAX);
-    const contact = await this.getContact();
     const username = await this.getUsername();
+    const contact = await this.freshContact();
     this.contact = {
       ig_username: username,
       fields: { ...contact.fields, [key]: value },
@@ -135,8 +153,8 @@ export class FlowData {
   }
 
   async setTag(tag: string, action: "add" | "remove"): Promise<void> {
-    const contact = await this.getContact();
     const username = await this.getUsername();
+    const contact = await this.freshContact();
     const name = tag.trim();
     // Mesma regra do catálogo e da Condição: "Promoção" e "promocao" são a
     // mesma tag, então remover uma remove a outra e adicionar não duplica.
@@ -150,19 +168,51 @@ export class FlowData {
   }
 
   attemptsAt(nodeId: string): number {
-    return this.variables.__attempts?.[nodeId] ?? 0;
+    return this.counterAt("__attempts", nodeId);
   }
 
   /** Grava o contador de respostas inválidas do nó (null zera). */
   async setAttempts(nodeId: string, attempts: number | null): Promise<void> {
-    const current = { ...(this.variables.__attempts ?? {}) };
-    if (attempts === null) {
+    await this.setCounter("__attempts", nodeId, attempts);
+  }
+
+  /** Contador interno por nó (`__attempts`, `__retries`, `__followChecks`...). */
+  counterAt(key: `__${string}`, nodeId: string): number {
+    const bucket = this.variables[key];
+    const value =
+      bucket && typeof bucket === "object" ? (bucket as Record<string, unknown>)[nodeId] : undefined;
+    return typeof value === "number" ? value : 0;
+  }
+
+  /** Grava o contador interno do nó (null zera). */
+  async setCounter(key: `__${string}`, nodeId: string, value: number | null): Promise<void> {
+    const bucket = this.variables[key];
+    const current: Record<string, number> = {
+      ...(bucket && typeof bucket === "object" ? (bucket as Record<string, number>) : {}),
+    };
+    if (value === null) {
       if (!(nodeId in current)) return;
       delete current[nodeId];
     } else {
-      current[nodeId] = attempts;
+      current[nodeId] = value;
     }
-    this.variables.__attempts = current;
+    this.variables[key] = current;
+    await this.saveVariables();
+  }
+
+  /** Valor interno do run (chaves "__"), como gravado. */
+  internal(key: `__${string}`): unknown {
+    return this.variables[key];
+  }
+
+  /** Grava (ou apaga, com undefined) um valor interno do run. */
+  async setInternal(key: `__${string}`, value: unknown): Promise<void> {
+    if (value === undefined) {
+      if (!(key in this.variables)) return;
+      delete this.variables[key];
+    } else {
+      this.variables[key] = value;
+    }
     await this.saveVariables();
   }
 

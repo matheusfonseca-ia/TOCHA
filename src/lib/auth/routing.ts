@@ -25,6 +25,14 @@ export function routeFor(pathname: string, ctx: { loggedIn: boolean; hasAccess: 
   return "next";
 }
 
+/**
+ * O destino depende de `hasAccess`? Público e /assinatura não dependem: o
+ * middleware pula a leitura de access_grants/subscriptions nesses casos.
+ */
+export function accessMatters(pathname: string): boolean {
+  return !PUBLIC_PATHS.has(pathname) && !NO_ACCESS_ALLOWED.has(pathname);
+}
+
 /** Área do painel de admin: /admin e qualquer subrota. */
 export function isAdminPath(pathname: string): boolean {
   return pathname === "/admin" || pathname.startsWith("/admin/");

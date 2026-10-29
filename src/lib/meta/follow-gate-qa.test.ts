@@ -947,27 +947,25 @@ describe("QA portão: outros caminhos", () => {
     expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
   });
 
-  // Corrida: dois pedidos de DM quase juntos, a 1ª consulta diz "não segue" e a
-  // 2ª "segue" (ou "unknown", D2). O 2º entrega sem gravar link_delivered_at
-  // (applyRule só trava quando a linha JÁ estava retida), e o 1º marca
-  // follow_gate_sent_at na mesma linha: o conteúdo já entregue fica "retido"
-  // e o "Já segui" entrega de novo. O plano (tasks/todo.md) previa: "com
-  // portão ligado, a entrega de DM passa a gravar link_delivered_at".
-  it("corrida entre dois pedidos de DM: conteúdo entregue fica marcado e o Já segui não entrega 2x", async () => {
+  // Corrida: dois pedidos de DM quase juntos. A reserva atômica em
+  // rule_triggers (A0-010) deixa só um deles seguir: ele confere, não segue e
+  // recebe o portão; o outro vira duplicate_skip sem consultar nem enviar.
+  // Depois o "Já segui" entrega o conteúdo 1x só.
+  it("corrida entre dois pedidos de DM: só um responde (portão) e o Já segui entrega 1x", async () => {
     const { account, rule } = seedDm();
-    getFollowsBusinessMock
-      .mockImplementationOnce(async () => false)
-      .mockImplementationOnce(async () => true);
+    getFollowsBusinessMock.mockImplementation(async () => false);
 
     await Promise.all([
       processWebhookPayload(dm(account, "s-93", "m-1", "oi")),
       processWebhookPayload(dm(account, "s-93", "m-2", "oi")),
     ]);
-    expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
+    expect(sendRuleReplyMock).not.toHaveBeenCalled();
     expect(sendTemplateButtonsMessageMock).toHaveBeenCalledTimes(1);
+    expect(getFollowsBusinessMock).toHaveBeenCalledTimes(1);
 
     getFollowsBusinessMock.mockImplementation(async () => true);
     await processWebhookPayload(postback(account, "s-93", "pb-1", followCheck(rule)));
+    await processWebhookPayload(postback(account, "s-93", "pb-2", followCheck(rule)));
 
     expect(sendRuleReplyMock).toHaveBeenCalledTimes(1);
   });

@@ -1,14 +1,21 @@
 import { NextResponse } from "next/server";
 
 import { appUrl } from "@/lib/app-url";
+import { isSameOriginRequest } from "@/lib/billing/checkout";
 import { getStripe } from "@/lib/billing/stripe";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
 /** "Minha assinatura": cartão, notas e cancelamento ficam no portal da Stripe. */
-export async function POST() {
-  const supabase = createClient();
+export async function POST(request: Request) {
+  // Route Handler não tem a checagem de Origin das Server Actions: sem isto, uma
+  // página do mesmo site levaria o cliente logado ao portal sem ele pedir.
+  if (!isSameOriginRequest(request.headers, appUrl("/"))) {
+    return new NextResponse("Origem não permitida", { status: 403 });
+  }
+
+  const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();

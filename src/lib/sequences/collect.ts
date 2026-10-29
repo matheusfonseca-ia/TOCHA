@@ -34,16 +34,31 @@ export function validateEmail(raw: string): CollectResult {
   return { ok: true, value };
 }
 
+// Trecho contínuo com cara de telefone: dígitos com espaço, ponto, hífen,
+// parênteses e "+" no meio. Texto em volta separa os trechos.
+const PHONE_CANDIDATE = /\+?\s*\(?\d[\d\s().-]*\d/g;
+// CPF formatado (000.000.000-00) tem 11 dígitos como um celular: não é telefone.
+const CPF_FORMAT = /^\d{3}\.\d{3}\.\d{3}-\d{2}$/;
+
 /**
  * Telefone em formato E.164 ("+5511987654321"). Sem "+", 10 ou 11 dígitos
  * são tratados como número brasileiro (DDD + número) e ganham o +55; com
  * "+" (ou 12 a 15 dígitos), vale como internacional.
+ *
+ * Os dígitos precisam estar num trecho só ("meu whats é 21 99999-8888"):
+ * somar dígitos espalhados pela frase aceitava CEP + número da casa ou CPF.
+ * Mais de um trecho com cara de telefone é ambíguo e é recusado.
  */
 export function validatePhone(raw: string): CollectResult {
-  // Texto em volta ("meu whats é ...") é ignorado: só a contagem de dígitos
-  // decide, e frase com número solto ("tenho 2 filhos") não chega a 10.
-  const hasPlus = /\+\s*\d/.test(raw);
-  let digits = raw.replace(/\D/g, "");
+  const candidates = (raw.match(PHONE_CANDIDATE) ?? [])
+    .map((c) => c.trim())
+    .filter((c) => c.replace(/\D/g, "").length >= 8);
+  if (candidates.length !== 1) return INVALID;
+  const candidate = candidates[0];
+  if (CPF_FORMAT.test(candidate)) return INVALID;
+
+  const hasPlus = candidate.startsWith("+");
+  let digits = candidate.replace(/\D/g, "");
   // "0" de discagem nacional antes do DDD (011 98765-4321).
   if (!hasPlus && digits.length === 12 && digits.startsWith("0")) {
     digits = digits.slice(1);
@@ -62,11 +77,13 @@ export function validatePhone(raw: string): CollectResult {
 }
 
 /**
- * Converte "1.234,56", "1234.56", "1,5", "R$ 1.500", "-3" em número. Com
- * ponto e vírgula, o último separador é o decimal; só vírgula é decimal
- * (padrão pt-BR); só ponto em grupos de 3 ("1.500") é milhar.
+ * Número em texto decimal canônico ("1234.56", "-3", "1500"), ou null.
+ * Aceita "1.234,56", "1234.56", "1,5", "R$ 1.500", "-3": com ponto e vírgula,
+ * o último separador é o decimal; só vírgula é decimal (padrão pt-BR); só
+ * ponto em grupos de 3 ("1.500") é milhar. Fica em texto para não perder
+ * precisão (Number("12345678901234567890123") viraria 1.2345678901234568e+22).
  */
-export function parseLooseNumber(raw: string): number | null {
+export function normalizeLooseNumber(raw: string): string | null {
   const match = raw.replace(/\s/g, "").match(/-?\d[\d.,]*/);
   if (!match) return null;
   let token = match[0].replace(/[.,]$/, "");
@@ -85,7 +102,20 @@ export function parseLooseNumber(raw: string): number | null {
     token = token.split(".").join("");
   }
 
-  const value = Number(token);
+  const parts = token.match(/^(-?)(\d+)(?:\.(\d+))?$/);
+  if (!parts) return null;
+  const [, sign, intRaw, fracRaw = ""] = parts;
+  const intPart = intRaw.replace(/^0+(?=\d)/, "");
+  const fracPart = fracRaw.replace(/0+$/, "");
+  const body = fracPart ? `${intPart}.${fracPart}` : intPart;
+  return body === "0" ? "0" : `${sign}${body}`;
+}
+
+/** Mesmo que `normalizeLooseNumber`, como number (para comparações). */
+export function parseLooseNumber(raw: string): number | null {
+  const normalized = normalizeLooseNumber(raw);
+  if (normalized === null) return null;
+  const value = Number(normalized);
   return Number.isFinite(value) ? value : null;
 }
 
@@ -97,8 +127,8 @@ export function validateNumber(raw: string): CollectResult {
     .replace(/r\$|us\$|\$|€|%|reais|real|anos?|kg/gi, "")
     .trim();
   if (residue) return INVALID;
-  const value = parseLooseNumber(raw);
-  return value === null ? INVALID : { ok: true, value: String(value) };
+  const value = normalizeLooseNumber(raw);
+  return value === null ? INVALID : { ok: true, value: value.slice(0, COLLECT_VALUE_MAX) };
 }
 
 /** Data de calendário válida em [ano, mês (1-12), dia]; null se não existe. */

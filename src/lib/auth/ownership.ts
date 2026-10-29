@@ -6,7 +6,8 @@ import { createClient } from "@/lib/supabase/server";
  * dele. Nulo = não é dele (ou não existe) e a action não pode seguir.
  */
 export async function ownedAccountId(accountId: string): Promise<string | null> {
-  const { data } = await createClient()
+  const supabase = await createClient();
+  const { data } = await supabase
     .from("ig_accounts")
     .select("id")
     .eq("id", accountId)
@@ -15,7 +16,8 @@ export async function ownedAccountId(accountId: string): Promise<string | null> 
 }
 
 export async function ownedConversationId(conversationId: string): Promise<string | null> {
-  const { data } = await createClient()
+  const supabase = await createClient();
+  const { data } = await supabase
     .from("conversations")
     .select("id")
     .eq("id", conversationId)

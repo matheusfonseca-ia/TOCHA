@@ -9,6 +9,7 @@ const { state, graph } = vi.hoisted(() => ({
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+vi.mock("@/lib/auth/require-access", () => ({ activeUserId: async () => "user-1" }));
 vi.mock("@/lib/supabase/admin", () => ({
   createAdminClient: () => (state.admin as FakeSupabase).client,
 }));

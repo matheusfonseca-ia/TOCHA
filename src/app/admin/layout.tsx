@@ -8,11 +8,13 @@ export const metadata = { title: "Admin · Falow" };
 
 /**
  * Segunda camada do /admin (a primeira é o middleware): sem admin, 404 — a área
- * não existe para quem não é admin. As actions conferem de novo.
+ * não existe para quem não é admin. O layout aceita sessão sem o segundo fator
+ * porque também envolve /admin/mfa (onde ele é cadastrado/confirmado); cada
+ * página e cada action exigem o fator de novo (requireAdminPage/requireAdmin).
  */
 export default async function AdminLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   try {
-    await requireAdmin();
+    await requireAdmin({ allowAal1: true });
   } catch {
     notFound();
   }
@@ -28,6 +30,9 @@ export default async function AdminLayout({ children }: Readonly<{ children: Rea
             </Link>
             <Link href="/admin" className="text-muted-foreground hover:text-foreground">
               Registro
+            </Link>
+            <Link href="/admin/mfa" className="text-muted-foreground hover:text-foreground">
+              Segundo fator
             </Link>
           </nav>
           <Link href="/dashboard" className="ml-auto text-sm text-muted-foreground underline hover:text-foreground">

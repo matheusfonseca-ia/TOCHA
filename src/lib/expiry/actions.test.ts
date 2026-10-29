@@ -20,6 +20,8 @@ const { getClient, setClient } = vi.hoisted(() => {
 
 vi.mock("@/lib/supabase/server", () => ({ createClient: () => getClient() }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
+const access = vi.hoisted(() => ({ active: true }));
+vi.mock("@/lib/auth/require-access", () => ({ activeUserId: async () => (access.active ? "user-1" : null) }));
 
 import { expireAutomations } from "./sweep";
 import { extendExpiry } from "./actions";
@@ -33,6 +35,18 @@ let fake: FakeSupabase;
 beforeEach(() => {
   fake = createFakeAdmin();
   setClient(fake.client);
+  access.active = true;
+});
+
+describe("extendExpiry: acesso", () => {
+  it("sem acesso ativo (bloqueio/assinatura) não mexe em nada", async () => {
+    access.active = false;
+    const rule = makeRule({ expires_at: past(), expire_action: "pause", is_active: false, paused_by_expiry: true });
+    fake.tables.rules.push(rule);
+    const r = await extendExpiry("rule", rule.id, inDays(3));
+    expect(r.error).toMatch(/assinatura/);
+    expect(fake.tables.rules[0].is_active).toBe(false);
+  });
 });
 
 describe("extendExpiry", () => {

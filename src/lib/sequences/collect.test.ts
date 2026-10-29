@@ -62,6 +62,13 @@ describe("validatePhone", () => {
     expect(validatePhone("tenho 2 filhos")).toEqual(bad);
     expect(validatePhone("1234567890123456")).toEqual(bad);
   });
+
+  it("não soma dígitos espalhados pela frase (CEP, número da casa, CPF)", () => {
+    expect(validatePhone("CEP 01310-100 número 1234")).toEqual(bad);
+    expect(validatePhone("123.456.789-09")).toEqual(bad);
+    expect(validatePhone("11 98765-4321 ou 21 99999-8888")).toEqual(bad);
+    expect(validatePhone("tenho 2 filhos, cel 11 98765-4321")).toEqual(ok("+5511987654321"));
+  });
 });
 
 describe("validateNumber / parseLooseNumber", () => {
@@ -77,6 +84,13 @@ describe("validateNumber / parseLooseNumber", () => {
     expect(validateNumber("R$ 1.500,00")).toEqual(ok("1500"));
     expect(validateNumber("30 anos")).toEqual(ok("30"));
     expect(validateNumber("42")).toEqual(ok("42"));
+    expect(validateNumber("1,50")).toEqual(ok("1.5"));
+    expect(validateNumber("007")).toEqual(ok("7"));
+  });
+
+  it("número grande não vira notação científica", () => {
+    expect(validateNumber("12345678901234567890123")).toEqual(ok("12345678901234567890123"));
+    expect(validateNumber("-0")).toEqual(ok("0"));
   });
   it("recusa frase com número solto e texto sem número", () => {
     expect(validateNumber("tenho 2 filhos")).toEqual(bad);

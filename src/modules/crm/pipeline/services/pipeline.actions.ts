@@ -1,7 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 
+import { activeUserId } from "@/lib/auth/require-access";
 import { startStageEnterSequence } from "@/lib/sequences/runtime";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
@@ -25,6 +27,35 @@ const CONVERSAS_PATH = "/crm/conversas";
 
 type ActionResult = { error?: string };
 
+const NO_ACCESS = "Sua assinatura não está ativa. Acesse Minha assinatura para reativar.";
+
+// Entradas das actions (A1-020): ids como texto curto, números finitos e
+// dentro de faixa, cor só em hex e tipo de etapa só do enum.
+const id = z.string().min(1).max(64);
+const stageType = z.enum(["open", "won", "lost"]);
+const hexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/);
+const MAX_VALUE = 1e12;
+
+const moveLeadSchema = z.object({
+  leadId: id,
+  toStageId: id,
+  position: z.number().finite().optional(),
+  lostReason: z.string().max(500).optional(),
+});
+const stageInputSchema = z.object({ name: z.string().max(200), color: hexColor, stageType });
+const stagePatchSchema = z.object({
+  name: z.string().max(200).optional(),
+  color: hexColor.optional(),
+  stageType: stageType.optional(),
+  onEnterSequenceId: id.nullable().optional(),
+});
+
+/** Erro do banco: o texto cru (tabela, constraint, policy) só vai para o log. */
+function dbError(context: string, message: string, friendly: string): ActionResult {
+  console.error(`[crm] ${context}:`, message);
+  return { error: friendly };
+}
+
 /** Depois de mover para uma etapa com "ao entrar, iniciar workflow": dispara best effort. */
 async function maybeStartStageWorkflow(
   admin: ReturnType<typeof createAdminClient>,
@@ -41,17 +72,24 @@ async function maybeStartStageWorkflow(
   }
 }
 
-export async function moveLeadAction(input: {
+export async function moveLeadAction(raw: {
   leadId: string;
   toStageId: string;
   position?: number;
   lostReason?: string;
 }): Promise<ActionResult> {
-  const supabase = createClient();
-  const [{ data: lead }, { data: userRes }] = await Promise.all([
-    supabase.from("leads").select("id, account_id").eq("id", input.leadId).maybeSingle<{ id: string; account_id: string }>(),
-    supabase.auth.getUser(),
-  ]);
+  const parsed = moveLeadSchema.safeParse(raw);
+  if (!parsed.success) return { error: "Dados inválidos para mover o lead." };
+  const input = parsed.data;
+  const userId = await activeUserId();
+  if (!userId) return { error: NO_ACCESS };
+
+  const supabase = await createClient();
+  const { data: lead } = await supabase
+    .from("leads")
+    .select("id, account_id")
+    .eq("id", input.leadId)
+    .maybeSingle<{ id: string; account_id: string }>();
   if (!lead) return { error: "Lead não encontrado." };
 
   const admin = createAdminClient();
@@ -60,7 +98,7 @@ export async function moveLeadAction(input: {
       accountId: lead.account_id,
       toStageId: input.toStageId,
       source: "manual",
-      movedBy: userRes.user?.id ?? null,
+      movedBy: userId,
       position: input.position,
       lostReason: input.lostReason,
       leadId: lead.id,
@@ -71,13 +109,15 @@ export async function moveLeadAction(input: {
     revalidatePath(FUNIL_PATH);
     return {};
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Não foi possível mover o lead." };
+    console.error("[crm] falha ao mover lead:", err instanceof Error ? err.message : err);
+    return { error: "Não foi possível mover o lead. Tente de novo." };
   }
 }
 
 /** Ficha do lead pro drawer do board: carregada sob demanda, ao abrir o card. */
 export async function getLeadDetailAction(leadId: string): Promise<LeadDetail | null> {
-  return getLeadDetail(createClient(), leadId);
+  if (!id.safeParse(leadId).success || !(await activeUserId())) return null;
+  return getLeadDetail(await createClient(), leadId);
 }
 
 /** "Carregar mais" de uma coluna do board. */
@@ -86,32 +126,61 @@ export async function loadMoreLeadsAction(
   stageId: string,
   afterPosition: number
 ): Promise<{ cards: BoardLeadCard[]; hasMore: boolean }> {
-  return loadMoreStageLeads(createClient(), pipelineId, stageId, afterPosition);
+  const valid = id.safeParse(pipelineId).success && id.safeParse(stageId).success && Number.isFinite(afterPosition);
+  if (!valid || !(await activeUserId())) return { cards: [], hasMore: false };
+  return loadMoreStageLeads(await createClient(), pipelineId, stageId, afterPosition);
 }
 
 export async function updateLeadValueAction(leadId: string, value: number | null): Promise<ActionResult> {
-  const supabase = createClient();
+  if (!id.safeParse(leadId).success) return { error: "Lead não encontrado." };
+  if (value !== null && (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > MAX_VALUE)) {
+    return { error: "Valor inválido." };
+  }
+  if (!(await activeUserId())) return { error: NO_ACCESS };
+  const supabase = await createClient();
   const { data: lead } = await supabase.from("leads").select("id").eq("id", leadId).maybeSingle<{ id: string }>();
   if (!lead) return { error: "Lead não encontrado." };
 
-  await createAdminClient().from("leads").update({ value, updated_at: new Date().toISOString() }).eq("id", leadId);
+  const { error } = await createAdminClient().from("leads").update({ value, updated_at: new Date().toISOString() }).eq("id", leadId);
+  if (error) return dbError("falha ao salvar valor do lead", error.message, "Não foi possível salvar o valor.");
   revalidatePath(FUNIL_PATH);
   return {};
 }
 
-export async function bringExistingConversationsAction(pipelineId: string): Promise<ActionResult & { enrolled?: number }> {
-  const supabase = createClient();
+/**
+ * Um lote de "Trazer conversas existentes". A UI chama de novo com
+ * `nextCursor` até vir null (cada chamada cobre uma página de conversas, para
+ * caber no tempo do Worker).
+ */
+export async function bringExistingConversationsAction(
+  pipelineId: string,
+  cursor: string | null = null
+): Promise<ActionResult & { enrolled?: number; nextCursor?: string | null }> {
+  if (!id.safeParse(pipelineId).success || (cursor !== null && !id.safeParse(cursor).success)) {
+    return { error: "Funil não encontrado." };
+  }
+  if (!(await activeUserId())) return { error: NO_ACCESS };
+  const supabase = await createClient();
   const { data: pipeline } = await supabase.from("pipelines").select("id, account_id").eq("id", pipelineId).maybeSingle<{ id: string; account_id: string }>();
   if (!pipeline) return { error: "Funil não encontrado." };
 
-  const enrolled = await enrollExistingConversations(createAdminClient(), pipeline.account_id);
-  revalidatePath(FUNIL_PATH);
-  revalidatePath(CONVERSAS_PATH);
-  return { enrolled };
+  try {
+    const { enrolled, nextCursor } = await enrollExistingConversations(createAdminClient(), pipeline.account_id, cursor);
+    if (!nextCursor) {
+      revalidatePath(FUNIL_PATH);
+      revalidatePath(CONVERSAS_PATH);
+    }
+    return { enrolled, nextCursor };
+  } catch (err) {
+    console.error("[crm] falha ao trazer conversas existentes:", err instanceof Error ? err.message : err);
+    return { error: "Não foi possível trazer as conversas. Tente de novo." };
+  }
 }
 
 export async function toggleAutoEnrollAction(pipelineId: string, autoEnroll: boolean): Promise<ActionResult> {
-  const supabase = createClient();
+  if (!id.safeParse(pipelineId).success || typeof autoEnroll !== "boolean") return { error: "Funil não encontrado." };
+  if (!(await activeUserId())) return { error: NO_ACCESS };
+  const supabase = await createClient();
   const { data: pipeline } = await supabase.from("pipelines").select("id").eq("id", pipelineId).maybeSingle<{ id: string }>();
   if (!pipeline) return { error: "Funil não encontrado." };
 
@@ -122,9 +191,13 @@ export async function toggleAutoEnrollAction(pipelineId: string, autoEnroll: boo
 
 export async function createStageAction(
   pipelineId: string,
-  input: { name: string; color: string; stageType: StageType }
+  raw: { name: string; color: string; stageType: StageType }
 ): Promise<ActionResult> {
-  const supabase = createClient();
+  const parsed = stageInputSchema.safeParse(raw);
+  if (!id.safeParse(pipelineId).success || !parsed.success) return { error: "Dados inválidos para a etapa." };
+  const input = parsed.data;
+  if (!(await activeUserId())) return { error: NO_ACCESS };
+  const supabase = await createClient();
   const { data: pipeline } = await supabase.from("pipelines").select("id").eq("id", pipelineId).maybeSingle<{ id: string }>();
   if (!pipeline) return { error: "Funil não encontrado." };
   if (!input.name.trim()) return { error: "Dê um nome à etapa." };
@@ -145,16 +218,20 @@ export async function createStageAction(
     stage_type: input.stageType,
     position: positionBetween(last ? toNumber(last.position) : null, null),
   });
-  if (error) return { error: error.message };
+  if (error) return dbError("falha ao criar etapa", error.message, "Não foi possível criar a etapa.");
   revalidatePath(FUNIL_PATH);
   return {};
 }
 
 export async function updateStageAction(
   stageId: string,
-  patch: { name?: string; color?: string; stageType?: StageType; onEnterSequenceId?: string | null }
+  rawPatch: { name?: string; color?: string; stageType?: StageType; onEnterSequenceId?: string | null }
 ): Promise<ActionResult> {
-  const supabase = createClient();
+  const parsed = stagePatchSchema.safeParse(rawPatch);
+  if (!id.safeParse(stageId).success || !parsed.success) return { error: "Dados inválidos para a etapa." };
+  const patch = parsed.data;
+  if (!(await activeUserId())) return { error: NO_ACCESS };
+  const supabase = await createClient();
   const { data: stage } = await supabase
     .from("pipeline_stages")
     .select("id, stage_type")
@@ -184,7 +261,7 @@ export async function updateStageAction(
 
   const admin = createAdminClient();
   const { error } = await admin.from("pipeline_stages").update(row).eq("id", stageId);
-  if (error) return { error: error.message };
+  if (error) return dbError("falha ao salvar etapa", error.message, "Não foi possível salvar a etapa.");
   if (patch.stageType !== undefined && patch.stageType !== stage.stage_type) {
     await syncStageClosing(admin, stageId, patch.stageType);
   }
@@ -208,7 +285,11 @@ async function syncStageClosing(admin: ReturnType<typeof createAdminClient>, sta
 }
 
 export async function reorderStagesAction(pipelineId: string, orderedStageIds: string[]): Promise<ActionResult> {
-  const supabase = createClient();
+  if (!id.safeParse(pipelineId).success || !z.array(id).max(50).safeParse(orderedStageIds).success) {
+    return { error: "Dados inválidos para reordenar." };
+  }
+  if (!(await activeUserId())) return { error: NO_ACCESS };
+  const supabase = await createClient();
   const { data: pipeline } = await supabase.from("pipelines").select("id").eq("id", pipelineId).maybeSingle<{ id: string }>();
   if (!pipeline) return { error: "Funil não encontrado." };
 
@@ -223,8 +304,10 @@ export async function reorderStagesAction(pipelineId: string, orderedStageIds: s
 
 /** Exclui a etapa movendo os leads dela para `moveLeadsToStageId` primeiro (stage_id é restrict). */
 export async function deleteStageAction(stageId: string, moveLeadsToStageId: string): Promise<ActionResult> {
+  if (!id.safeParse(stageId).success || !id.safeParse(moveLeadsToStageId).success) return { error: "Etapa não encontrada." };
   if (stageId === moveLeadsToStageId) return { error: "Escolha outra etapa de destino." };
-  const supabase = createClient();
+  if (!(await activeUserId())) return { error: NO_ACCESS };
+  const supabase = await createClient();
   const { data: stage } = await supabase
     .from("pipeline_stages")
     .select("id, pipeline_id")
@@ -273,12 +356,15 @@ export async function deleteStageAction(stageId: string, moveLeadsToStageId: str
       })
       .eq("id", lead.id);
   });
-  const failed = (await Promise.all(updates)).find((r) => r.error);
-  if (failed?.error) return { error: `Não foi possível mover os leads da etapa: ${failed.error.message}` };
+  const results = await Promise.all(updates);
+  // Histórico só de quem de fato mudou: se parte falhar, repetir a exclusão
+  // move só quem ficou para trás, sem evento duplicado nem faltando.
+  const moved = rows.filter((_, i) => !results[i].error);
+  const failed = results.find((r) => r.error);
 
-  if (rows.length > 0) {
+  if (moved.length > 0) {
     await admin.from("lead_stage_events").insert(
-      rows.map((lead) => ({
+      moved.map((lead) => ({
         lead_id: lead.id,
         account_id: lead.account_id,
         from_stage_id: stageId,
@@ -288,8 +374,11 @@ export async function deleteStageAction(stageId: string, moveLeadsToStageId: str
       }))
     );
   }
+  if (failed?.error) {
+    return dbError("falha ao mover leads da etapa excluída", failed.error.message, "Não foi possível mover os leads da etapa. Tente de novo.");
+  }
   const { error } = await admin.from("pipeline_stages").delete().eq("id", stageId);
-  if (error) return { error: error.message };
+  if (error) return dbError("falha ao excluir etapa", error.message, "Não foi possível excluir a etapa.");
   revalidatePath(FUNIL_PATH);
   return {};
 }

@@ -918,9 +918,11 @@ function EditorInner({
         name: name.trim(),
         is_active: isActive,
         graph: serialized as SequenceInput["graph"],
+        // Detecta edição concorrente (outra aba/pessoa salvou depois que este editor abriu).
+        expected_updated_at: sequence?.updated_at,
       });
       if (result.error) {
-        toast.error(result.error);
+        toast.error(result.error, result.conflict ? { duration: 10000 } : undefined);
         return;
       }
       toast.success(isActive ? "Workflow ativado." : "Workflow salvo.");
@@ -961,7 +963,8 @@ function EditorInner({
           onChange={(e) => setName(e.target.value)}
         />
         {accounts.length > 1 && (
-          <Select value={accountId} onValueChange={setAccountId}>
+          // Workflow já criado não troca de conta (as execuções são da conta original).
+          <Select value={accountId} onValueChange={setAccountId} disabled={!!sequence}>
             <SelectTrigger className="w-48">
               <SelectValue placeholder="Conta" />
             </SelectTrigger>

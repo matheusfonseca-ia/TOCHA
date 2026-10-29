@@ -2,7 +2,7 @@ import type { createClient } from "@/lib/supabase/server";
 
 import { isExpired } from "./expiry";
 
-type ServerClient = ReturnType<typeof createClient>;
+type ServerClient = Awaited<ReturnType<typeof createClient>>;
 
 export const EXPIRED_RULE_ACTIVATION_ERROR =
   'Esta automação já expirou. Use "Estender expiração" para ativá-la de novo.';
